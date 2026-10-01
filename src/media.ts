@@ -5,6 +5,7 @@ import {
   relationLabel,
   type Tree,
 } from "./model";
+import { relationshipIcons } from "./relationshipIcons";
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -121,14 +122,33 @@ export async function exportPng(tree: Tree) {
     ctx.moveTo(x1, y1);
     ctx.bezierCurveTo(x1, (y1 + y2) / 2, x2, (y1 + y2) / 2, x2, y2);
     ctx.stroke();
-    const label = relationLabel(r);
     const lx = (x1 + x2) / 2,
       ly = (y1 + y2) / 2;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = "#f7f5ef";
-    ctx.fillRect(lx - tw / 2 - 6, ly - 12, tw + 12, 19);
-    ctx.fillStyle = "#625849";
-    ctx.fillText(label, lx - tw / 2, ly + 2);
+    if (r.type === "parent" || r.type === "partner") {
+      const icon = relationshipIcons[r.type];
+      ctx.save();
+      ctx.translate(lx - 12, ly - 12);
+      ctx.fillStyle = "#f7f5ef";
+      ctx.fillRect(-4, -4, 32, 32);
+      ctx.strokeStyle = icon.color;
+      ctx.fillStyle = icon.fill;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (const d of icon.paths) {
+        const path = new Path2D(d);
+        if (icon.fill !== "none") ctx.fill(path);
+        ctx.stroke(path);
+      }
+      ctx.restore();
+    } else {
+      const label = relationLabel(r);
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "#f7f5ef";
+      ctx.fillRect(lx - tw / 2 - 6, ly - 12, tw + 12, 19);
+      ctx.fillStyle = "#625849";
+      ctx.fillText(label, lx - tw / 2, ly + 2);
+    }
   }
   for (const p of tree.people) {
     const x = px(p),
