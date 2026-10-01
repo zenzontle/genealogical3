@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Require fresh Codex thumbs-up
+      - name: Wait for Codex thumbs-up
         uses: actions/github-script@v9
         with:
           script: |
@@ -61,34 +61,46 @@ jobs:
               commit.commit.committer.date || commit.commit.author.date
             );
 
-            const reactions = await github.paginate(
-              github.rest.reactions.listForIssue,
-              {
-                owner,
-                repo,
-                issue_number: pull_number,
-                content: '+1',
-                per_page: 100
-              }
-            );
-
             const codexLogin = 'chatgpt-codex-connector[bot]';
 
-            const approval = reactions
-              .filter(r => r.user?.login === codexLogin)
-              .filter(r => new Date(r.created_at) >= headCommitTime)
-              .sort(
-                (a, b) =>
-                  new Date(b.created_at) - new Date(a.created_at)
-              )[0];
+            // Check every 20 seconds for up to 10 minutes.
+            const attempts = 30;
+            const delayMs = 20_000;
 
-            if (!approval) {
-              core.setFailed(
-                `Codex must add a new 👍 after the current HEAD commit (${headSha}).`
+            for (let attempt = 1; attempt <= attempts; attempt++) {
+              const reactions = await github.paginate(
+                github.rest.reactions.listForIssue,
+                {
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  content: '+1',
+                  per_page: 100
+                }
               );
-              return;
+
+              const approval = reactions.find(
+                r =>
+                  r.user?.login === codexLogin &&
+                  new Date(r.created_at) >= headCommitTime
+              );
+
+              if (approval) {
+                core.info(
+                  `Codex approved with 👍 at ${approval.created_at}.`
+                );
+                return;
+              }
+
+              core.info(
+                `Attempt ${attempt}/${attempts}: waiting for Codex 👍...`
+              );
+
+              if (attempt < attempts) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+              }
             }
 
-            core.info(
-              `Codex approved current PR state with 👍 at ${approval.created_at}.`
+            core.setFailed(
+              `Codex did not add a fresh 👍 within 10 minutes for HEAD ${headSha}.`
             );
