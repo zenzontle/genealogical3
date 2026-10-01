@@ -1,6 +1,6 @@
 # GENEalogical3
 
-A private, browser-first family tree editor built with React, TypeScript, Vite, and XYFlow.
+A private, browser-first family tree editor built with React, TypeScript, Vite, and XYFlow. The interface and PNG snapshots use a dark theme with sage and copper accents.
 
 ## Run locally
 

@@ -865,7 +865,7 @@ export default function App() {
           r.type === "parent"
             ? {
                 type: MarkerType.ArrowClosed,
-                color: "#958469",
+                color: "var(--copper)",
                 width: 14,
                 height: 14,
               }
@@ -873,14 +873,18 @@ export default function App() {
         style: {
           stroke:
             r.type === "parent"
-              ? "#958469"
+              ? "var(--copper)"
               : r.type === "partner"
-                ? "#b8786f"
-                : "#92968b",
+                ? "var(--partner)"
+                : "var(--text-muted)",
           strokeWidth: selectedRelationId === r.id ? 3 : 2,
         },
-        labelStyle: { fill: "#5b5349", fontSize: 11, fontWeight: 600 },
-        labelBgStyle: { fill: "#f7f5ef", fillOpacity: 0.96 },
+        labelStyle: {
+          fill: "var(--text-muted)",
+          fontSize: 11,
+          fontWeight: 600,
+        },
+        labelBgStyle: { fill: "var(--bg)", fillOpacity: 0.96 },
         selectable: true,
       })),
     );
@@ -1491,6 +1495,7 @@ export default function App() {
                   edges={edges}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
+                  colorMode="dark"
                   connectionMode={ConnectionMode.Loose}
                   onNodesChange={onNodesChange}
                   onConnect={connect}
@@ -1526,7 +1531,7 @@ export default function App() {
                   deleteKeyCode={null}
                   proOptions={{ hideAttribution: false }}
                 >
-                  <Background color="#dedbd3" gap={24} size={1} />
+                  <Background color="var(--border)" gap={24} size={1} />
                   <Controls position="bottom-left" showInteractive={false} />
                 </ReactFlow>
               )}
