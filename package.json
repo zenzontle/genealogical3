@@ -2,7 +2,7 @@
   "name": "genealogical3",
   "private": true,
   "version": "1.0.0",
-  "packageManager": "npm@9.4.2",
+  "packageManager": "pnpm@12.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",

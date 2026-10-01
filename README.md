@@ -5,13 +5,14 @@ A private, browser-first family tree editor built with React, TypeScript, Vite, 
 ## Run locally
 
 ```sh
-npm install
-npm run dev
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-Open the URL Vite prints. `npm run build` checks TypeScript and creates a production build; `npm test` runs document and relationship validation tests.
+Open the URL Vite prints. `pnpm build` checks TypeScript and creates a production build; `pnpm test` runs document and relationship validation tests.
 
-The project uses npm and `package-lock.json` for reproducible dependency versions.
+The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile. `pnpm-workspace.yaml` allows esbuild's install script, which Vite needs.
 
 ### Dependency audit
 
