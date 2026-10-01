@@ -1353,7 +1353,7 @@ h2 {
   min-width: 260px;
   max-width: min(90vw, 520px);
   background: var(--toast);
-  color: var(--surface-raised);
+  color: var(--text);
   border-radius: 7px;
   box-shadow: 0 10px 35px var(--shadow);
   padding: 0.8rem 0.9rem;
@@ -1366,7 +1366,7 @@ h2 {
 .toast button {
   border: 0;
   background: transparent;
-  color: var(--surface-raised);
+  color: var(--text);
 }
 .modal-backdrop {
   position: fixed;
