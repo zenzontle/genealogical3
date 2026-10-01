@@ -1,4 +1,4 @@
-import { assertValidLifeDates, type Tree } from "./model";
+import { assertValidLifeDates, normalizeHomePerson, type Tree } from "./model";
 const DB = "genealogical3";
 const STORE = "trees";
 const LINKS = "driveLinks";
@@ -47,13 +47,18 @@ async function transaction<T>(
   });
 }
 export const listTrees = () =>
-  transaction<Tree[]>(STORE, "readonly", (store) => store.getAll());
+  transaction<Tree[]>(STORE, "readonly", (store) => store.getAll()).then(
+    (trees) => trees.map(normalizeHomePerson),
+  );
 export const getTree = (id: string) =>
-  transaction<Tree | undefined>(STORE, "readonly", (store) => store.get(id));
+  transaction<Tree | undefined>(STORE, "readonly", (store) =>
+    store.get(id),
+  ).then((tree) => (tree ? normalizeHomePerson(tree) : undefined));
 export const saveTree = (tree: Tree) => {
   assertValidLifeDates(tree);
+  const normalized = normalizeHomePerson(tree);
   return transaction<IDBValidKey>(STORE, "readwrite", (store) =>
-    store.put({ ...tree, version: 2 }),
+    store.put({ ...normalized, version: 2 }),
   );
 };
 export const deleteTree = (id: string) =>

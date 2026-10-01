@@ -1,11 +1,14 @@
 import {
   assertValidLifeDates,
   dateYearLabel,
+  normalizeHomePerson,
   personAgeLabel,
+  personCardHeight,
   relationLabel,
   type Tree,
 } from "./model";
 import { relationshipIcons } from "./relationshipIcons";
+import { calculateKinships } from "./kinship";
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -21,8 +24,9 @@ export const safeName = (name: string) =>
     .replace(/\s+/g, "-") || "family-tree";
 export function exportJson(tree: Tree) {
   assertValidLifeDates(tree);
+  const normalized = normalizeHomePerson(tree);
   downloadBlob(
-    new Blob([JSON.stringify({ ...tree, version: 2 }, null, 2)], {
+    new Blob([JSON.stringify({ ...normalized, version: 2 }, null, 2)], {
       type: "application/json",
     }),
     `${safeName(tree.name)}.json`,
@@ -53,10 +57,11 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
   });
 export async function exportPng(tree: Tree) {
   assertValidLifeDates(tree);
+  tree = normalizeHomePerson(tree);
   if (!tree.people.length)
     throw Error("Add a person before exporting an image.");
   const cardW = 220,
-    cardH = 108,
+    cardH = personCardHeight(tree.homePersonId !== null),
     pad = 90;
   const minX = Math.min(...tree.people.map((p) => p.x)),
     minY = Math.min(...tree.people.map((p) => p.y));
@@ -90,7 +95,22 @@ export async function exportPng(tree: Tree) {
   ctx.scale(scale, scale);
   ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, width, height);
-  const at = (id: string) => tree.people.find((p) => p.id === id)!;
+  const kinships = calculateKinships(tree);
+  const people = new Map(tree.people.map((p) => [p.id, p]));
+  const at = (id: string) => people.get(id)!;
+  if (tree.homePersonId !== null) {
+    ctx.fillStyle = palette.copper;
+    ctx.font = "14px system-ui";
+    ctx.fillText(
+      fitCanvasText(
+        ctx,
+        `Relationships to home: ${at(tree.homePersonId).name || "Unnamed person"}`,
+        width - pad * 2,
+      ),
+      pad,
+      40,
+    );
+  }
   const px = (p: (typeof tree.people)[number]) => p.x - minX + pad,
     py = (p: (typeof tree.people)[number]) => p.y - minY + pad;
   ctx.font = "12px system-ui";
@@ -203,9 +223,32 @@ export async function exportPng(tree: Tree) {
     ctx.fillStyle = palette.accent;
     ctx.font = "11px system-ui";
     ctx.fillText(personAgeLabel(p), x + 78, y + 91, 110);
+    const kinship = kinships.get(p.id);
+    if (kinship) {
+      ctx.fillStyle = palette.copper;
+      ctx.font = "11px system-ui";
+      const isHome = p.id === tree.homePersonId;
+      if (isHome) {
+        ctx.strokeStyle = palette.copper;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 17, y + 119);
+        ctx.lineTo(x + 23, y + 114);
+        ctx.lineTo(x + 29, y + 119);
+        ctx.lineTo(x + 29, y + 126);
+        ctx.lineTo(x + 17, y + 126);
+        ctx.closePath();
+        ctx.stroke();
+      }
+      ctx.fillText(
+        fitCanvasText(ctx, kinship.primary.label, isHome ? 145 : 112),
+        x + (isHome ? 35 : 78),
+        y + 123,
+      );
+    }
     if (p.sex === "male" || p.sex === "female") {
       const sx = x + 201,
-        sy = y + 87;
+        sy = y + cardH - 21;
       ctx.strokeStyle = palette.accent;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -232,4 +275,20 @@ export async function exportPng(tree: Tree) {
   );
   if (!blob) throw Error("Could not render the PNG.");
   downloadBlob(blob, `${safeName(tree.name)}.png`);
+}
+function fitCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  width: number,
+): string {
+  if (ctx.measureText(text).width <= width) return text;
+  let low = 0,
+    high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (ctx.measureText(`${text.slice(0, middle)}…`).width <= width)
+      low = middle;
+    else high = middle - 1;
+  }
+  return `${text.slice(0, low)}…`;
 }

@@ -35,7 +35,17 @@ Google's OAuth project and consent screen cannot be provisioned by this codebase
 
 Trees are stored in IndexedDB on the current browser and origin. Clearing browser data can remove them. Download JSON backups regularly, especially before changing browsers or devices. JSON carries all editable data and processed portraits. PNG is a visual snapshot and does not include notes or editability.
 
-The portable JSON format is versioned (`version: 2`); version 1 backups remain importable. Its document has a tree ID and name, people with stable IDs, optional fields and positions, directed parent relationships, symmetric partner relationships, unassigned connections with their original handles, and viewport coordinates. Drive metadata and authorization stay outside the portable document.
+The portable JSON format is versioned (`version: 2`); version 1 backups remain importable. Its document has a tree ID and name, people with stable IDs, optional fields and positions, an optional home designation (`homePersonId`, stored as a person ID or `null`), directed parent relationships, symmetric partner relationships, unassigned connections with their original handles, and viewport coordinates. Older backups and local trees without a home field open with no designation. Drive metadata and authorization stay outside the portable document.
+
+## Home person and kinship
+
+Select a person and choose **Set as home person** to mark whom the tree is about. Each tree can have one home person or none. Setting someone else replaces the designation; **Clear home person** removes it. These actions support undo/redo. Deleting home clears the designation along with their relationships, and undo restores both. Setting home leaves the canvas position and selection unchanged; opening a tree keeps the existing viewport behavior.
+
+Cards, person details, and PNG snapshots show each person's relationship to home, including ancestors, descendants, siblings, aunts/uncles, nieces/nephews, and cousins with removals. Terms use recorded sex when known and neutral terms otherwise. Labels are calculated from current links rather than stored, so editing connections, sex, or home refreshes them automatically.
+
+Biological, adoptive, and unspecified parent links establish family kinship. Recorded paths in details disclose every parent type; family labels do not assert biological ancestry or full versus half siblings. Step, guardian, and mixed partner paths remain explicit. Direct partners use spouse terms only when recorded as married, with former/ex qualifiers when recorded. Unassigned links do not establish kinship, and people without a typed path show **Relationship not established**.
+
+The closest relationship uses the fewest recorded links. Equally short paths can show alternative labels in details; longer ties are not calculated. Up to five representative paths are retained per person, prioritizing distinct labels, and details disclose when additional shortest paths are omitted. This bounds calculation in highly interconnected trees. Home markers and labels are carried through JSON backups, local saves, and Drive copies; PNG exports include the marker, primary labels, and home name.
 
 Birth and death edits stay in a temporary draft while incomplete or invalid. A death cannot precede birth; when only a year is known, validation preserves that uncertainty. Valid pairs are committed together, while autosave and exports use the last valid dates. Drafts survive selecting another person in the current editor session but are not saved or exported.
 

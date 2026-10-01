@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -23,6 +23,7 @@ import {
   Download,
   FileImage,
   Heart,
+  Home,
   ImagePlus,
   Link2,
   Menu,
@@ -40,6 +41,8 @@ import { BrandMark } from "./BrandMark";
 import { SexIcon } from "./SexIcon";
 import { RelationshipFields } from "./RelationshipFields";
 import { RelationshipEdge } from "./RelationshipEdge";
+import { HomePersonDetails } from "./HomePersonDetails";
+import { calculateKinships, type KinshipResult } from "./kinship";
 import {
   addRelation,
   dateYearLabel,
@@ -47,6 +50,9 @@ import {
   makePerson,
   makeTree,
   personAgeLabel,
+  personCardHeight,
+  removePerson,
+  setHomePerson,
   relationLabel,
   relationFromConnection,
   updateRelation,
@@ -80,7 +86,14 @@ import {
 } from "./drive";
 
 type PersonNode = Node<
-  { person: Person; selected: boolean; onSelect: (id: string) => void },
+  {
+    person: Person;
+    selected: boolean;
+    homeName: string | null;
+    isHome: boolean;
+    kinship?: KinshipResult;
+    onSelect: (id: string) => void;
+  },
   "person"
 >;
 function PersonCard({ data }: NodeProps<PersonNode>) {
@@ -88,11 +101,11 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
   const age = personAgeLabel(p);
   return (
     <div
-      className={`person-card ${data.selected ? "selected" : ""}`}
+      className={`person-card ${data.selected ? "selected" : ""} ${data.homeName !== null ? "has-home" : ""} ${data.isHome ? "is-home" : ""}`}
       onClick={() => data.onSelect(p.id)}
       role="button"
       tabIndex={0}
-      aria-label={`Edit ${p.name || "unnamed person"}`}
+      aria-label={`Edit ${p.name || "unnamed person"}${data.kinship ? `, ${data.isHome ? "Home person" : `${data.kinship.primary.label} of ${data.homeName}`}` : ""}`}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -143,6 +156,19 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
           {p.died.precision !== "unknown" ? `— ${dateYearLabel(p.died)}` : ""}
         </span>
         {age && <span className="person-age">{age}</span>}
+        {data.kinship && (
+          <span
+            className="person-kinship"
+            title={
+              data.isHome
+                ? "Home person"
+                : `${data.kinship.primary.label} of ${data.homeName}`
+            }
+          >
+            {data.isHome && <Home size={12} aria-hidden="true" />}
+            <span className="kinship-label">{data.kinship.primary.label}</span>
+          </span>
+        )}
       </div>
       {(p.sex === "male" || p.sex === "female") && (
         <span
@@ -247,6 +273,9 @@ function DateInput({
 }
 function PersonEditor({
   person,
+  home,
+  kinship,
+  onSetHome,
   dates,
   onDatesChange,
   relations,
@@ -262,6 +291,9 @@ function PersonEditor({
   onClose,
 }: {
   person: Person;
+  home: Person | null;
+  kinship?: KinshipResult;
+  onSetHome: (id: string | null) => void;
   dates: LifeDates;
   onDatesChange: (field: "born" | "died", date: DateValue) => void;
   relations: Relation[];
@@ -311,6 +343,13 @@ function PersonEditor({
           <X size={19} />
         </button>
       </div>
+      <HomePersonDetails
+        person={person}
+        home={home}
+        people={people}
+        kinship={kinship}
+        onSetHome={onSetHome}
+      />
       <div className="portrait-upload">
         <button
           type="button"
@@ -560,6 +599,11 @@ export default function App() {
   const [screen, setScreen] = useState<"home" | "editor">("home");
   const [library, setLibrary] = useState<Tree[]>([]);
   const [tree, setTree] = useState<Tree | null>(null);
+  const kinships = useMemo(
+    () => (tree ? calculateKinships(tree) : new Map<string, KinshipResult>()),
+    [tree?.people, tree?.relations, tree?.homePersonId],
+  );
+  const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(
@@ -744,10 +788,14 @@ export default function App() {
     setSelectedId(person.id);
     setMobilePanel(true);
     requestAnimationFrame(() =>
-      flowRef.current?.setCenter(person.x + 110, person.y + 54, {
-        zoom: Math.min(flowRef.current?.getZoom() || 1, 1.1),
-        duration: 350,
-      }),
+      flowRef.current?.setCenter(
+        person.x + 110,
+        person.y + personCardHeight(current.homePersonId !== null) / 2,
+        {
+          zoom: Math.min(flowRef.current?.getZoom() || 1, 1.1),
+          duration: 350,
+        },
+      ),
     );
   };
   const connect = (connection: Connection) => {
@@ -830,6 +878,9 @@ export default function App() {
         position: { x: p.x, y: p.y },
         data: {
           person: p,
+          homeName: home ? home.name || "Unnamed person" : null,
+          isHome: tree.homePersonId === p.id,
+          kinship: kinships.get(p.id),
           selected: selectedId === p.id,
           onSelect: (id: string) => {
             setSelectedId(id);
@@ -888,7 +939,15 @@ export default function App() {
         selectable: true,
       })),
     );
-  }, [tree, selectedId, selectedRelationId, setNodes, setEdges]);
+  }, [
+    tree,
+    kinships,
+    home,
+    selectedId,
+    selectedRelationId,
+    setNodes,
+    setEdges,
+  ]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
@@ -1186,6 +1245,17 @@ export default function App() {
                           <Users size={27} />
                         </div>
                         <strong>{item.name}</strong>
+                        {item.homePersonId !== null && (
+                          <span className="library-home">
+                            <Home size={13} aria-hidden="true" />
+                            <span>
+                              Home:{" "}
+                              {item.people.find(
+                                (p) => p.id === item.homePersonId,
+                              )?.name || "Unnamed person"}
+                            </span>
+                          </span>
+                        )}
                         <span>
                           {item.people.length}{" "}
                           {item.people.length === 1 ? "person" : "people"} ·
@@ -1455,6 +1525,15 @@ export default function App() {
               <div className="canvas-topbar">
                 <div className="canvas-label">
                   <span className="canvas-label-dot" /> FAMILY CANVAS
+                  {home && (
+                    <span
+                      className="canvas-home"
+                      title={`Home: ${home.name || "Unnamed person"}`}
+                    >
+                      <Home size={13} aria-hidden="true" />
+                      <span>Home: {home.name || "Unnamed person"}</span>
+                    </span>
+                  )}
                 </div>
                 <div className="canvas-tools">
                   <button
@@ -1563,6 +1642,9 @@ export default function App() {
               {selected ? (
                 <PersonEditor
                   person={selected}
+                  home={home}
+                  kinship={kinships.get(selected.id)}
+                  onSetHome={(id) => apply((t) => setHomePerson(t, id))}
                   dates={dateDrafts[selected.id] || selected}
                   onDatesChange={(field, date) =>
                     editDate(selected.id, field, date)
@@ -1580,21 +1662,11 @@ export default function App() {
                   onDelete={() => {
                     if (
                       !window.confirm(
-                        `Delete ${selected.name || "this person"} and their relationships?`,
+                        `Delete ${selected.name || "this person"} and their relationships?${tree!.homePersonId === selected.id ? " This also clears the home person designation." : ""}`,
                       )
                     )
                       return;
-                    apply((t) => ({
-                      ...t,
-                      people: t.people.filter((p) => p.id !== selected.id),
-                      relations: t.relations.filter((r) =>
-                        r.type === "parent"
-                          ? r.parentId !== selected.id &&
-                            r.childId !== selected.id
-                          : r.personA !== selected.id &&
-                            r.personB !== selected.id,
-                      ),
-                    }));
+                    apply((t) => removePerson(t, selected.id));
                     setSelectedId(null);
                   }}
                   onAddRelative={addPerson}

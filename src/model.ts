@@ -50,6 +50,7 @@ export type Tree = {
   id: string;
   name: string;
   people: Person[];
+  homePersonId: string | null;
   relations: Relation[];
   viewport: { x: number; y: number; zoom: number };
   updatedAt: number;
@@ -73,6 +74,7 @@ export const makeTree = (name = "Untitled tree"): Tree => ({
   id: uid(),
   name,
   people: [],
+  homePersonId: null,
   relations: [],
   viewport: { x: 0, y: 0, zoom: 1 },
   updatedAt: Date.now(),
@@ -84,6 +86,34 @@ export const dateLabel = (date: DateValue) =>
       ? String(date.year)
       : date.value;
 export const dateYearLabel = (date: DateValue) => dateLabel(date).slice(0, 4);
+/** Missing fields in older local trees and backups mean no home designation. */
+export function normalizeHomePerson(
+  tree: Omit<Tree, "homePersonId"> & { homePersonId?: unknown },
+): Tree {
+  const homePersonId =
+    tree.homePersonId === undefined ? null : tree.homePersonId;
+  if (
+    homePersonId !== null &&
+    (typeof homePersonId !== "string" ||
+      !tree.people.some((p) => p.id === homePersonId))
+  )
+    throw Error("The home person must refer to a person in this tree.");
+  return { ...tree, homePersonId };
+}
+export function setHomePerson(tree: Tree, personId: string | null): Tree {
+  return normalizeHomePerson({ ...tree, homePersonId: personId });
+}
+export function removePerson(tree: Tree, personId: string): Tree {
+  return {
+    ...tree,
+    homePersonId: tree.homePersonId === personId ? null : tree.homePersonId,
+    people: tree.people.filter((p) => p.id !== personId),
+    relations: tree.relations.filter(
+      (r) => !relationEndpoints(r).includes(personId),
+    ),
+  };
+}
+export const personCardHeight = (hasHome: boolean) => (hasHome ? 140 : 108);
 export type LifeDates = Pick<Person, "born" | "died">;
 export function lifeDatesError({ born, died }: LifeDates): string {
   for (const [label, date] of [
@@ -379,7 +409,11 @@ export function validateTree(input: unknown): Tree {
     if (error) throw Error(`${p.name || "Unnamed person"}: ${error}`);
   }
   const relIds = new Set<string>();
-  let checked: Tree = { ...(input as Tree), version: 2, relations: [] };
+  let checked: Tree = normalizeHomePerson({
+    ...(input as Tree),
+    version: 2,
+    relations: [],
+  });
   for (const r of input.relations) {
     if (!isObj(r) || typeof r.id !== "string" || relIds.has(r.id))
       throw Error("This file contains an invalid relationship.");
