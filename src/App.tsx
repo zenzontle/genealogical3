@@ -39,6 +39,7 @@ import {
 import { BrandMark } from "./BrandMark";
 import { SexIcon } from "./SexIcon";
 import { RelationshipFields } from "./RelationshipFields";
+import { RelationshipEdge } from "./RelationshipEdge";
 import {
   addRelation,
   dateYearLabel,
@@ -157,6 +158,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
   );
 }
 const nodeTypes = { person: PersonCard };
+const edgeTypes = { relationship: RelationshipEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = "saved" | "saving" | "error";
 type ConnectMode = "parent" | "child" | "partner" | null;
@@ -855,7 +857,9 @@ export default function App() {
             : r.type === "unassigned"
               ? r.targetHandle
               : "left",
-        type: "smoothstep",
+        type: "relationship",
+        data: { relationshipType: r.type },
+        ariaLabel: relationLabel(r),
         label: relationLabel(r),
         markerEnd:
           r.type === "parent"
@@ -1486,6 +1490,7 @@ export default function App() {
                   nodes={nodes}
                   edges={edges}
                   nodeTypes={nodeTypes}
+                  edgeTypes={edgeTypes}
                   connectionMode={ConnectionMode.Loose}
                   onNodesChange={onNodesChange}
                   onConnect={connect}
