@@ -1,0 +1,94 @@
+name: Require Codex approval
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  codex-approval:
+    name: Codex approval
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require fresh Codex thumbs-up
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const pull_number =
+              context.payload.pull_request?.number ??
+              context.payload.issue?.number;
+
+            if (!pull_number) {
+              core.setFailed('Could not determine pull request number.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number
+            });
+
+            const headSha = pr.head.sha;
+
+            const { data: commit } = await github.rest.repos.getCommit({
+              owner,
+              repo,
+              ref: headSha
+            });
+
+            const headCommitTime = new Date(
+              commit.commit.committer.date || commit.commit.author.date
+            );
+
+            const reactions = await github.paginate(
+              github.rest.reactions.listForIssue,
+              {
+                owner,
+                repo,
+                issue_number: pull_number,
+                content: '+1',
+                per_page: 100
+              }
+            );
+
+            const codexLogin = 'chatgpt-codex-connector[bot]';
+
+            const approval = reactions
+              .filter(r => r.user?.login === codexLogin)
+              .filter(r => new Date(r.created_at) >= headCommitTime)
+              .sort(
+                (a, b) =>
+                  new Date(b.created_at) - new Date(a.created_at)
+              )[0];
+
+            if (!approval) {
+              core.setFailed(
+                `Codex must add a new 👍 after the current HEAD commit (${headSha}).`
+              );
+              return;
+            }
+
+            core.info(
+              `Codex approved current PR state with 👍 at ${approval.created_at}.`
+            );
