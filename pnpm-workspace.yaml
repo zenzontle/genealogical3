@@ -1,0 +1,5 @@
+# Corepack uses the package.json pin; keep pnpm's own version out of the lockfile.
+pmOnFail: ignore
+
+allowBuilds:
+  esbuild: true

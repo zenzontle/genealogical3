@@ -3,5 +3,5 @@ dist
 .env*
 !.env.example
 .perf
-.npm-cache
+.pnpm-store
 *.tsbuildinfo
