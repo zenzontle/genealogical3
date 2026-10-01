@@ -39,7 +39,7 @@ export function RelationshipEdge(props: EdgeProps<RelationshipEdgeType>) {
             width="32"
             height="32"
             rx="8"
-            fill="#f7f5ef"
+            fill="var(--bg)"
             fillOpacity="0.96"
           />
           <g

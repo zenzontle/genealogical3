@@ -75,8 +75,20 @@ export async function exportPng(tree: Tree) {
   canvas.height = Math.max(1, Math.floor(height * scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) throw Error("PNG export is unavailable in this browser.");
+  const styles = getComputedStyle(document.documentElement);
+  const palette = {
+    background: styles.getPropertyValue("--bg").trim(),
+    surface: styles.getPropertyValue("--surface").trim(),
+    border: styles.getPropertyValue("--border").trim(),
+    avatar: styles.getPropertyValue("--accent-surface").trim(),
+    text: styles.getPropertyValue("--text").trim(),
+    muted: styles.getPropertyValue("--text-muted").trim(),
+    accent: styles.getPropertyValue("--accent").trim(),
+    copper: styles.getPropertyValue("--copper").trim(),
+    partner: styles.getPropertyValue("--partner").trim(),
+  };
   ctx.scale(scale, scale);
-  ctx.fillStyle = "#f7f5ef";
+  ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, width, height);
   const at = (id: string) => tree.people.find((p) => p.id === id)!;
   const px = (p: (typeof tree.people)[number]) => p.x - minX + pad,
@@ -114,10 +126,10 @@ export async function exportPng(tree: Tree) {
       y2 = py(b) + by;
     ctx.strokeStyle =
       r.type === "parent"
-        ? "#958469"
+        ? palette.copper
         : r.type === "partner"
-          ? "#ad796e"
-          : "#92968b";
+          ? palette.partner
+          : palette.muted;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.bezierCurveTo(x1, (y1 + y2) / 2, x2, (y1 + y2) / 2, x2, y2);
@@ -128,7 +140,7 @@ export async function exportPng(tree: Tree) {
       const icon = relationshipIcons[r.type];
       ctx.save();
       ctx.translate(lx - 12, ly - 12);
-      ctx.fillStyle = "#f7f5ef";
+      ctx.fillStyle = palette.background;
       ctx.fillRect(-4, -4, 32, 32);
       ctx.strokeStyle = icon.color;
       ctx.fillStyle = icon.fill;
@@ -144,23 +156,23 @@ export async function exportPng(tree: Tree) {
     } else {
       const label = relationLabel(r);
       const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "#f7f5ef";
+      ctx.fillStyle = palette.background;
       ctx.fillRect(lx - tw / 2 - 6, ly - 12, tw + 12, 19);
-      ctx.fillStyle = "#625849";
+      ctx.fillStyle = palette.muted;
       ctx.fillText(label, lx - tw / 2, ly + 2);
     }
   }
   for (const p of tree.people) {
     const x = px(p),
       y = py(p);
-    ctx.fillStyle = "#fffdfa";
-    ctx.strokeStyle = "#dcd5ca";
+    ctx.fillStyle = palette.surface;
+    ctx.strokeStyle = palette.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.roundRect(x, y, cardW, cardH, 10);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#e8e2d7";
+    ctx.fillStyle = palette.avatar;
     ctx.beginPath();
     ctx.arc(x + 42, y + 43, 26, 0, Math.PI * 2);
     ctx.fill();
@@ -173,28 +185,28 @@ export async function exportPng(tree: Tree) {
       ctx.drawImage(img, x + 16, y + 17, 52, 52);
       ctx.restore();
     } else {
-      ctx.fillStyle = "#7b6d58";
+      ctx.fillStyle = palette.accent;
       ctx.font = "bold 20px Georgia";
       ctx.textAlign = "center";
       ctx.fillText((p.name[0] || "?").toUpperCase(), x + 42, y + 50);
       ctx.textAlign = "start";
     }
-    ctx.fillStyle = "#27251f";
+    ctx.fillStyle = palette.text;
     ctx.font = "bold 16px Georgia";
     ctx.fillText(p.name.slice(0, 18), x + 78, y + 32, 130);
-    ctx.fillStyle = "#6c665e";
+    ctx.fillStyle = palette.muted;
     ctx.font = "12px system-ui";
     const life = `${dateYearLabel(p.born) || "?"}${p.died.precision === "unknown" ? "" : ` – ${dateYearLabel(p.died)}`}`;
     ctx.fillText(life, x + 78, y + 70, 130);
     if (p.nickname)
       ctx.fillText(`“${p.nickname.slice(0, 24)}”`, x + 78, y + 51, 130);
-    ctx.fillStyle = "#65755e";
+    ctx.fillStyle = palette.accent;
     ctx.font = "11px system-ui";
     ctx.fillText(personAgeLabel(p), x + 78, y + 91, 110);
     if (p.sex === "male" || p.sex === "female") {
       const sx = x + 201,
         sy = y + 87;
-      ctx.strokeStyle = "#65755e";
+      ctx.strokeStyle = palette.accent;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(sx, sy, 4, 0, Math.PI * 2);
