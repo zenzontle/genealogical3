@@ -41,6 +41,27 @@ function installGoogle(response: {
 }
 
 describe("explicit Drive operations", () => {
+  it("rejects an invalid home reference before upload and normalizes legacy Drive files", async () => {
+    installGoogle({ access_token: "token", expires_in: 3600 });
+    const { homePersonId: _home, ...legacy } = makeTree("Legacy");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ...legacy, version: 1 }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const drive = await import("./drive");
+    await expect(
+      drive.saveDriveTree({ ...makeTree(), homePersonId: "missing" }),
+    ).rejects.toThrow(/home person/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await drive.authorizeDrive();
+    expect(await drive.openDriveTree("legacy-file")).toEqual({
+      ...legacy,
+      version: 2,
+      homePersonId: null,
+    });
+  });
   it("rejects invalid life dates before a Drive upload", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -57,7 +78,12 @@ describe("explicit Drive operations", () => {
   });
   it("requests drive.file and creates, lists, opens, and replaces a tree", async () => {
     const consent = installGoogle({ access_token: "token", expires_in: 3600 });
-    const tree = makeTree("Test family");
+    const person = makePerson("Home");
+    const tree = {
+      ...makeTree("Test family"),
+      people: [person],
+      homePersonId: person.id,
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -104,6 +130,9 @@ describe("explicit Drive operations", () => {
     expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
     expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).toContain(
       "GENEalogical3",
+    );
+    expect(String((fetchMock.mock.calls[0][1] as RequestInit).body)).toContain(
+      `"homePersonId":"${person.id}"`,
     );
     expect(await drive.listDriveTrees()).toHaveLength(1);
     expect(await drive.openDriveTree("file-1")).toEqual(tree);
