@@ -884,8 +884,7 @@ export default function App() {
             tree.relations.some((r) =>
               r.type === "parent"
                 ? r.parentId === p.id || r.childId === p.id
-                : r.type === "partner" &&
-                  (r.personA === p.id || r.personB === p.id),
+                : r.personA === p.id || r.personB === p.id,
             )
               ? kinships.get(p.id)
               : undefined,
