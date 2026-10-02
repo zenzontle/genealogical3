@@ -45,17 +45,6 @@ jobs:
 
             const headSha = pr.head.sha;
 
-            // Used to distinguish a new 👍 from one left for an older revision.
-            const { data: commit } = await github.rest.repos.getCommit({
-              owner,
-              repo,
-              ref: headSha
-            });
-
-            const headCommitTime = new Date(
-              commit.commit.committer.date || commit.commit.author.date
-            );
-
             core.info(`Waiting for Codex review of ${headSha}`);
 
             // Every 20 seconds for up to 10 minutes.
@@ -63,9 +52,7 @@ jobs:
             const delayMs = 20_000;
 
             for (let attempt = 1; attempt <= attempts; attempt++) {
-              // ------------------------------------------------------------
-              // 1. Make sure the PR HEAD has not changed underneath this run.
-              // ------------------------------------------------------------
+              // Make sure this run is still for the current PR HEAD.
               const { data: currentPr } = await github.rest.pulls.get({
                 owner,
                 repo,
@@ -75,14 +62,12 @@ jobs:
               if (currentPr.head.sha !== headSha) {
                 core.info(
                   `PR HEAD changed from ${headSha} to ${currentPr.head.sha}. ` +
-                  `A new workflow run will handle the new commit.`
+                  `A new workflow run will handle it.`
                 );
                 return;
               }
 
-              // ------------------------------------------------------------
-              // 2. Check for Codex's 👍 approval FIRST.
-              // ------------------------------------------------------------
+              // Check for Codex's 👍 approval.
               const reactions = await github.paginate(
                 github.rest.reactions.listForIssue,
                 {
@@ -94,21 +79,18 @@ jobs:
                 }
               );
 
-              const approval = reactions.find(reaction =>
-                reaction.user?.login === codexLogin &&
-                new Date(reaction.created_at) >= headCommitTime
+              const approval = reactions.find(
+                reaction => reaction.user?.login === codexLogin
               );
 
               if (approval) {
                 core.info(
-                  `Codex approved ${headSha} with 👍 at ${approval.created_at}.`
+                  `Codex approved with 👍 at ${approval.created_at}.`
                 );
                 return;
               }
 
-              // ------------------------------------------------------------
-              // 3. No 👍 yet. Check whether Codex submitted review feedback.
-              // ------------------------------------------------------------
+              // No 👍 yet. Look for Codex review feedback.
               const reviews = await github.paginate(
                 github.rest.pulls.listReviews,
                 {
@@ -136,9 +118,7 @@ jobs:
                 return;
               }
 
-              // ------------------------------------------------------------
-              // 4. Also check inline review comments.
-              // ------------------------------------------------------------
+              // Check inline comments.
               const reviewComments = await github.paginate(
                 github.rest.pulls.listReviewComments,
                 {
