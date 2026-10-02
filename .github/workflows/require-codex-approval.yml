@@ -81,7 +81,33 @@ jobs:
               }
 
               // ------------------------------------------------------------
-              // 2. Fail if Codex submitted a review with feedback for HEAD.
+              // 2. Check for Codex's 👍 approval FIRST.
+              // ------------------------------------------------------------
+              const reactions = await github.paginate(
+                github.rest.reactions.listForIssue,
+                {
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  content: '+1',
+                  per_page: 100
+                }
+              );
+
+              const approval = reactions.find(reaction =>
+                reaction.user?.login === codexLogin &&
+                new Date(reaction.created_at) >= headCommitTime
+              );
+
+              if (approval) {
+                core.info(
+                  `Codex approved ${headSha} with 👍 at ${approval.created_at}.`
+                );
+                return;
+              }
+
+              // ------------------------------------------------------------
+              // 3. No 👍 yet. Check whether Codex submitted review feedback.
               // ------------------------------------------------------------
               const reviews = await github.paginate(
                 github.rest.pulls.listReviews,
@@ -111,10 +137,7 @@ jobs:
               }
 
               // ------------------------------------------------------------
-              // 3. Also check inline review comments explicitly.
-              //
-              // This catches comments such as the src/styles.css finding
-              // shown in your screenshot.
+              // 4. Also check inline review comments.
               // ------------------------------------------------------------
               const reviewComments = await github.paginate(
                 github.rest.pulls.listReviewComments,
@@ -143,35 +166,9 @@ jobs:
                 return;
               }
 
-              // ------------------------------------------------------------
-              // 4. No feedback found. Check for Codex's 👍 approval.
-              // ------------------------------------------------------------
-              const reactions = await github.paginate(
-                github.rest.reactions.listForIssue,
-                {
-                  owner,
-                  repo,
-                  issue_number: pull_number,
-                  content: '+1',
-                  per_page: 100
-                }
-              );
-
-              const approval = reactions.find(reaction =>
-                reaction.user?.login === codexLogin &&
-                new Date(reaction.created_at) >= headCommitTime
-              );
-
-              if (approval) {
-                core.info(
-                  `Codex approved ${headSha} with 👍 at ${approval.created_at}.`
-                );
-                return;
-              }
-
               core.info(
                 `Attempt ${attempt}/${attempts}: ` +
-                `no Codex feedback or 👍 yet.`
+                `no Codex 👍 or feedback yet.`
               );
 
               if (attempt < attempts) {
