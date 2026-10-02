@@ -54,6 +54,7 @@ import {
   removePerson,
   setHomePerson,
   relationLabel,
+  relationEndpoints,
   relationFromConnection,
   updateRelation,
   uid,
@@ -602,6 +603,13 @@ export default function App() {
     () => (tree ? calculateKinships(tree) : new Map<string, KinshipResult>()),
     [tree?.people, tree?.relations, tree?.homePersonId],
   );
+  const relatedPersonIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const relation of tree?.relations || []) {
+      for (const id of relationEndpoints(relation)) ids.add(id);
+    }
+    return ids;
+  }, [tree?.relations]);
   const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -880,12 +888,7 @@ export default function App() {
           homeName: home ? home.name || "Unnamed person" : null,
           isHome: tree.homePersonId === p.id,
           kinship:
-            tree.homePersonId === p.id ||
-            tree.relations.some((r) =>
-              r.type === "parent"
-                ? r.parentId === p.id || r.childId === p.id
-                : r.personA === p.id || r.personB === p.id,
-            )
+            tree.homePersonId === p.id || relatedPersonIds.has(p.id)
               ? kinships.get(p.id)
               : undefined,
           selected: selectedId === p.id,
@@ -949,6 +952,7 @@ export default function App() {
   }, [
     tree,
     kinships,
+    relatedPersonIds,
     home,
     selectedId,
     selectedRelationId,
