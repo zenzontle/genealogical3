@@ -155,7 +155,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
           <span>
             {dateYearLabel(p.born)}
             {p.died.precision !== "unknown"
-              ? ` — ${dateYearLabel(p.died)}`
+              ? `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`
               : ""}
           </span>
         )}
