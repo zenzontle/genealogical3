@@ -138,10 +138,7 @@ jobs:
 
               const codexInlineFeedback = reviewComments.find(comment =>
                 comment.user?.login === codexLogin &&
-                (
-                  comment.commit_id === headSha ||
-                  comment.original_commit_id === headSha
-                )
+                comment.original_commit_id === headSha
               );
 
               if (codexInlineFeedback) {
