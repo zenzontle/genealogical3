@@ -12,8 +12,7 @@ type RelationshipEdgeType = Edge<{ relationshipType: Relation["type"] }>;
 export function RelationshipEdge(props: EdgeProps<RelationshipEdgeType>) {
   const [path, labelX, labelY] = getSmoothStepPath(props);
   const type = props.data?.relationshipType;
-  const icon =
-    type === "parent" || type === "partner" ? relationshipIcons[type] : null;
+  const icon = type === "partner" ? relationshipIcons.partner : null;
 
   return (
     <>
@@ -24,7 +23,7 @@ export function RelationshipEdge(props: EdgeProps<RelationshipEdgeType>) {
         markerStart={props.markerStart}
         markerEnd={props.markerEnd}
         interactionWidth={props.interactionWidth}
-        label={icon ? undefined : props.label}
+        label={type === "parent" || icon ? undefined : props.label}
         labelX={labelX}
         labelY={labelY}
         labelStyle={props.labelStyle}
@@ -32,7 +31,7 @@ export function RelationshipEdge(props: EdgeProps<RelationshipEdgeType>) {
       />
       {icon && (
         <g transform={`translate(${labelX - 12}, ${labelY - 12})`}>
-          <title>{type === "parent" ? "Parent / Child" : "Partner"}</title>
+          <title>Partner</title>
           <rect
             x="-4"
             y="-4"

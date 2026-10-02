@@ -156,8 +156,8 @@ export async function exportPng(tree: Tree) {
     ctx.stroke();
     const lx = (x1 + x2) / 2,
       ly = (y1 + y2) / 2;
-    if (r.type === "parent" || r.type === "partner") {
-      const icon = relationshipIcons[r.type];
+    if (r.type === "partner") {
+      const icon = relationshipIcons.partner;
       ctx.save();
       ctx.translate(lx - 12, ly - 12);
       ctx.fillStyle = palette.background;
@@ -173,7 +173,7 @@ export async function exportPng(tree: Tree) {
         ctx.stroke(path);
       }
       ctx.restore();
-    } else {
+    } else if (r.type === "unassigned") {
       const label = relationLabel(r);
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = palette.background;
