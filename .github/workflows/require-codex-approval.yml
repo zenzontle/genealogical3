@@ -79,6 +79,13 @@ jobs:
                 }
               );
 
+              core.info(
+                `Thumbs-up reactions: ` +
+                reactions.map(
+                  r => `${r.user?.login} @ ${r.created_at}`
+                ).join(', ')
+              );
+
               const approval = reactions.find(
                 reaction => reaction.user?.login === codexLogin
               );
