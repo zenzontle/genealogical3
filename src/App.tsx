@@ -54,6 +54,7 @@ import {
   removePerson,
   setHomePerson,
   relationLabel,
+  relationEndpoints,
   relationFromConnection,
   updateRelation,
   uid,
@@ -151,10 +152,14 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
       <div className="person-info">
         <strong>{p.name || "Unnamed person"}</strong>
         {p.nickname && <small>“{p.nickname}”</small>}
-        <span>
-          {dateYearLabel(p.born) || "?"}{" "}
-          {p.died.precision !== "unknown" ? `— ${dateYearLabel(p.died)}` : ""}
-        </span>
+        {(p.born.precision !== "unknown" || p.died.precision !== "unknown") && (
+          <span>
+            {dateYearLabel(p.born)}
+            {p.died.precision !== "unknown"
+              ? `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`
+              : ""}
+          </span>
+        )}
         {age && <span className="person-age">{age}</span>}
         {data.kinship && (
           <span
@@ -172,7 +177,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
       </div>
       {(p.sex === "male" || p.sex === "female") && (
         <span
-          className="person-sex"
+          className={`person-sex sex-${p.sex}`}
           role="img"
           aria-label={p.sex === "male" ? "Male" : "Female"}
           title={p.sex === "male" ? "Male" : "Female"}
@@ -439,13 +444,12 @@ function PersonEditor({
         </p>
       )}
       <fieldset className="sex-field">
-        <legend>
-          Sex <span className="optional">(optional)</span>
-        </legend>
+        <legend>Sex</legend>
         <div className="sex-options">
           {(["male", "female"] as const).map((sex) => (
             <button
               key={sex}
+              className={`sex-${sex}`}
               type="button"
               aria-pressed={person.sex === sex}
               onClick={() =>
@@ -457,13 +461,9 @@ function PersonEditor({
             </button>
           ))}
         </div>
-        <p className="tiny">
-          {person.sex === "other"
-            ? "Other recorded. Choose an option to change it."
-            : person.sex
-              ? "Select again to clear."
-              : "Not recorded."}
-        </p>
+        {person.sex === "other" && (
+          <p className="tiny">Other recorded. Choose an option to change it.</p>
+        )}
       </fieldset>
       <label>
         Notes
@@ -603,6 +603,13 @@ export default function App() {
     () => (tree ? calculateKinships(tree) : new Map<string, KinshipResult>()),
     [tree?.people, tree?.relations, tree?.homePersonId],
   );
+  const relatedPersonIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const relation of tree?.relations || []) {
+      for (const id of relationEndpoints(relation)) ids.add(id);
+    }
+    return ids;
+  }, [tree?.relations]);
   const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -880,7 +887,10 @@ export default function App() {
           person: p,
           homeName: home ? home.name || "Unnamed person" : null,
           isHome: tree.homePersonId === p.id,
-          kinship: kinships.get(p.id),
+          kinship:
+            tree.homePersonId === p.id || relatedPersonIds.has(p.id)
+              ? kinships.get(p.id)
+              : undefined,
           selected: selectedId === p.id,
           onSelect: (id: string) => {
             setSelectedId(id);
@@ -942,6 +952,7 @@ export default function App() {
   }, [
     tree,
     kinships,
+    relatedPersonIds,
     home,
     selectedId,
     selectedRelationId,
