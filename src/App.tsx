@@ -151,10 +151,14 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
       <div className="person-info">
         <strong>{p.name || "Unnamed person"}</strong>
         {p.nickname && <small>“{p.nickname}”</small>}
-        <span>
-          {dateYearLabel(p.born) || "?"}{" "}
-          {p.died.precision !== "unknown" ? `— ${dateYearLabel(p.died)}` : ""}
-        </span>
+        {(p.born.precision !== "unknown" || p.died.precision !== "unknown") && (
+          <span>
+            {dateYearLabel(p.born)}
+            {p.died.precision !== "unknown"
+              ? ` — ${dateYearLabel(p.died)}`
+              : ""}
+          </span>
+        )}
         {age && <span className="person-age">{age}</span>}
         {data.kinship && (
           <span
@@ -172,7 +176,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
       </div>
       {(p.sex === "male" || p.sex === "female") && (
         <span
-          className="person-sex"
+          className={`person-sex sex-${p.sex}`}
           role="img"
           aria-label={p.sex === "male" ? "Male" : "Female"}
           title={p.sex === "male" ? "Male" : "Female"}
@@ -439,13 +443,12 @@ function PersonEditor({
         </p>
       )}
       <fieldset className="sex-field">
-        <legend>
-          Sex <span className="optional">(optional)</span>
-        </legend>
+        <legend>Sex</legend>
         <div className="sex-options">
           {(["male", "female"] as const).map((sex) => (
             <button
               key={sex}
+              className={`sex-${sex}`}
               type="button"
               aria-pressed={person.sex === sex}
               onClick={() =>
@@ -457,13 +460,9 @@ function PersonEditor({
             </button>
           ))}
         </div>
-        <p className="tiny">
-          {person.sex === "other"
-            ? "Other recorded. Choose an option to change it."
-            : person.sex
-              ? "Select again to clear."
-              : "Not recorded."}
-        </p>
+        {person.sex === "other" && (
+          <p className="tiny">Other recorded. Choose an option to change it.</p>
+        )}
       </fieldset>
       <label>
         Notes
@@ -880,7 +879,16 @@ export default function App() {
           person: p,
           homeName: home ? home.name || "Unnamed person" : null,
           isHome: tree.homePersonId === p.id,
-          kinship: kinships.get(p.id),
+          kinship:
+            tree.homePersonId === p.id ||
+            tree.relations.some((r) =>
+              r.type === "parent"
+                ? r.parentId === p.id || r.childId === p.id
+                : r.type === "partner" &&
+                  (r.personA === p.id || r.personB === p.id),
+            )
+              ? kinships.get(p.id)
+              : undefined,
           selected: selectedId === p.id,
           onSelect: (id: string) => {
             setSelectedId(id);
