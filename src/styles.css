@@ -1244,6 +1244,103 @@ h2 {
   border: 2px solid var(--accent);
   box-shadow: 0 0 0 4px var(--focus-ring);
 }
+.person-card.has-home {
+  min-height: 140px;
+}
+.person-card.is-home {
+  box-shadow: inset 0 0 0 1px var(--copper);
+}
+.person-card.is-home.selected {
+  box-shadow:
+    inset 0 0 0 1px var(--copper),
+    0 0 0 4px var(--focus-ring);
+}
+.person-info .person-kinship {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--copper);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 0.5rem;
+}
+.person-kinship svg {
+  flex: none;
+}
+.person-kinship .kinship-label {
+  margin: 0;
+  color: inherit;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-person-details {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.75rem;
+}
+.home-person-details p {
+  margin: 0.75rem 0 0;
+}
+.home-person-details .button {
+  margin-top: 0.5rem;
+}
+.home-person-heading,
+.library-home,
+.canvas-home {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--copper);
+}
+.canvas-home svg,
+.library-home svg {
+  flex: none;
+}
+.canvas-home > span,
+.library-home > span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kinship-details {
+  margin-top: 0.75rem;
+}
+.kinship-details h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.kinship-details details {
+  margin-top: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.kinship-details summary {
+  cursor: pointer;
+}
+.kinship-details ul {
+  padding-left: 1rem;
+}
+.kinship-details li + li {
+  margin-top: 0.5rem;
+}
+.canvas-label {
+  flex-wrap: wrap;
+  max-width: calc(100% - 185px);
+}
+.canvas-home {
+  flex-basis: 100%;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .person-card:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;

@@ -1,5 +1,9 @@
 import type { Tree } from "./model";
-import { assertValidLifeDates, validateTree } from "./model";
+import {
+  assertValidLifeDates,
+  normalizeHomePerson,
+  validateTree,
+} from "./model";
 const scope = "https://www.googleapis.com/auth/drive.file";
 const marker = { app: "GENEalogical3", format: "tree-v1" };
 type TokenResponse = {
@@ -131,13 +135,14 @@ export async function saveDriveTree(
   existingId?: string,
 ): Promise<DriveFile> {
   assertValidLifeDates(tree);
+  const normalized = normalizeHomePerson(tree);
   const metadata = {
     name: `${tree.name.trim() || "Family tree"}.genealogical3.json`,
     mimeType: "application/json",
     appProperties: marker,
   };
   const boundary = `genealogical3-${crypto.randomUUID()}`;
-  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ ...tree, version: 2 })}\r\n--${boundary}--`;
+  const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ ...normalized, version: 2 })}\r\n--${boundary}--`;
   const method = existingId ? "PATCH" : "POST";
   const url = existingId
     ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingId)}?uploadType=multipart&fields=id,name,modifiedTime`
