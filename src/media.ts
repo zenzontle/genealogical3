@@ -9,6 +9,12 @@ import {
 } from "./model";
 import { relationshipIcons } from "./relationshipIcons";
 import { calculateKinships } from "./kinship";
+import {
+  connectorPath,
+  connectorPoints,
+  familyConnectors,
+  partnerGeometry,
+} from "./familyConnectors";
 export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -63,10 +69,23 @@ export async function exportPng(tree: Tree) {
   const cardW = 220,
     cardH = personCardHeight(tree.homePersonId !== null),
     pad = 90;
-  const minX = Math.min(...tree.people.map((p) => p.x)),
-    minY = Math.min(...tree.people.map((p) => p.y));
-  const maxX = Math.max(...tree.people.map((p) => p.x + cardW)),
-    maxY = Math.max(...tree.people.map((p) => p.y + cardH));
+  const size = { width: cardW, height: cardH };
+  const families = familyConnectors(tree.people, tree.relations, size);
+  const points = connectorPoints(families);
+  const groupedIds = new Set(families.flatMap((family) => family.relationIds));
+  const minX = Math.min(
+      ...tree.people.map((p) => p.x),
+      ...points.map((p) => p.x),
+    ),
+    minY = Math.min(...tree.people.map((p) => p.y), ...points.map((p) => p.y));
+  const maxX = Math.max(
+      ...tree.people.map((p) => p.x + cardW),
+      ...points.map((p) => p.x),
+    ),
+    maxY = Math.max(
+      ...tree.people.map((p) => p.y + cardH),
+      ...points.map((p) => p.y),
+    );
   const width = maxX - minX + pad * 2,
     height = maxY - minY + pad * 2;
   const scale = Math.min(
@@ -115,7 +134,20 @@ export async function exportPng(tree: Tree) {
     py = (p: (typeof tree.people)[number]) => p.y - minY + pad;
   ctx.font = "12px system-ui";
   ctx.lineWidth = 2;
+  ctx.save();
+  ctx.translate(pad - minX, pad - minY);
+  ctx.strokeStyle = palette.copper;
+  for (const family of families) {
+    const paths = [
+      family.stem,
+      family.bar,
+      ...family.branches.map((b) => b.points),
+    ];
+    ctx.stroke(new Path2D(paths.map(connectorPath).join(" ")));
+  }
+  ctx.restore();
   for (const r of tree.relations) {
+    if (groupedIds.has(r.id)) continue;
     const a = at(r.type === "parent" ? r.parentId : r.personA),
       b = at(r.type === "parent" ? r.childId : r.personB);
     const anchor = (side: "top" | "bottom" | "left" | "right") =>
@@ -150,12 +182,22 @@ export async function exportPng(tree: Tree) {
         : r.type === "partner"
           ? palette.partner
           : palette.muted;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.bezierCurveTo(x1, (y1 + y2) / 2, x2, (y1 + y2) / 2, x2, y2);
-    ctx.stroke();
-    const lx = (x1 + x2) / 2,
+    let lx = (x1 + x2) / 2,
       ly = (y1 + y2) / 2;
+    if (r.type === "partner") {
+      const geometry = partnerGeometry(a, b, size);
+      ctx.save();
+      ctx.translate(pad - minX, pad - minY);
+      ctx.stroke(new Path2D(geometry.path));
+      ctx.restore();
+      lx = geometry.midpoint.x - minX + pad;
+      ly = geometry.midpoint.y - minY + pad;
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(x1, (y1 + y2) / 2, x2, (y1 + y2) / 2, x2, y2);
+      ctx.stroke();
+    }
     if (r.type === "partner") {
       const icon = relationshipIcons.partner;
       ctx.save();

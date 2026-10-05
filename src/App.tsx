@@ -5,13 +5,11 @@ import {
   ConnectionMode,
   Controls,
   Handle,
-  MarkerType,
   Position,
   type Connection,
   type Edge,
   type Node,
   type NodeProps,
-  useEdgesState,
   useNodesState,
 } from "@xyflow/react";
 import {
@@ -41,6 +39,8 @@ import { BrandMark } from "./BrandMark";
 import { SexIcon } from "./SexIcon";
 import { RelationshipFields } from "./RelationshipFields";
 import { RelationshipEdge } from "./RelationshipEdge";
+import { FamilyEdge } from "./FamilyEdge";
+import { relationshipEdges } from "./relationshipEdges";
 import { HomePersonDetails } from "./HomePersonDetails";
 import { calculateKinships, type KinshipResult } from "./kinship";
 import {
@@ -189,7 +189,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
   );
 }
 const nodeTypes = { person: PersonCard };
-const edgeTypes = { relationship: RelationshipEdge };
+const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = "saved" | "saving" | "error";
 type ConnectMode = "parent" | "child" | "partner" | null;
@@ -626,7 +626,6 @@ export default function App() {
   const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
-  const [edges, setEdges] = useEdgesState<Edge>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
     treeRef = useRef<Tree | null>(null),
@@ -901,64 +900,16 @@ export default function App() {
         draggable: true,
       })),
     );
-    setEdges(
-      tree.relations.map((r) => ({
-        id: r.id,
-        source: r.type === "parent" ? r.parentId : r.personA,
-        target: r.type === "parent" ? r.childId : r.personB,
-        sourceHandle:
-          r.type === "parent"
-            ? "bottom"
-            : r.type === "unassigned"
-              ? r.sourceHandle
-              : "right",
-        targetHandle:
-          r.type === "parent"
-            ? "top"
-            : r.type === "unassigned"
-              ? r.targetHandle
-              : "left",
-        type: "relationship",
-        data: { relationshipType: r.type },
-        ariaLabel: relationLabel(r),
-        label: relationLabel(r),
-        markerEnd:
-          r.type === "parent"
-            ? {
-                type: MarkerType.ArrowClosed,
-                color: "var(--copper)",
-                width: 14,
-                height: 14,
-              }
-            : undefined,
-        style: {
-          stroke:
-            r.type === "parent"
-              ? "var(--copper)"
-              : r.type === "partner"
-                ? "var(--partner)"
-                : "var(--text-muted)",
-          strokeWidth: selectedRelationId === r.id ? 3 : 2,
-        },
-        labelStyle: {
-          fill: "var(--text-muted)",
-          fontSize: 11,
-          fontWeight: 600,
-        },
-        labelBgStyle: { fill: "var(--bg)", fillOpacity: 0.96 },
-        selectable: true,
-      })),
-    );
-  }, [
-    tree,
-    kinships,
-    relatedPersonIds,
-    home,
-    selectedId,
-    selectedRelationId,
-    setNodes,
-    setEdges,
-  ]);
+  }, [tree, kinships, relatedPersonIds, home, selectedId, setNodes]);
+  const edges = useMemo<Edge[]>(() => {
+    if (!tree) return [];
+    const positions = new Map(nodes.map((node) => [node.id, node.position]));
+    return relationshipEdges(tree, positions, selectedRelationId, (id) => {
+      setSelectedId(id);
+      setSelectedRelationId(null);
+      setMobilePanel(true);
+    });
+  }, [tree, nodes, selectedRelationId]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
@@ -1598,6 +1549,13 @@ export default function App() {
                     flowRef.current = instance;
                   }}
                   onEdgeClick={(_, edge) => {
+                    if (edge.type === "family") {
+                      if (!edge.data?.childId) return;
+                      setSelectedId(String(edge.data.childId));
+                      setSelectedRelationId(null);
+                      setMobilePanel(true);
+                      return;
+                    }
                     setSelectedRelationId(edge.id);
                     setSelectedId(null);
                     setMobilePanel(true);
