@@ -52,6 +52,16 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe("home designation in browser storage", () => {
+  it("persists explicit life status even when the death date is unknown", async () => {
+    browserStorage([]);
+    const person = { ...makePerson("A"), lifeStatus: "deceased" as const };
+    const tree = { ...makeTree(), people: [person] };
+    await saveTree(tree);
+    expect((await getTree(tree.id))!.people[0]).toEqual(person);
+    expect((await listTrees())[0].people[0].lifeStatus).toBe("deceased");
+    await saveTree({ ...tree, people: [{ ...person, lifeStatus: "living" }] });
+    expect((await getTree(tree.id))!.people[0].lifeStatus).toBe("living");
+  });
   it("opens legacy full names in separate fields without mutating stored records", async () => {
     const {
       firstName: _first,

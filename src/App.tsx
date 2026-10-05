@@ -46,17 +46,21 @@ import {
   type KinshipResult,
 } from "./kinship";
 import { setPersonName } from "./personNames";
-import { personPositionAtViewCenter } from "./canvasPosition";
+import {
+  movePeopleToPositions,
+  personPositionAtViewCenter,
+} from "./canvasPosition";
+import { useConnectorProximity } from "./useConnectorProximity";
 import {
   addRelation,
   lifeDatesError,
   makePerson,
   makeTree,
   personCardHeight,
+  personLifeStatus,
   removePerson,
   setHomePerson,
   relationLabel,
-  relationEndpoints,
   relationFromConnection,
   updateRelation,
   uid,
@@ -200,7 +204,7 @@ function PersonEditor({
   kinship?: KinshipResult;
   onSetHome: (id: string | null) => void;
   dates: LifeDates;
-  onDatesChange: (field: "born" | "died", date: DateValue) => void;
+  onDatesChange: (changes: Partial<LifeDates>) => void;
   relations: Relation[];
   people: Person[];
   onChange: (p: Person) => void;
@@ -334,23 +338,47 @@ function PersonEditor({
           placeholder="Nickname"
         />
       </label>
+      <label>
+        Status
+        <select
+          value={personLifeStatus(dates)}
+          onChange={(event) => {
+            const lifeStatus =
+              event.target.value === "living" ? "living" : "deceased";
+            onDatesChange({
+              lifeStatus,
+              ...(lifeStatus === "living"
+                ? { died: { precision: "unknown" as const } }
+                : {}),
+            });
+          }}
+        >
+          <option value="" disabled>
+            Choose status
+          </option>
+          <option value="living">Living</option>
+          <option value="deceased">Deceased</option>
+        </select>
+      </label>
       <div className="field-grid">
         <DateInput
           key={`${person.id}-born`}
           label="Born"
           value={dates.born}
-          onChange={(born) => onDatesChange("born", born)}
+          onChange={(born) => onDatesChange({ born })}
           invalid={!!dateError}
           errorId={dateErrorId}
         />
-        <DateInput
-          key={`${person.id}-died`}
-          label="Died"
-          value={dates.died}
-          onChange={(died) => onDatesChange("died", died)}
-          invalid={!!dateError}
-          errorId={dateErrorId}
-        />
+        {personLifeStatus(dates) === "deceased" && (
+          <DateInput
+            key={`${person.id}-died`}
+            label="Died"
+            value={dates.died}
+            onChange={(died) => onDatesChange({ died })}
+            invalid={!!dateError}
+            errorId={dateErrorId}
+          />
+        )}
       </div>
       {dateError && (
         <p className="date-error" id={dateErrorId} role="alert">
@@ -526,13 +554,6 @@ export default function App() {
     () => (tree ? calculateKinships(tree) : new Map<string, KinshipResult>()),
     [tree?.people, tree?.relations, tree?.homePersonId],
   );
-  const relatedPersonIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const relation of tree?.relations || []) {
-      for (const id of relationEndpoints(relation)) ids.add(id);
-    }
-    return ids;
-  }, [tree?.relations]);
   const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -560,6 +581,7 @@ export default function App() {
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
+  useConnectorProximity(canvasRef, screen === "editor");
   const showError = (error: unknown) =>
     setNotice(error instanceof Error ? error.message : "Something went wrong.");
   const refreshLibrary = async () => {
@@ -624,6 +646,7 @@ export default function App() {
         (window.innerWidth < 700 ||
           (found.viewport.x === 0 && found.viewport.y === 0));
       setTree(found);
+      setNodes([]);
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
@@ -660,16 +683,16 @@ export default function App() {
       showError(error);
     }
   };
-  const editDate = (
-    personId: string,
-    field: "born" | "died",
-    value: DateValue,
-  ) => {
+  const editLifeDates = (personId: string, changes: Partial<LifeDates>) => {
     const current = treeRef.current?.people.find((p) => p.id === personId);
     if (!current) return;
     const dates = {
-      ...(dateDrafts[personId] || { born: current.born, died: current.died }),
-      [field]: value,
+      ...(dateDrafts[personId] || {
+        born: current.born,
+        died: current.died,
+        lifeStatus: personLifeStatus(current) || undefined,
+      }),
+      ...changes,
     };
     setDateDrafts((previous) => {
       const next = { ...previous };
@@ -837,19 +860,21 @@ export default function App() {
   });
   useEffect(() => {
     if (!tree) return;
-    setNodes(
-      tree.people.map((p) => ({
+    setNodes((currentNodes) => {
+      const existing = new Map(currentNodes.map((node) => [node.id, node]));
+      return tree.people.map((p) => ({
+        ...existing.get(p.id),
         id: p.id,
         type: "person",
-        position: { x: p.x, y: p.y },
+        selected: existing.get(p.id)?.selected ?? selectedId === p.id,
+        position: movingRef.current
+          ? existing.get(p.id)?.position || { x: p.x, y: p.y }
+          : { x: p.x, y: p.y },
         data: {
           person: p,
           homeName: home ? home.name || "Unnamed person" : null,
           isHome: tree.homePersonId === p.id,
-          kinship:
-            tree.homePersonId === p.id || relatedPersonIds.has(p.id)
-              ? kinships.get(p.id)
-              : undefined,
+          kinship: kinships.get(p.id),
           selected: selectedId === p.id,
           onDelete: deletePerson,
           onSelect: (id: string) => {
@@ -859,9 +884,9 @@ export default function App() {
           },
         },
         draggable: true,
-      })),
-    );
-  }, [tree, kinships, relatedPersonIds, home, selectedId, setNodes]);
+      }));
+    });
+  }, [tree, kinships, home, selectedId, setNodes]);
   const edges = useMemo<Edge[]>(() => {
     if (!tree) return [];
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
@@ -1030,14 +1055,12 @@ export default function App() {
     setSelectedId(null);
     setMobilePanel(false);
   };
-  const onNodeDragStop = (_: unknown, node: PersonNode) => {
+  const saveMovedNodes = (movedNodes: PersonNode[]) => {
     movingRef.current = false;
-    apply((t) => ({
-      ...t,
-      people: t.people.map((p) =>
-        p.id === node.id ? { ...p, x: node.position.x, y: node.position.y } : p,
-      ),
-    }));
+    const current = treeRef.current;
+    if (!current) return;
+    const next = movePeopleToPositions(current, movedNodes);
+    if (next !== current) apply(() => next);
   };
   const onViewportEnd = (
     _: unknown,
@@ -1522,7 +1545,15 @@ export default function App() {
                   onNodeDragStart={() => {
                     movingRef.current = true;
                   }}
-                  onNodeDragStop={onNodeDragStop}
+                  onNodeDragStop={(_, node, movedNodes) =>
+                    saveMovedNodes(movedNodes.length ? movedNodes : [node])
+                  }
+                  onSelectionDragStart={() => {
+                    movingRef.current = true;
+                  }}
+                  onSelectionDragStop={(_, movedNodes) =>
+                    saveMovedNodes(movedNodes)
+                  }
                   onMoveEnd={onViewportEnd}
                   onInit={(instance) => {
                     flowRef.current = instance;
@@ -1550,6 +1581,7 @@ export default function App() {
                   fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
                   nodesDraggable
                   elementsSelectable
+                  multiSelectionKeyCode={["Shift", "Meta", "Control"]}
                   selectionOnDrag={false}
                   deleteKeyCode={null}
                   proOptions={{ hideAttribution: false }}
@@ -1590,8 +1622,8 @@ export default function App() {
                   kinship={kinships.get(selected.id)}
                   onSetHome={(id) => apply((t) => setHomePerson(t, id))}
                   dates={dateDrafts[selected.id] || selected}
-                  onDatesChange={(field, date) =>
-                    editDate(selected.id, field, date)
+                  onDatesChange={(changes) =>
+                    editLifeDates(selected.id, changes)
                   }
                   relations={tree!.relations}
                   people={tree!.people}

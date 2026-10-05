@@ -1453,15 +1453,29 @@ h2 {
   border: 2px solid var(--surface-raised) !important;
   background: var(--accent) !important;
   box-shadow: 0 0 0 1px var(--accent) !important;
-  opacity: 0.75;
+  opacity: var(--connector-opacity, 0);
+  transition: opacity 120ms ease-out;
 }
 .partner-handle {
   background: var(--partner) !important;
   box-shadow: 0 0 0 1px var(--partner) !important;
 }
 .person-card:hover .family-handle,
-.person-card.selected .family-handle {
+.person-card:focus-visible .family-handle,
+.react-flow__node:focus-visible .family-handle,
+.family-handle.connectingfrom,
+.family-handle.connectingto {
   opacity: 1;
+}
+@media (hover: none) {
+  .family-handle {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .family-handle {
+    transition: none;
+  }
 }
 .react-flow__handle-top,
 .react-flow__handle-bottom {

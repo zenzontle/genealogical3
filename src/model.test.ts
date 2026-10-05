@@ -7,6 +7,8 @@ import {
   makePerson,
   makeTree,
   personAgeLabel,
+  personLifeLabel,
+  personLifeStatus,
   relationFromConnection,
   relationLabel,
   setRelationParent,
@@ -200,17 +202,21 @@ describe("person ages", () => {
   const today = new Date(2026, 8, 30);
   it("uses completed birthdays and stops at the death date", () => {
     const person = makePerson();
+    person.lifeStatus = "living";
     person.born = { precision: "full", value: "1987-10-09" };
     expect(personAgeLabel(person, today)).toBe("Age 38");
     expect(personAgeLabel(person, new Date(2026, 9, 9))).toBe("Age 39");
     person.died = { precision: "full", value: "2020-10-08" };
+    person.lifeStatus = "deceased";
     expect(personAgeLabel(person, today)).toBe("Died at 32");
   });
   it("preserves uncertainty for year-only dates", () => {
     const person = makePerson();
+    person.lifeStatus = "living";
     person.born = { precision: "year", year: 1987 };
     expect(personAgeLabel(person, today)).toBe("Age 38–39");
     person.died = { precision: "year", year: 2020 };
+    person.lifeStatus = "deceased";
     expect(personAgeLabel(person, today)).toBe("Died at 32–33");
   });
   it("omits age for unknown births or dates before birth", () => {
@@ -221,6 +227,51 @@ describe("person ages", () => {
     person.born = { precision: "full", value: "1987-10-09" };
     person.died = { precision: "full", value: "1980-01-01" };
     expect(personAgeLabel(person, today)).toBe("");
+  });
+});
+
+describe("living and deceased status", () => {
+  it("infers only recorded deaths in legacy records and prompts for new people", () => {
+    const person = makePerson();
+    expect(personLifeStatus(person)).toBe("");
+    const tree = { ...makeTree(), people: [person] };
+    expect(validateTree(JSON.parse(JSON.stringify(tree)))).toEqual(tree);
+    person.died = { precision: "year", year: 2011 };
+    expect(personLifeStatus(validateTree(tree).people[0])).toBe("deceased");
+    expect(personLifeLabel(person)).toBe("Died 2011");
+  });
+
+  it("doesn't estimate a current age for deceased or unclassified people", () => {
+    const person = makePerson();
+    person.born = { precision: "year", year: 1930 };
+    const today = new Date(2026, 9, 5);
+    expect(personAgeLabel(person, today)).toBe("");
+    person.lifeStatus = "deceased";
+    expect(personAgeLabel(person, today)).toBe("");
+    expect(personLifeLabel(person)).toBe("1930 — Deceased");
+    person.lifeStatus = "living";
+    expect(personAgeLabel(person, today)).toBe("Age 95–96");
+    expect(personLifeLabel(person)).toBe("1930");
+  });
+
+  it("round-trips both statuses and rejects invalid or contradictory records", async () => {
+    const person = makePerson();
+    const tree = { ...makeTree(), people: [person] };
+    for (const status of ["living", "deceased"] as const) {
+      person.lifeStatus = status;
+      expect(validateTree(JSON.parse(JSON.stringify(tree)))).toEqual(tree);
+      expect(personLifeLabel(person)).toBe(
+        status === "living" ? "Living" : "Deceased",
+      );
+    }
+    for (const status of [null, "unknown", 1, { value: "living" }])
+      expect(() =>
+        validateTree({ ...tree, people: [{ ...person, lifeStatus: status }] }),
+      ).toThrow(/invalid person/);
+    person.lifeStatus = "living";
+    person.died = { precision: "year", year: 2011 };
+    expect(() => validateTree(tree)).toThrow(/Living people cannot/);
+    expect(() => saveTree(tree)).toThrow(/Living people cannot/);
   });
 });
 
