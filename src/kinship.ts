@@ -65,17 +65,19 @@ function familyLabel(up: number, down: number, sex: Person["sex"]): string {
           : ` ${removed} times removed`;
   return `${ordinal(Math.min(up, down) - 1)} cousin${removal}`;
 }
+export function partnerKinshipLabel(
+  r: Extract<Relation, { type: "partner" }>,
+  sex: Person["sex"],
+): string {
+  const term =
+    r.union === "married" ? terms(sex, "husband", "wife", "spouse") : "partner";
+  return r.status === "former"
+    ? `${r.union === "married" ? "ex-" : "former "}${term}`
+    : term;
+}
 function stepLabel(step: KinshipStep, sex: Person["sex"]): string {
   const r = step.relation;
-  if (r.type === "partner") {
-    const term =
-      r.union === "married"
-        ? terms(sex, "husband", "wife", "spouse")
-        : "partner";
-    return r.status === "former"
-      ? `${r.union === "married" ? "ex-" : "former "}${term}`
-      : term;
-  }
+  if (r.type === "partner") return partnerKinshipLabel(r, sex);
   if (r.kind === "guardian")
     return step.direction === "up" ? "guardian" : "ward";
   const term =

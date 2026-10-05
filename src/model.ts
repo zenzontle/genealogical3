@@ -1,3 +1,5 @@
+import { normalizePersonNames, splitPersonName } from "./personNames";
+
 export type DateValue =
   | { precision: "unknown" }
   | { precision: "year"; year: number }
@@ -5,6 +7,8 @@ export type DateValue =
 export type Person = {
   id: string;
   name: string;
+  firstName: string;
+  lastName: string;
   nickname: string;
   born: DateValue;
   died: DateValue;
@@ -60,6 +64,7 @@ export const unknownDate = (): DateValue => ({ precision: "unknown" });
 export const makePerson = (name = "New person", x = 0, y = 0): Person => ({
   id: uid(),
   name,
+  ...splitPersonName(name),
   nickname: "",
   born: unknownDate(),
   died: unknownDate(),
@@ -388,6 +393,8 @@ export function validateTree(input: unknown): Tree {
       typeof p.id !== "string" ||
       ids.has(p.id) ||
       typeof p.name !== "string" ||
+      ((p.firstName !== undefined || p.lastName !== undefined) &&
+        (typeof p.firstName !== "string" || typeof p.lastName !== "string")) ||
       typeof p.nickname !== "string" ||
       !isDate(p.born) ||
       !isDate(p.died) ||
@@ -409,11 +416,13 @@ export function validateTree(input: unknown): Tree {
     if (error) throw Error(`${p.name || "Unnamed person"}: ${error}`);
   }
   const relIds = new Set<string>();
-  let checked: Tree = normalizeHomePerson({
-    ...(input as Tree),
-    version: 2,
-    relations: [],
-  });
+  let checked: Tree = normalizePersonNames(
+    normalizeHomePerson({
+      ...(input as Tree),
+      version: 2,
+      relations: [],
+    }),
+  );
   for (const r of input.relations) {
     if (!isObj(r) || typeof r.id !== "string" || relIds.has(r.id))
       throw Error("This file contains an invalid relationship.");

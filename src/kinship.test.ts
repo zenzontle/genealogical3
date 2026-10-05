@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateKinships, describeKinshipPath } from "./kinship";
+import {
+  calculateKinships,
+  describeKinshipPath,
+  partnerKinshipLabel,
+} from "./kinship";
 import {
   makePerson,
   makeTree,
@@ -46,6 +50,27 @@ function family() {
 }
 
 describe("kinship relative to home", () => {
+  it("updates wife/husband labels in both directions as sex, union, status and home change", () => {
+    const f = family();
+    f.home.sex = "male";
+    const spouse = f.person("Spouse", "female");
+    f.partner(f.home, spouse);
+    const link = f.tree.relations[0] as Extract<Relation, { type: "partner" }>;
+    expect(f.label(spouse)).toBe("Wife");
+    expect(partnerKinshipLabel(link, spouse.sex)).toBe("wife");
+    f.tree.homePersonId = spouse.id;
+    expect(f.label(f.home)).toBe("Husband");
+    f.home.sex = "other";
+    expect(f.label(f.home)).toBe("Spouse");
+    link.status = "former";
+    expect(f.label(f.home)).toBe("Ex-spouse");
+    expect(partnerKinshipLabel(link, spouse.sex)).toBe("ex-wife");
+    link.status = "current";
+    link.union = "unmarried";
+    expect(f.label(f.home)).toBe("Partner");
+    link.union = "unspecified";
+    expect(f.label(f.home)).toBe("Partner");
+  });
   it("calculates ancestors, descendants, siblings, aunts, nieces, and cousins", () => {
     const f = family();
     const mother = f.person("Mother", "female"),
