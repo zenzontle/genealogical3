@@ -865,11 +865,29 @@ export default function App() {
   const edges = useMemo<Edge[]>(() => {
     if (!tree) return [];
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
-    return relationshipEdges(tree, positions, selectedRelationId, (id) => {
-      setSelectedId(id);
-      setSelectedRelationId(null);
-      setMobilePanel(true);
-    });
+    const sizes = new Map(
+      nodes.flatMap((node) =>
+        node.measured?.width && node.measured.height
+          ? [
+              [
+                node.id,
+                { width: node.measured.width, height: node.measured.height },
+              ] as const,
+            ]
+          : [],
+      ),
+    );
+    return relationshipEdges(
+      tree,
+      positions,
+      selectedRelationId,
+      (id) => {
+        setSelectedId(id);
+        setSelectedRelationId(null);
+        setMobilePanel(true);
+      },
+      sizes,
+    );
   }, [tree, nodes, selectedRelationId]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =

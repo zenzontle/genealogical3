@@ -3,7 +3,9 @@ import {
   connectorPath,
   familyConnectors,
   type Point,
+  type CardSize,
 } from "./familyConnectors";
+import { connectionHandles } from "./connectionHandles";
 import { personCardHeight, relationLabel, type Tree } from "./model";
 
 export function relationshipEdges(
@@ -11,11 +13,26 @@ export function relationshipEdges(
   positions: Map<string, Point>,
   selectedRelationId: string | null,
   onSelectChild: (id: string) => void,
+  sizes: Map<string, CardSize> = new Map(),
 ): Edge[] {
+  const people = tree.people.map((p) => ({
+    ...p,
+    ...(positions.get(p.id) || {}),
+  }));
+  const byId = new Map(
+    people.map((p) => {
+      const size = sizes.get(p.id) || {
+        width: 220,
+        height: personCardHeight(tree.homePersonId !== null),
+      };
+      return [p.id, { x: p.x + size.width / 2, y: p.y + size.height / 2 }];
+    }),
+  );
   const families = familyConnectors(
-    tree.people.map((p) => ({ ...p, ...(positions.get(p.id) || {}) })),
+    people,
     tree.relations,
     { width: 220, height: personCardHeight(tree.homePersonId !== null) },
+    sizes,
   );
   const groupedIds = new Set(families.flatMap((family) => family.relationIds));
   const names = new Map(tree.people.map((p) => [p.id, p.name]));
@@ -25,18 +42,11 @@ export function relationshipEdges(
       id: r.id,
       source: r.type === "parent" ? r.parentId : r.personA,
       target: r.type === "parent" ? r.childId : r.personB,
-      sourceHandle:
-        r.type === "parent"
-          ? "bottom"
-          : r.type === "unassigned"
-            ? r.sourceHandle
-            : "right",
-      targetHandle:
-        r.type === "parent"
-          ? "top"
-          : r.type === "unassigned"
-            ? r.targetHandle
-            : "left",
+      ...connectionHandles(
+        r,
+        byId.get(r.type === "parent" ? r.parentId : r.personA)!,
+        byId.get(r.type === "parent" ? r.childId : r.personB)!,
+      ),
       type: "relationship",
       data: { relationshipType: r.type },
       ariaLabel: relationLabel(r),
@@ -55,9 +65,14 @@ export function relationshipEdges(
       selectable: true,
     }));
   const familyEdges: Edge[] = families.flatMap((family) => {
+    const handles = connectionHandles(
+      family.partner,
+      byId.get(family.partner.personA)!,
+      byId.get(family.partner.personB)!,
+    );
     const base = {
       source: family.partner.personA,
-      sourceHandle: "right",
+      sourceHandle: handles.sourceHandle,
       type: "family",
       selectable: false,
       focusable: false,
@@ -69,7 +84,7 @@ export function relationshipEdges(
       ...base,
       id: `family:${family.partner.id}:${branch.childId}`,
       target: branch.childId,
-      targetHandle: "top",
+      targetHandle: branch.targetHandle,
       focusable: true,
       className: "family-branch",
       ariaRole: "button",
@@ -91,9 +106,11 @@ export function relationshipEdges(
         ...base,
         id: `family:${family.partner.id}`,
         target: family.partner.personB,
-        targetHandle: "left",
+        targetHandle: handles.targetHandle,
         data: {
-          path: `${connectorPath(family.stem)} ${connectorPath(family.bar)}`,
+          path: [family.stem, family.bar, ...family.additionalPaths]
+            .map(connectorPath)
+            .join(" "),
         },
         style: { ...base.style, pointerEvents: "none" },
         domAttributes: { "aria-hidden": true },

@@ -100,17 +100,40 @@ describe("shared connectors in PNG exports", () => {
       const expected = [
         family.stem,
         family.bar,
+        ...family.additionalPaths,
         ...family.branches.map((branch) => branch.points),
       ]
         .map(connectorPath)
         .join(" ");
       expect(ctx.stroke.mock.calls[0][0]).toEqual({ path: expected });
       expect(ctx.bezierCurveTo).not.toHaveBeenCalled();
-      expect(ctx.translate).toHaveBeenCalledWith(90, 222);
+      expect(ctx.translate).toHaveBeenCalledWith(90, 190);
       expect(canvas.width).toBe((620 + 180) * 2);
-      expect(canvas.height).toBe((260 + height + 132 + 180) * 2);
+      expect(canvas.height).toBe((260 + height + 100 + 180) * 2);
       expect(anchor.click).toHaveBeenCalledOnce();
       expect(tree).toEqual(original);
+      c.name =
+        "Jorge Alejandro Maximiliano Sebastián Fernández Villaseñor Montemayor Valderrama Santamaría Domínguez";
+      ctx.fillText.mockClear();
+      ctx.roundRect.mockClear();
+      await exportPng(tree);
+      const nameRows = ctx.fillText.mock.calls.filter(([text]) =>
+        c.name.split(" ").some((word) => text.includes(word)),
+      );
+      expect(nameRows.map(([text]) => text).join(" ")).toBe(c.name);
+      expect(nameRows.every((args) => args.length === 3)).toBe(true);
+      expect(nameRows.length).toBeGreaterThan(1);
+      expect(
+        nameRows.every(([text, x]) => Math.abs(x + text.length * 3 - 200) < 1),
+      ).toBe(true);
+      const card = ctx.roundRect.mock.calls.find(
+        ([x, y]) => x === 90 && y === 90,
+      )!;
+      expect(card[3]).toBeGreaterThan(height);
+      expect(nameRows.every(([, , y]) => y >= card[1] + 72)).toBe(true);
+      expect(nameRows.every(([, , y]) => y < card[1] + card[3] - 20)).toBe(
+        true,
+      );
     },
   );
 });

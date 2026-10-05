@@ -41,6 +41,8 @@ Person details store separate first and last names; cards and exports show the c
 
 **Add person** places the new card in the center of the current canvas view, preserving pan and zoom. Relative buttons place new cards next to the selected relative. Selecting a card reveals a delete icon beside it; deleting uses the same confirmation and undo history as the sidebar action.
 
+Cards center a compact portrait above the full name, giving each text line the full card width and growing taller as needed. PNG snapshots use the same arrangement and also wrap complete names. Moving cards automatically connects partners from the facing left/right sides and parents/children from the facing top/bottom sides. Shared sibling bars follow the measured card sizes and support children above or below their parents; children on both sides use separate bars. Unassigned connections retain their chosen handles.
+
 ## Home person and kinship
 
 Select a person and choose **Set as home person** to mark whom the tree is about. Each tree can have one home person or none. Setting someone else replaces the designation; **Clear home person** removes it. These actions support undo/redo. Deleting home clears the designation along with their relationships, and undo restores both. Setting home leaves the canvas position and selection unchanged; opening a tree keeps the existing viewport behavior.
