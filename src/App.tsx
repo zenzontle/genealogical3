@@ -192,7 +192,7 @@ const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = "saved" | "saving" | "error";
-type RelativeType = "parent" | "child" | "partner";
+type ConnectMode = "parent" | "child" | "partner" | null;
 function DateInput({
   label,
   value,
@@ -288,6 +288,9 @@ function PersonEditor({
   onChange,
   onDelete,
   onAddRelative,
+  connectMode,
+  setConnectMode,
+  onConnectTo,
   onRemoveRelation,
   onUpdateRelation,
   onClose,
@@ -302,7 +305,10 @@ function PersonEditor({
   people: Person[];
   onChange: (p: Person) => void;
   onDelete: () => void;
-  onAddRelative: (type: RelativeType) => void;
+  onAddRelative: (type: Exclude<ConnectMode, null>) => void;
+  connectMode: ConnectMode;
+  setConnectMode: (mode: ConnectMode) => void;
+  onConnectTo: (targetId: string) => void;
   onRemoveRelation: (id: string) => void;
   onUpdateRelation: (relation: Relation) => void;
   onClose: () => void;
@@ -521,6 +527,67 @@ function PersonEditor({
             + Partner
           </button>
         </div>
+        <div className="connect-box">
+          <p>Connect to someone already in this tree</p>
+          <div className="field-grid">
+            <select
+              aria-label="Connection role"
+              value={
+                connectMode === "partner"
+                  ? "partner"
+                  : connectMode
+                    ? "parent-child"
+                    : ""
+              }
+              onChange={(e) =>
+                setConnectMode(
+                  e.target.value === "parent-child"
+                    ? "child"
+                    : e.target.value === "partner"
+                      ? "partner"
+                      : null,
+                )
+              }
+            >
+              <option value="">Choose relationship</option>
+              <option value="parent-child">Parent / Child</option>
+              <option value="partner">Partner</option>
+            </select>
+            {(connectMode === "parent" || connectMode === "child") && (
+              <label>
+                Parent in this connection
+                <select
+                  aria-label="Parent in new connection"
+                  value={connectMode}
+                  onChange={(e) =>
+                    setConnectMode(e.target.value as ConnectMode)
+                  }
+                >
+                  <option value="child">{person.name || "This person"}</option>
+                  <option value="parent">Person being connected</option>
+                </select>
+              </label>
+            )}
+            <select
+              aria-label="Person to connect"
+              disabled={!connectMode}
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) onConnectTo(e.target.value);
+                e.target.value = "";
+              }}
+            >
+              <option value="">Choose person…</option>
+              {people
+                .filter((p) => p.id !== person.id)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
       </section>
       <button className="button danger" onClick={onDelete}>
         <Trash2 size={16} /> Delete person
@@ -556,6 +623,7 @@ export default function App() {
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
+  const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
   const [edges, setEdges] = useEdgesState<Edge>([]);
@@ -689,7 +757,7 @@ export default function App() {
         ),
       }));
   };
-  const addPerson = (relative?: RelativeType) => {
+  const addPerson = (relative?: Exclude<ConnectMode, null>) => {
     const current = treeRef.current;
     if (!current) return;
     const selected = current.people.find((p) => p.id === selectedId);
@@ -751,6 +819,28 @@ export default function App() {
       th as HandleSide,
     );
     apply((t) => addRelation(t, relation));
+  };
+  const connectFromPanel = (targetId: string) => {
+    if (!selectedId || !connectMode) return;
+    const r: Relation =
+      connectMode === "partner"
+        ? {
+            id: uid(),
+            type: "partner",
+            personA: selectedId,
+            personB: targetId,
+            status: "unspecified",
+            union: "unspecified",
+          }
+        : {
+            id: uid(),
+            type: "parent",
+            parentId: connectMode === "parent" ? targetId : selectedId,
+            childId: connectMode === "child" ? targetId : selectedId,
+            kind: "unspecified",
+          };
+    apply((t) => addRelation(t, r));
+    setConnectMode(null);
   };
   const undo = () => {
     const previous = history.current.pop();
@@ -1591,6 +1681,9 @@ export default function App() {
                     setSelectedId(null);
                   }}
                   onAddRelative={addPerson}
+                  connectMode={connectMode}
+                  setConnectMode={setConnectMode}
+                  onConnectTo={connectFromPanel}
                   onRemoveRelation={(id) =>
                     apply((t) => ({
                       ...t,
