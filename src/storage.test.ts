@@ -52,6 +52,26 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe("home designation in browser storage", () => {
+  it("opens legacy full names in separate fields without mutating stored records", async () => {
+    const {
+      firstName: _first,
+      lastName: _last,
+      ...person
+    } = makePerson("Ada Lovelace");
+    const tree = { ...makeTree(), people: [person] };
+    const storage = browserStorage([tree]);
+    expect((await getTree(tree.id))!.people[0]).toMatchObject({
+      firstName: "Ada",
+      lastName: "Lovelace",
+    });
+    expect((await listTrees())[0].people[0]).toMatchObject({
+      firstName: "Ada",
+      lastName: "Lovelace",
+    });
+    expect(storage.records.get(tree.id)).toEqual(tree);
+    expect(storage.put).not.toHaveBeenCalled();
+  });
+
   it("normalizes legacy reads without rewriting records or timestamps", async () => {
     const { homePersonId: _home, ...legacy } = makeTree();
     const storage = browserStorage([legacy]);

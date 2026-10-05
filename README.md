@@ -37,6 +37,10 @@ Trees are stored in IndexedDB on the current browser and origin. Clearing browse
 
 The portable JSON format is versioned (`version: 2`); version 1 backups remain importable. Its document has a tree ID and name, people with stable IDs, optional fields and positions, an optional home designation (`homePersonId`, stored as a person ID or `null`), directed parent relationships, symmetric partner relationships, unassigned connections with their original handles, and viewport coordinates. Older backups and local trees without a home field open with no designation. Drive metadata and authorization stay outside the portable document.
 
+Person details store separate first and last names; cards and exports show the combined name. Older full names open with the first word in First name and the remaining words in Last name, which you can adjust for compound names. Existing display names are preserved until edited. Relationships in the sidebar start collapsed for each person. Expand them to edit links; married partners show Wife, Husband, or Spouse based on recorded sex, with ex qualifiers for former marriages. Choose **Married** under **Union type** to establish a spouse relationship.
+
+**Add person** places the new card in the center of the current canvas view, preserving pan and zoom. Relative buttons place new cards next to the selected relative. Selecting a card reveals a delete icon beside it; deleting uses the same confirmation and undo history as the sidebar action.
+
 ## Home person and kinship
 
 Select a person and choose **Set as home person** to mark whom the tree is about. Each tree can have one home person or none. Setting someone else replaces the designation; **Clear home person** removes it. These actions support undo/redo. Deleting home clears the designation along with their relationships, and undo restores both. Setting home leaves the canvas position and selection unchanged; opening a tree keeps the existing viewport behavior.

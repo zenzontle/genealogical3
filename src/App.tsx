@@ -4,12 +4,9 @@ import {
   Background,
   ConnectionMode,
   Controls,
-  Handle,
-  Position,
   type Connection,
   type Edge,
-  type Node,
-  type NodeProps,
+  type ReactFlowInstance,
   useNodesState,
 } from "@xyflow/react";
 import {
@@ -35,6 +32,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { PersonCard, type PersonNode } from "./PersonCard";
 import { BrandMark } from "./BrandMark";
 import { SexIcon } from "./SexIcon";
 import { RelationshipFields } from "./RelationshipFields";
@@ -42,14 +40,18 @@ import { RelationshipEdge } from "./RelationshipEdge";
 import { FamilyEdge } from "./FamilyEdge";
 import { relationshipEdges } from "./relationshipEdges";
 import { HomePersonDetails } from "./HomePersonDetails";
-import { calculateKinships, type KinshipResult } from "./kinship";
+import {
+  calculateKinships,
+  partnerKinshipLabel,
+  type KinshipResult,
+} from "./kinship";
+import { setPersonName } from "./personNames";
+import { personPositionAtViewCenter } from "./canvasPosition";
 import {
   addRelation,
-  dateYearLabel,
   lifeDatesError,
   makePerson,
   makeTree,
-  personAgeLabel,
   personCardHeight,
   removePerson,
   setHomePerson,
@@ -86,108 +88,6 @@ import {
   type DriveFile,
 } from "./drive";
 
-type PersonNode = Node<
-  {
-    person: Person;
-    selected: boolean;
-    homeName: string | null;
-    isHome: boolean;
-    kinship?: KinshipResult;
-    onSelect: (id: string) => void;
-  },
-  "person"
->;
-function PersonCard({ data }: NodeProps<PersonNode>) {
-  const p = data.person;
-  const age = personAgeLabel(p);
-  return (
-    <div
-      className={`person-card ${data.selected ? "selected" : ""} ${data.homeName !== null ? "has-home" : ""} ${data.isHome ? "is-home" : ""}`}
-      onClick={() => data.onSelect(p.id)}
-      role="button"
-      tabIndex={0}
-      aria-label={`Edit ${p.name || "unnamed person"}${data.kinship ? `, ${data.isHome ? "Home person" : `${data.kinship.primary.label} of ${data.homeName}`}` : ""}`}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          data.onSelect(p.id);
-        }
-      }}
-    >
-      <Handle
-        id="top"
-        type="source"
-        position={Position.Top}
-        className="family-handle"
-        title="Parent or child connection"
-      />
-      <Handle
-        id="bottom"
-        type="source"
-        position={Position.Bottom}
-        className="family-handle"
-        title="Parent or child connection"
-      />
-      <Handle
-        id="left"
-        type="source"
-        position={Position.Left}
-        className="family-handle partner-handle"
-        title="Partner connection"
-      />
-      <Handle
-        id="right"
-        type="source"
-        position={Position.Right}
-        className="family-handle partner-handle"
-        title="Partner connection"
-      />
-      <div className="person-avatar">
-        {p.portrait ? (
-          <img src={p.portrait} alt="" />
-        ) : (
-          <span>{(p.name[0] || "?").toUpperCase()}</span>
-        )}
-      </div>
-      <div className="person-info">
-        <strong>{p.name || "Unnamed"}</strong>
-        {p.nickname && <small>“{p.nickname}”</small>}
-        {(p.born.precision !== "unknown" || p.died.precision !== "unknown") && (
-          <span>
-            {dateYearLabel(p.born)}
-            {p.died.precision !== "unknown"
-              ? `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`
-              : ""}
-          </span>
-        )}
-        {age && <span className="person-age">{age}</span>}
-        {data.kinship && (
-          <span
-            className="person-kinship"
-            title={
-              data.isHome
-                ? "Home person"
-                : `${data.kinship.primary.label} of ${data.homeName}`
-            }
-          >
-            {data.isHome && <Home size={12} aria-hidden="true" />}
-            <span className="kinship-label">{data.kinship.primary.label}</span>
-          </span>
-        )}
-      </div>
-      {(p.sex === "male" || p.sex === "female") && (
-        <span
-          className={`person-sex sex-${p.sex}`}
-          role="img"
-          aria-label={p.sex === "male" ? "Male" : "Female"}
-          title={p.sex === "male" ? "Male" : "Female"}
-        >
-          <SexIcon sex={p.sex} size={16} />
-        </span>
-      )}
-    </div>
-  );
-}
 const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
@@ -321,7 +221,7 @@ function PersonEditor({
       ? r.parentId === person.id || r.childId === person.id
       : r.personA === person.id || r.personB === person.id,
   );
-  const other = (r: Relation) =>
+  const otherPerson = (r: Relation) =>
     people.find(
       (p) =>
         p.id ===
@@ -332,7 +232,8 @@ function PersonEditor({
           : r.personA === person.id
             ? r.personB
             : r.personA),
-    )?.name || "Unknown";
+    );
+  const other = (r: Relation) => otherPerson(r)?.name || "Unnamed person";
   return (
     <div className="editor-content">
       <div className="panel-title">
@@ -403,22 +304,36 @@ function PersonEditor({
       </div>
       <div className="field-grid">
         <label>
-          Full name
+          First name
           <input
-            value={person.name}
-            onChange={(e) => onChange({ ...person, name: e.target.value })}
-            placeholder="Full name"
+            autoComplete="given-name"
+            value={person.firstName}
+            onChange={(e) =>
+              onChange(setPersonName(person, "firstName", e.target.value))
+            }
+            placeholder="First name"
           />
         </label>
         <label>
-          Nickname
+          Last name
           <input
-            value={person.nickname}
-            onChange={(e) => onChange({ ...person, nickname: e.target.value })}
-            placeholder="Nickname"
+            autoComplete="family-name"
+            value={person.lastName}
+            onChange={(e) =>
+              onChange(setPersonName(person, "lastName", e.target.value))
+            }
+            placeholder="Last name"
           />
         </label>
       </div>
+      <label>
+        Nickname
+        <input
+          value={person.nickname}
+          onChange={(e) => onChange({ ...person, nickname: e.target.value })}
+          placeholder="Nickname"
+        />
+      </label>
       <div className="field-grid">
         <DateInput
           key={`${person.id}-born`}
@@ -474,18 +389,26 @@ function PersonEditor({
           placeholder="Stories, places, memories…"
         />
       </label>
-      <section className="panel-section">
-        <div className="section-heading">
+      <details className="panel-section" key={person.id}>
+        <summary className="section-heading">
           <h3>Relationships</h3>
           <span>{attached.length}</span>
-        </div>
+          <ChevronDown size={16} aria-hidden="true" />
+        </summary>
         {attached.length ? (
           <div className="relation-list">
             {attached.map((r) => (
               <div className="relation-item" key={r.id}>
                 <div>
                   <strong>{other(r)}</strong>
-                  <span>{relationLabel(r)}</span>
+                  <span>
+                    {r.type === "partner"
+                      ? partnerKinshipLabel(
+                          r,
+                          otherPerson(r)?.sex || "",
+                        ).replace(/^./, (letter) => letter.toUpperCase())
+                      : relationLabel(r)}
+                  </span>
                 </div>
                 <button
                   className="icon-button"
@@ -588,7 +511,7 @@ function PersonEditor({
             </select>
           </div>
         </div>
-      </section>
+      </details>
       <button className="button danger" onClick={onDelete}>
         <Trash2 size={16} /> Delete person
       </button>
@@ -633,7 +556,9 @@ export default function App() {
     saveCounter = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
     fileInput = useRef<HTMLInputElement>(null),
-    flowRef = useRef<any>(null),
+    flowRef = useRef<ReactFlowInstance<PersonNode> | null>(null),
+    canvasRef = useRef<HTMLDivElement>(null),
+    fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
   const showError = (error: unknown) =>
     setNotice(error instanceof Error ? error.message : "Something went wrong.");
@@ -694,6 +619,10 @@ export default function App() {
       history.current = [];
       future.current = [];
       treeRef.current = found;
+      fitViewOnOpen.current =
+        found.people.length > 0 &&
+        (window.innerWidth < 700 ||
+          (found.viewport.x === 0 && found.viewport.y === 0));
       setTree(found);
       setDateDrafts({});
       setSelectedId(null);
@@ -759,15 +688,24 @@ export default function App() {
   const addPerson = (relative?: Exclude<ConnectMode, null>) => {
     const current = treeRef.current;
     if (!current) return;
-    const selected = current.people.find((p) => p.id === selectedId);
+    const selected = relative
+      ? current.people.find((p) => p.id === selectedId)
+      : undefined;
     const shift = (current.people.length % 4) * 30;
+    const size = canvasRef.current?.getBoundingClientRect();
+    if (!size || !flowRef.current) return;
+    const center = personPositionAtViewCenter(
+      flowRef.current.getViewport(),
+      size,
+      current.homePersonId !== null,
+    );
     const x = selected
       ? selected.x + (relative === "partner" ? 350 : shift)
-      : Math.max(0, ...current.people.map((p) => p.x + 300));
+      : center.x;
     const y = selected
       ? selected.y +
         (relative === "parent" ? -220 : relative === "child" ? 220 : 0)
-      : 0;
+      : center.y;
     const person = makePerson("", x, y);
     let next = { ...current, people: [...current.people, person] };
     if (selected && relative)
@@ -792,17 +730,39 @@ export default function App() {
       );
     commit(next);
     setSelectedId(person.id);
+    setSelectedRelationId(null);
     setMobilePanel(true);
-    requestAnimationFrame(() =>
-      flowRef.current?.setCenter(
-        person.x + 110,
-        person.y + personCardHeight(current.homePersonId !== null) / 2,
-        {
-          zoom: Math.min(flowRef.current?.getZoom() || 1, 1.1),
-          duration: 350,
-        },
-      ),
-    );
+    if (relative)
+      requestAnimationFrame(() =>
+        flowRef.current?.setCenter(
+          person.x + 110,
+          person.y + personCardHeight(current.homePersonId !== null) / 2,
+          {
+            zoom: Math.min(flowRef.current?.getZoom() || 1, 1.1),
+            duration: 350,
+          },
+        ),
+      );
+  };
+  const deletePerson = (id: string) => {
+    const current = treeRef.current;
+    const person = current?.people.find((p) => p.id === id);
+    if (!current || !person) return;
+    if (
+      !window.confirm(
+        `Delete ${person.name || "this person"} and their relationships?${current.homePersonId === id ? " This also clears the home person designation." : ""}`,
+      )
+    )
+      return;
+    apply((t) => removePerson(t, id));
+    setDateDrafts((previous) => {
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+    setSelectedId(null);
+    setSelectedRelationId(null);
+    setMobilePanel(false);
   };
   const connect = (connection: Connection) => {
     const a = connection.source,
@@ -891,6 +851,7 @@ export default function App() {
               ? kinships.get(p.id)
               : undefined,
           selected: selectedId === p.id,
+          onDelete: deletePerson,
           onSelect: (id: string) => {
             setSelectedId(id);
             setSelectedRelationId(null);
@@ -1051,7 +1012,7 @@ export default function App() {
     setSelectedId(null);
     setMobilePanel(false);
   };
-  const onNodeDragStop = (_: unknown, node: Node) => {
+  const onNodeDragStop = (_: unknown, node: PersonNode) => {
     movingRef.current = false;
     apply((t) => ({
       ...t,
@@ -1483,7 +1444,7 @@ export default function App() {
             </div>
           </header>
           <div className="editor-layout">
-            <div className="canvas-wrap">
+            <div className="canvas-wrap" ref={canvasRef}>
               <div className="canvas-topbar">
                 <div className="canvas-label">
                   <span className="canvas-label-dot" /> FAMILY CANVAS
@@ -1567,11 +1528,7 @@ export default function App() {
                   defaultViewport={tree.viewport}
                   minZoom={0.05}
                   maxZoom={2}
-                  fitView={
-                    tree.people.length > 0 &&
-                    (window.innerWidth < 700 ||
-                      (tree.viewport.x === 0 && tree.viewport.y === 0))
-                  }
+                  fitView={fitViewOnOpen.current}
                   fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
                   nodesDraggable
                   elementsSelectable
@@ -1628,16 +1585,7 @@ export default function App() {
                       ),
                     }))
                   }
-                  onDelete={() => {
-                    if (
-                      !window.confirm(
-                        `Delete ${selected.name || "this person"} and their relationships?${tree!.homePersonId === selected.id ? " This also clears the home person designation." : ""}`,
-                      )
-                    )
-                      return;
-                    apply((t) => removePerson(t, selected.id));
-                    setSelectedId(null);
-                  }}
+                  onDelete={() => deletePerson(selected.id)}
                   onAddRelative={addPerson}
                   connectMode={connectMode}
                   setConnectMode={setConnectMode}

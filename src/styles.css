@@ -1108,6 +1108,18 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+.section-heading::-webkit-details-marker {
+  display: none;
+}
+.section-heading > svg {
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+.panel-section[open] > .section-heading > svg {
+  transform: rotate(180deg);
 }
 .section-heading h3 {
   font-size: 1.18rem;
@@ -1258,6 +1270,24 @@ h2 {
 .person-card.selected {
   border: 2px solid var(--accent);
   box-shadow: 0 0 0 4px var(--focus-ring);
+}
+.person-delete {
+  position: absolute;
+  top: -16px;
+  right: -16px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--danger-border);
+  border-radius: 50%;
+  background: var(--danger-surface);
+  color: var(--danger);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 1;
+}
+.person-delete:hover {
+  background: var(--surface-hover);
 }
 .person-card.has-home {
   min-height: 140px;
