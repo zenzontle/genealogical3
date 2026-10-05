@@ -96,9 +96,17 @@ describe("automatic sibling bars", () => {
         f.tree.relations,
         dimensions,
       );
-      expect(dragged.bar[0].y).toBe(-132);
-      expect(connectorPoints([dragged])).toContainEqual({ x: 1610, y: -132 });
-      expect(dragged.branches[0].points[1].y).toBe(-100);
+      const above = dragged.branches.find(
+        (b) => b.childId === f.children[0].id,
+      )!;
+      expect(above.targetHandle).toBe("bottom");
+      expect(above.points[1].y).toBe(-100 + height);
+      expect(above.points[0].y).toBe(-100 + height + 32);
+      expect(connectorPoints([dragged])).toContainEqual(above.points[0]);
+      expect(dragged.additionalPaths).toHaveLength(2);
+      expect(
+        dragged.branches.filter((b) => b.targetHandle === "top"),
+      ).toHaveLength(5);
     },
   );
 
@@ -171,6 +179,83 @@ describe("automatic sibling bars", () => {
 });
 
 describe("canvas relationship edges", () => {
+  it("switches partner and parent handles using live positions without reversing relationships", () => {
+    const f = familyFixture(1);
+    const original = structuredClone(f.tree);
+    const edges = relationshipEdges(
+      f.tree,
+      new Map([
+        [f.a.id, { x: 700, y: 500 }],
+        [f.children[0].id, { x: 0, y: -250 }],
+      ]),
+      null,
+      vi.fn(),
+    );
+    expect(edges.find((e) => e.id === f.partner.id)).toMatchObject({
+      source: f.a.id,
+      target: f.b.id,
+      sourceHandle: "left",
+      targetHandle: "right",
+    });
+    for (const link of f.links) {
+      expect(edges.find((e) => e.id === link.id)).toMatchObject({
+        source: link.parentId,
+        target: link.childId,
+        sourceHandle: "top",
+        targetHandle: "bottom",
+      });
+    }
+    expect(f.tree).toEqual(original);
+    const restored = relationshipEdges(f.tree, new Map(), null, vi.fn());
+    expect(restored.find((e) => e.id === f.partner.id)?.sourceHandle).toBe(
+      "right",
+    );
+    expect(restored.find((e) => e.id === f.links[0].id)?.sourceHandle).toBe(
+      "bottom",
+    );
+  });
+
+  it("keeps unassigned handles and uses measured heights for shared connectors", () => {
+    const f = familyFixture();
+    const unassigned: Relation = {
+      id: "unset",
+      type: "unassigned",
+      personA: f.a.id,
+      personB: f.children[0].id,
+      sourceHandle: "left",
+      targetHandle: "bottom",
+    };
+    const edges = relationshipEdges(
+      { ...f.tree, relations: [...f.tree.relations, unassigned] },
+      new Map([[f.b.id, { x: -350, y: 0 }]]),
+      null,
+      vi.fn(),
+      new Map([[f.a.id, { width: 220, height: 200 }]]),
+    );
+    expect(edges.find((e) => e.id === "unset")).toMatchObject({
+      sourceHandle: "left",
+      targetHandle: "bottom",
+    });
+    expect(edges.find((e) => e.id === f.partner.id)).toMatchObject({
+      sourceHandle: "left",
+      targetHandle: "right",
+    });
+    const shared = edges.find((e) => e.id === "family:couple")!;
+    expect(shared.sourceHandle).toBe("left");
+    expect(shared.targetHandle).toBe("right");
+    expect(shared.data?.path).toContain("L -65 228");
+    const above = familyConnectors(
+      f.tree.people.map((p) => ({
+        ...p,
+        y: p.id === f.a.id || p.id === f.b.id ? 500 : p.y,
+      })),
+      f.tree.relations,
+      size,
+    )[0];
+    expect(above.branches.every((b) => b.targetHandle === "bottom")).toBe(true);
+    expect(above.additionalPaths).toEqual([]);
+  });
+
   it("replaces grouped links, keeps the shared bar decorative, and opens a child from the keyboard", () => {
     const f = familyFixture(),
       select = vi.fn();

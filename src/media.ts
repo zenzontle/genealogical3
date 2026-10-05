@@ -9,6 +9,7 @@ import {
 } from "./model";
 import { relationshipIcons } from "./relationshipIcons";
 import { calculateKinships } from "./kinship";
+import { connectionHandles } from "./connectionHandles";
 import {
   connectorPath,
   connectorPoints,
@@ -70,7 +71,55 @@ export async function exportPng(tree: Tree) {
     cardH = personCardHeight(tree.homePersonId !== null),
     pad = 90;
   const size = { width: cardW, height: cardH };
-  const families = familyConnectors(tree.people, tree.relations, size);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw Error("PNG export is unavailable in this browser.");
+  const kinships = calculateKinships(tree);
+  const layouts = new Map(
+    tree.people.map((p) => {
+      let top = 72;
+      const rows: {
+        text: string;
+        y: number;
+        font: string;
+        color: "text" | "muted" | "accent" | "copper";
+      }[] = [];
+      const addText = (
+        text: string,
+        font: string,
+        color: (typeof rows)[number]["color"],
+        lineHeight: number,
+      ) => {
+        if (!text) return;
+        ctx.font = font;
+        const lines = wrapCardText(ctx, text, top, lineHeight);
+        rows.push(...lines.map((line) => ({ ...line, font, color })));
+        top += lines.length * lineHeight + 4;
+      };
+      addText(p.name || "Unnamed", "16px Georgia", "text", 20);
+      addText(
+        p.nickname ? `“${p.nickname}”` : "",
+        "11px system-ui",
+        "copper",
+        15,
+      );
+      const life = `${dateYearLabel(p.born)}${p.died.precision === "unknown" ? "" : `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`}`;
+      addText(life, "11px system-ui", "muted", 15);
+      addText(personAgeLabel(p), "11px system-ui", "accent", 15);
+      const kinship = kinships.get(p.id);
+      if (kinship) {
+        addText(kinship.primary.label, "11px system-ui", "copper", 15);
+      }
+      return [p.id, { rows, height: Math.max(cardH, top + 28) }] as const;
+    }),
+  );
+  const sizes = new Map(
+    tree.people.map((p) => [
+      p.id,
+      { width: cardW, height: layouts.get(p.id)!.height },
+    ]),
+  );
+  const families = familyConnectors(tree.people, tree.relations, size, sizes);
   const points = connectorPoints(families);
   const groupedIds = new Set(families.flatMap((family) => family.relationIds));
   const minX = Math.min(
@@ -83,7 +132,7 @@ export async function exportPng(tree: Tree) {
       ...points.map((p) => p.x),
     ),
     maxY = Math.max(
-      ...tree.people.map((p) => p.y + cardH),
+      ...tree.people.map((p) => p.y + sizes.get(p.id)!.height),
       ...points.map((p) => p.y),
     );
   const width = maxX - minX + pad * 2,
@@ -94,11 +143,8 @@ export async function exportPng(tree: Tree) {
     8192 / height,
     Math.sqrt(28_000_000 / (width * height)),
   );
-  const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.floor(width * scale));
   canvas.height = Math.max(1, Math.floor(height * scale));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw Error("PNG export is unavailable in this browser.");
   const styles = getComputedStyle(document.documentElement);
   const palette = {
     background: styles.getPropertyValue("--bg").trim(),
@@ -114,7 +160,6 @@ export async function exportPng(tree: Tree) {
   ctx.scale(scale, scale);
   ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, width, height);
-  const kinships = calculateKinships(tree);
   const people = new Map(tree.people.map((p) => [p.id, p]));
   const at = (id: string) => people.get(id)!;
   if (tree.homePersonId !== null) {
@@ -141,6 +186,7 @@ export async function exportPng(tree: Tree) {
     const paths = [
       family.stem,
       family.bar,
+      ...family.additionalPaths,
       ...family.branches.map((b) => b.points),
     ];
     ctx.stroke(new Path2D(paths.map(connectorPath).join(" ")));
@@ -150,28 +196,26 @@ export async function exportPng(tree: Tree) {
     if (groupedIds.has(r.id)) continue;
     const a = at(r.type === "parent" ? r.parentId : r.personA),
       b = at(r.type === "parent" ? r.childId : r.personB);
-    const anchor = (side: "top" | "bottom" | "left" | "right") =>
+    const aSize = sizes.get(a.id)!,
+      bSize = sizes.get(b.id)!;
+    const handles = connectionHandles(
+      r,
+      { x: a.x + aSize.width / 2, y: a.y + aSize.height / 2 },
+      { x: b.x + bSize.width / 2, y: b.y + bSize.height / 2 },
+    );
+    const anchor = (
+      side: "top" | "bottom" | "left" | "right",
+      height: number,
+    ) =>
       side === "top"
         ? [cardW / 2, 0]
         : side === "bottom"
-          ? [cardW / 2, cardH]
+          ? [cardW / 2, height]
           : side === "left"
-            ? [0, cardH / 2]
-            : [cardW, cardH / 2];
-    const [ax, ay] = anchor(
-      r.type === "parent"
-        ? "bottom"
-        : r.type === "unassigned"
-          ? r.sourceHandle
-          : "right",
-    );
-    const [bx, by] = anchor(
-      r.type === "parent"
-        ? "top"
-        : r.type === "unassigned"
-          ? r.targetHandle
-          : "left",
-    );
+            ? [0, height / 2]
+            : [cardW, height / 2];
+    const [ax, ay] = anchor(handles.sourceHandle, aSize.height);
+    const [bx, by] = anchor(handles.targetHandle, bSize.height);
     const x1 = px(a) + ax,
       y1 = py(a) + ay,
       x2 = px(b) + bx,
@@ -185,7 +229,7 @@ export async function exportPng(tree: Tree) {
     let lx = (x1 + x2) / 2,
       ly = (y1 + y2) / 2;
     if (r.type === "partner") {
-      const geometry = partnerGeometry(a, b, size);
+      const geometry = partnerGeometry(a, b, size, sizes);
       ctx.save();
       ctx.translate(pad - minX, pad - minY);
       ctx.stroke(new Path2D(geometry.path));
@@ -227,70 +271,58 @@ export async function exportPng(tree: Tree) {
   for (const p of tree.people) {
     const x = px(p),
       y = py(p);
+    const layout = layouts.get(p.id)!;
     ctx.fillStyle = palette.surface;
     ctx.strokeStyle = palette.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x, y, cardW, cardH, 10);
+    ctx.roundRect(x, y, cardW, layout.height, 10);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = palette.avatar;
     ctx.beginPath();
-    ctx.arc(x + 42, y + 43, 26, 0, Math.PI * 2);
+    ctx.arc(x + cardW / 2, y + 38, 22, 0, Math.PI * 2);
     ctx.fill();
     if (p.portrait) {
       const img = await loadImage(p.portrait);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x + 42, y + 43, 26, 0, Math.PI * 2);
+      ctx.arc(x + cardW / 2, y + 38, 22, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(img, x + 16, y + 17, 52, 52);
+      ctx.drawImage(img, x + cardW / 2 - 22, y + 16, 44, 44);
       ctx.restore();
     } else {
       ctx.fillStyle = palette.accent;
       ctx.font = "bold 20px Georgia";
       ctx.textAlign = "center";
-      ctx.fillText((p.name[0] || "?").toUpperCase(), x + 42, y + 50);
+      ctx.fillText((p.name[0] || "?").toUpperCase(), x + cardW / 2, y + 45);
       ctx.textAlign = "start";
     }
-    ctx.fillStyle = palette.text;
-    ctx.font = "bold 16px Georgia";
-    ctx.fillText(p.name.slice(0, 18), x + 78, y + 32, 130);
-    ctx.fillStyle = palette.muted;
-    ctx.font = "12px system-ui";
-    const life = `${dateYearLabel(p.born) || "?"}${p.died.precision === "unknown" ? "" : ` – ${dateYearLabel(p.died)}`}`;
-    ctx.fillText(life, x + 78, y + 70, 130);
-    if (p.nickname)
-      ctx.fillText(`“${p.nickname.slice(0, 24)}”`, x + 78, y + 51, 130);
-    ctx.fillStyle = palette.accent;
-    ctx.font = "11px system-ui";
-    ctx.fillText(personAgeLabel(p), x + 78, y + 91, 110);
-    const kinship = kinships.get(p.id);
-    if (kinship) {
-      ctx.fillStyle = palette.copper;
-      ctx.font = "11px system-ui";
-      const isHome = p.id === tree.homePersonId;
-      if (isHome) {
+    for (const row of layout.rows) {
+      ctx.fillStyle = palette[row.color];
+      ctx.font = row.font;
+      const isHomeLabel =
+        p.id === tree.homePersonId &&
+        row.text === kinships.get(p.id)?.primary.label;
+      const textWidth = ctx.measureText(row.text).width;
+      const textX = x + (cardW - textWidth) / 2 + (isHomeLabel ? 9 : 0);
+      if (isHomeLabel) {
         ctx.strokeStyle = palette.copper;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x + 17, y + 119);
-        ctx.lineTo(x + 23, y + 114);
-        ctx.lineTo(x + 29, y + 119);
-        ctx.lineTo(x + 29, y + 126);
-        ctx.lineTo(x + 17, y + 126);
+        ctx.moveTo(textX - 18, y + row.y - 7);
+        ctx.lineTo(textX - 12, y + row.y - 12);
+        ctx.lineTo(textX - 6, y + row.y - 7);
+        ctx.lineTo(textX - 6, y + row.y);
+        ctx.lineTo(textX - 18, y + row.y);
         ctx.closePath();
         ctx.stroke();
       }
-      ctx.fillText(
-        fitCanvasText(ctx, kinship.primary.label, isHome ? 145 : 112),
-        x + (isHome ? 35 : 78),
-        y + 123,
-      );
+      ctx.fillText(row.text, textX, y + row.y);
     }
     if (p.sex === "male" || p.sex === "female") {
       const sx = x + 201,
-        sy = y + cardH - 21;
+        sy = y + layout.height - 21;
       ctx.strokeStyle = palette.accent;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -317,6 +349,37 @@ export async function exportPng(tree: Tree) {
   );
   if (!blob) throw Error("Could not render the PNG.");
   downloadBlob(blob, `${safeName(tree.name)}.png`);
+}
+// Every text line gets the full card width below the portrait.
+function wrapCardText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  top: number,
+  lineHeight: number,
+) {
+  const lines: { text: string; y: number }[] = [];
+  let remaining = text.trim();
+  while (remaining) {
+    const width = 220 - 16 * 2;
+    let end = 0;
+    for (const character of remaining) {
+      const next = end + character.length;
+      if (ctx.measureText(remaining.slice(0, next)).width > width && end > 0)
+        break;
+      end = next;
+    }
+    if (end < remaining.length) {
+      const space = remaining.lastIndexOf(" ", end);
+      if (space > 0) end = space;
+    }
+    lines.push({
+      text: remaining.slice(0, end).trimEnd(),
+      y: top + lineHeight * 0.8,
+    });
+    remaining = remaining.slice(end).trimStart();
+    top += lineHeight;
+  }
+  return lines;
 }
 function fitCanvasText(
   ctx: CanvasRenderingContext2D,

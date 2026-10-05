@@ -1255,15 +1255,13 @@ h2 {
 }
 .person-card {
   width: 220px;
-  min-height: 108px;
+  min-height: 140px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 9px;
   box-shadow: 0 5px 19px var(--shadow);
-  display: flex;
-  align-items: center;
-  padding: 13px;
-  gap: 12px;
+  padding: 16px 16px 28px;
+  text-align: center;
   cursor: grab;
   position: relative;
 }
@@ -1290,7 +1288,7 @@ h2 {
   background: var(--surface-hover);
 }
 .person-card.has-home {
-  min-height: 140px;
+  min-height: 164px;
 }
 .person-card.is-home {
   box-shadow: inset 0 0 0 1px var(--copper);
@@ -1303,12 +1301,12 @@ h2 {
 .person-info .person-kinship {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.25rem;
   color: var(--copper);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 0.5rem;
 }
 .person-kinship svg {
   flex: none;
@@ -1394,15 +1392,15 @@ h2 {
   stroke-width: 3;
 }
 .person-avatar {
-  width: 53px;
-  height: 53px;
-  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
   border-radius: 50%;
   background: var(--accent-surface);
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-size: 1.55rem;
+  font-size: 1.35rem;
   font-family: "DM Serif Display", Georgia, serif;
   overflow: hidden;
 }
@@ -1413,7 +1411,6 @@ h2 {
 }
 .person-info {
   min-width: 0;
-  flex: 1;
 }
 .person-info strong {
   font-family: "DM Serif Display", Georgia, serif;
@@ -1421,9 +1418,10 @@ h2 {
   font-size: 1.06rem;
   color: var(--text);
   display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 .person-info small {
   display: block;
@@ -1442,7 +1440,6 @@ h2 {
 }
 .person-info .person-age {
   color: var(--accent);
-  padding-right: 12px;
 }
 .person-sex {
   position: absolute;

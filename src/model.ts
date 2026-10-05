@@ -118,7 +118,7 @@ export function removePerson(tree: Tree, personId: string): Tree {
     ),
   };
 }
-export const personCardHeight = (hasHome: boolean) => (hasHome ? 140 : 108);
+export const personCardHeight = (hasHome: boolean) => (hasHome ? 164 : 140);
 export type LifeDates = Pick<Person, "born" | "died">;
 export function lifeDatesError({ born, died }: LifeDates): string {
   for (const [label, date] of [
