@@ -150,7 +150,7 @@ function PersonCard({ data }: NodeProps<PersonNode>) {
         )}
       </div>
       <div className="person-info">
-        <strong>{p.name || "Unnamed person"}</strong>
+        <strong>{p.name || "Unnamed"}</strong>
         {p.nickname && <small>“{p.nickname}”</small>}
         {(p.born.precision !== "unknown" || p.died.precision !== "unknown") && (
           <span>
@@ -415,7 +415,7 @@ function PersonEditor({
           <input
             value={person.nickname}
             onChange={(e) => onChange({ ...person, nickname: e.target.value })}
-            placeholder="Optional"
+            placeholder="Nickname"
           />
         </label>
       </div>
