@@ -1165,21 +1165,6 @@ h2 {
   padding: 0.46rem 0.53rem;
   min-height: 32px;
 }
-.connect-box {
-  padding: 0.8rem;
-  background: var(--surface-muted);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-top: 0.8rem;
-}
-.connect-box p {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  margin: 0 0 0.55rem;
-}
-.connect-box .field-grid {
-  grid-template-columns: 1fr;
-}
 .panel-welcome {
   padding: 3.5rem 1.6rem;
   text-align: center;
