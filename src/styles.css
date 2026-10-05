@@ -1360,6 +1360,9 @@ h2 {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
+.react-flow__edge.family-branch:focus-visible .react-flow__edge-path {
+  stroke-width: 3;
+}
 .person-avatar {
   width: 53px;
   height: 53px;
