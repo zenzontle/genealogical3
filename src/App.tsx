@@ -95,7 +95,7 @@ import {
 const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
-type SaveState = "saved" | "saving" | "error";
+type SaveState = "draft" | "saved" | "saving" | "error";
 type ConnectMode = "parent" | "child" | "partner" | null;
 function DateInput({
   label,
@@ -575,6 +575,7 @@ export default function App() {
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
     treeRef = useRef<Tree | null>(null),
+    draftTree = useRef(false),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     saveCounter = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
@@ -605,6 +606,7 @@ export default function App() {
   };
   const commit = useCallback((next: Tree, record = true) => {
     const previous = treeRef.current;
+    if (next === previous) return;
     if (record && previous) {
       history.current.push(cloneTree(previous));
       if (history.current.length > 50) history.current.shift();
@@ -613,10 +615,14 @@ export default function App() {
     const updated = { ...next, version: 2 as const, updatedAt: Date.now() };
     treeRef.current = updated;
     setTree(updated);
+    // Viewport updates do not turn an untouched new tree into a saved tree.
+    if (record) draftTree.current = false;
+    if (draftTree.current) return;
     setSaveState("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const count = ++saveCounter.current;
     saveTimer.current = setTimeout(async () => {
+      saveTimer.current = null;
       try {
         await queueSave(updated);
         if (count === saveCounter.current) {
@@ -631,18 +637,20 @@ export default function App() {
       }
     }, 450);
   }, []);
-  const openTree = async (id: string) => {
+  const openTree = async (id: string, draft?: Tree) => {
     try {
       if (saveTimer.current && treeRef.current) {
         clearTimeout(saveTimer.current);
+        saveTimer.current = null;
         await queueSave(treeRef.current);
       }
       await saveQueue.current;
-      const found = await getTree(id);
+      const found = draft || (await getTree(id));
       if (!found) throw Error("This tree was not found.");
       history.current = [];
       future.current = [];
       treeRef.current = found;
+      draftTree.current = !!draft;
       fitViewOnOpen.current =
         found.people.length > 0 &&
         (window.innerWidth < 700 ||
@@ -652,7 +660,7 @@ export default function App() {
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
-      const link = await getDriveLink(id);
+      const link = draft ? undefined : await getDriveLink(id);
       setDriveFile(
         link
           ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime }
@@ -660,7 +668,7 @@ export default function App() {
       );
       setDriveSavedAt("");
       setScreen("editor");
-      setSaveState("saved");
+      setSaveState(draft ? "draft" : "saved");
       setNotice("");
     } catch (error) {
       showError(error);
@@ -668,13 +676,7 @@ export default function App() {
   };
   const createTree = async () => {
     const newTree = makeTree("My family tree");
-    try {
-      await saveTree(newTree);
-      await refreshLibrary();
-      await openTree(newTree.id);
-    } catch (error) {
-      showError(error);
-    }
+    await openTree(newTree.id, newTree);
   };
   const apply = (update: (current: Tree) => Tree, record = true) => {
     if (!treeRef.current) return;
@@ -927,8 +929,9 @@ export default function App() {
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
   const saveNow = async () => {
-    if (!treeRef.current) return;
+    if (!treeRef.current || draftTree.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
     const count = ++saveCounter.current;
     try {
       await queueSave(treeRef.current);
@@ -1102,9 +1105,11 @@ export default function App() {
       ? "Date edits not saved"
       : saveState === "saved"
         ? "Saved locally"
-        : saveState === "saving"
-          ? "Saving locally…"
-          : "Local save failed · export JSON";
+        : saveState === "draft"
+          ? "Make a change to start saving"
+          : saveState === "saving"
+            ? "Saving locally…"
+            : "Local save failed · export JSON";
   return (
     <>
       <input
@@ -1728,8 +1733,10 @@ export default function App() {
           </div>
           <div className="editor-footer">
             <span>
-              Stored in this browser ·{" "}
-              <button onClick={downloadJson}>Download a backup</button>
+              {saveState === "draft"
+                ? "Temporary tree"
+                : "Stored in this browser"}{" "}
+              · <button onClick={downloadJson}>Download a backup</button>
             </span>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0}{" "}

@@ -49,11 +49,15 @@ function familyFixture(count = 2) {
   return { a, b, children, partner, links, tree };
 }
 
-describe("automatic sibling bars", () => {
-  it("appears for a second shared child and disappears after removal or undo", () => {
+describe("automatic family connectors", () => {
+  it("keeps a shared connection for one child after removing a sibling or undoing", () => {
     const f = familyFixture();
     const one = removePerson(f.tree, f.children[1].id);
-    expect(familyConnectors(one.people, one.relations, size)).toEqual([]);
+    const single = familyConnectors(one.people, one.relations, size);
+    expect(single).toHaveLength(1);
+    expect(single[0].branches.map((b) => b.childId)).toEqual([
+      f.children[0].id,
+    ]);
     const saved = structuredClone(f.tree);
     const groups = familyConnectors(f.tree.people, f.tree.relations, size);
     expect(groups).toHaveLength(1);
@@ -62,7 +66,7 @@ describe("automatic sibling bars", () => {
     );
     expect(groups[0].relationIds).toEqual(f.links.map((r) => r.id));
     expect(f.tree).toEqual(saved);
-    expect(familyConnectors(one.people, one.relations, size)).toEqual([]);
+    expect(familyConnectors(one.people, one.relations, size)).toEqual(single);
     expect(familyConnectors(saved.people, saved.relations, size)).toEqual(
       groups,
     );
@@ -111,11 +115,13 @@ describe("automatic sibling bars", () => {
     },
   );
 
-  it("requires two complete matching parent sets and a partnership", () => {
+  it("requires a complete parent pair and a partnership for each child", () => {
     const f = familyFixture();
     expect(familyConnectors(f.tree.people, f.links, size)).toEqual([]);
     const missing = f.tree.relations.filter((r) => r.id !== f.links[3].id);
-    expect(familyConnectors(f.tree.people, missing, size)).toEqual([]);
+    expect(
+      familyConnectors(f.tree.people, missing, size)[0].relationIds,
+    ).toEqual(f.links.slice(0, 2).map((r) => r.id));
     const extraParent = makePerson("Guardian");
     const extra: Relation = {
       id: "extra",
@@ -124,13 +130,14 @@ describe("automatic sibling bars", () => {
       childId: f.children[0].id,
       kind: "guardian",
     };
-    expect(
-      familyConnectors(
-        [...f.tree.people, extraParent],
-        [...f.tree.relations, extra],
-        size,
-      ),
-    ).toEqual([]);
+    const [remaining] = familyConnectors(
+      [...f.tree.people, extraParent],
+      [...f.tree.relations, extra],
+      size,
+    );
+    expect(remaining.branches.map((b) => b.childId)).toEqual([
+      f.children[1].id,
+    ]);
     expect(
       familyConnectors(
         f.tree.people.filter((p) => p.id !== f.a.id),
@@ -145,9 +152,9 @@ describe("automatic sibling bars", () => {
     (kind) => {
       const f = familyFixture();
       const changed = updateRelation(f.tree, { ...f.links[0], kind });
-      expect(familyConnectors(changed.people, changed.relations, size)).toEqual(
-        [],
-      );
+      const [group] = familyConnectors(changed.people, changed.relations, size);
+      expect(group.branches.map((b) => b.childId)).toEqual([f.children[1].id]);
+      expect(group.relationIds).toEqual(f.links.slice(2).map((r) => r.id));
     },
   );
 
@@ -170,18 +177,51 @@ describe("automatic sibling bars", () => {
       personB: other.id,
     });
     tree = updateRelation(tree, { ...f.links[5], parentId: other.id });
-    const [group] = familyConnectors(tree.people, tree.relations, size);
+    const [group, otherGroup] = familyConnectors(
+      tree.people,
+      tree.relations,
+      size,
+    );
     expect(group.branches.map((b) => b.childId)).toEqual(
       f.children.slice(0, 2).map((p) => p.id),
     );
     expect(group.relationIds).not.toContain(f.links[4].id);
     expect(group.relationIds).not.toContain(f.links[5].id);
+    expect(otherGroup.partner.id).toBe("other-couple");
+    expect(otherGroup.branches.map((b) => b.childId)).toEqual([
+      f.children[2].id,
+    ]);
   });
+
+  it.each([false, true])(
+    "connects a centered only child from the partner midpoint (above=%s)",
+    (above) => {
+      const f = familyFixture(1);
+      const midpoint = partnerGeometry(f.a, f.b, size).midpoint;
+      f.children[0].x = midpoint.x - size.width / 2;
+      f.children[0].y = above ? -260 : 260;
+      const [group] = familyConnectors(f.tree.people, f.tree.relations, size);
+      expect(group.stem[0]).toEqual(midpoint);
+      expect(group.relationIds).toEqual(f.links.map((r) => r.id));
+      expect(group.branches).toHaveLength(1);
+      expect(group.branches[0].targetHandle).toBe(above ? "bottom" : "top");
+      expect(group.branches[0].points[1]).toEqual({
+        x: midpoint.x,
+        y: above ? -260 + size.height : 260,
+      });
+      expect(connectorPoints([group]).every((p) => p.x === midpoint.x)).toBe(
+        true,
+      );
+      expect(group.additionalPaths).toEqual([]);
+    },
+  );
 });
 
 describe("canvas relationship edges", () => {
   it("switches partner and parent handles using live positions without reversing relationships", () => {
     const f = familyFixture(1);
+    // A lone parent link still follows the facing top/bottom handles.
+    f.tree.relations = [f.partner, f.links[0]];
     const original = structuredClone(f.tree);
     const edges = relationshipEdges(
       f.tree,
@@ -198,7 +238,7 @@ describe("canvas relationship edges", () => {
       sourceHandle: "left",
       targetHandle: "right",
     });
-    for (const link of f.links) {
+    for (const link of f.links.slice(0, 1)) {
       expect(edges.find((e) => e.id === link.id)).toMatchObject({
         source: link.parentId,
         target: link.childId,
@@ -259,35 +299,38 @@ describe("canvas relationship edges", () => {
     expect(above.additionalPaths).toEqual([]);
   });
 
-  it("replaces grouped links, keeps the shared bar decorative, and opens a child from the keyboard", () => {
-    const f = familyFixture(),
-      select = vi.fn();
-    const edges = relationshipEdges(f.tree, new Map(), null, select);
-    expect(edges).toHaveLength(4);
-    expect(edges.some((edge) => f.links.some((r) => r.id === edge.id))).toBe(
-      false,
-    );
-    const shared = edges.find((edge) => edge.id === "family:couple")!;
-    expect(shared.focusable).toBe(false);
-    expect(shared.selectable).toBe(false);
-    expect(shared.deletable).toBe(false);
-    expect(shared.style?.pointerEvents).toBe("none");
-    const branch = edges.find(
-      (edge) => edge.data?.childId === f.children[0].id,
-    )!;
-    expect(branch.focusable).toBe(true);
-    expect(branch.ariaRole).toBe("button");
-    expect(branch.selectable).toBe(false);
-    const event = {
-      key: "Enter",
-      preventDefault: vi.fn(),
-      stopPropagation: vi.fn(),
-    };
-    branch.domAttributes!.onKeyDown!(event as never);
-    expect(select).toHaveBeenCalledWith(f.children[0].id);
-    expect(event.preventDefault).toHaveBeenCalled();
-    expect(event.stopPropagation).toHaveBeenCalled();
-  });
+  it.each([1, 2])(
+    "replaces grouped links for %i children, keeps the shared bar decorative, and opens a child from the keyboard",
+    (count) => {
+      const f = familyFixture(count),
+        select = vi.fn();
+      const edges = relationshipEdges(f.tree, new Map(), null, select);
+      expect(edges).toHaveLength(count + 2);
+      expect(edges.some((edge) => f.links.some((r) => r.id === edge.id))).toBe(
+        false,
+      );
+      const shared = edges.find((edge) => edge.id === "family:couple")!;
+      expect(shared.focusable).toBe(false);
+      expect(shared.selectable).toBe(false);
+      expect(shared.deletable).toBe(false);
+      expect(shared.style?.pointerEvents).toBe("none");
+      const branch = edges.find(
+        (edge) => edge.data?.childId === f.children[0].id,
+      )!;
+      expect(branch.focusable).toBe(true);
+      expect(branch.ariaRole).toBe("button");
+      expect(branch.selectable).toBe(false);
+      const event = {
+        key: "Enter",
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      };
+      branch.domAttributes!.onKeyDown!(event as never);
+      expect(select).toHaveBeenCalledWith(f.children[0].id);
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(event.stopPropagation).toHaveBeenCalled();
+    },
+  );
 
   it("uses live drag positions without changing saved coordinates, and restores direct edges after editing", () => {
     const f = familyFixture(),
@@ -317,6 +360,10 @@ describe("canvas relationship edges", () => {
       vi.fn(),
     );
     expect(direct).toHaveLength(5);
+    expect(direct.find((edge) => edge.id === f.links[1].id)).toBeDefined();
+    expect(direct.some((edge) => edge.data?.childId === f.children[1].id)).toBe(
+      true,
+    );
     expect(direct.every((edge) => !edge.markerEnd)).toBe(true);
     expect(
       direct.find((edge) => edge.id === f.links[0].id)?.style?.strokeWidth,
