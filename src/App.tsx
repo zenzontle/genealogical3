@@ -887,6 +887,20 @@ export default function App() {
       }));
     });
   }, [tree, kinships, home, selectedId, setNodes]);
+  const selectChild = useCallback(
+    (id: string) => {
+      setNodes((current) =>
+        current.map((node) => ({
+          ...node,
+          selected: node.id === id,
+        })),
+      );
+      setSelectedId(id);
+      setSelectedRelationId(null);
+      setMobilePanel(true);
+    },
+    [setNodes],
+  );
   const edges = useMemo<Edge[]>(() => {
     if (!tree) return [];
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
@@ -906,14 +920,10 @@ export default function App() {
       tree,
       positions,
       selectedRelationId,
-      (id) => {
-        setSelectedId(id);
-        setSelectedRelationId(null);
-        setMobilePanel(true);
-      },
+      selectChild,
       sizes,
     );
-  }, [tree, nodes, selectedRelationId]);
+  }, [tree, nodes, selectedRelationId, selectChild]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
@@ -1561,9 +1571,7 @@ export default function App() {
                   onEdgeClick={(_, edge) => {
                     if (edge.type === "family") {
                       if (!edge.data?.childId) return;
-                      setSelectedId(String(edge.data.childId));
-                      setSelectedRelationId(null);
-                      setMobilePanel(true);
+                      selectChild(String(edge.data.childId));
                       return;
                     }
                     setSelectedRelationId(edge.id);
