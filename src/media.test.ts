@@ -42,6 +42,17 @@ describe("shared connectors in PNG exports", () => {
         homePersonId: hasHome ? a.id : null,
       };
       const original = structuredClone(tree);
+      const unrelated = makePerson("Unrelated", 200, 100);
+      unrelated.lifeStatus = "deceased";
+      unrelated.born = { precision: "year", year: 1930 };
+      const unassigned: Relation = {
+        id: "unassigned",
+        type: "unassigned",
+        personA: a.id,
+        personB: unrelated.id,
+        sourceHandle: "left",
+        targetHandle: "top",
+      };
       const ctx = {
         fillRect: vi.fn(),
         save: vi.fn(),
@@ -112,6 +123,25 @@ describe("shared connectors in PNG exports", () => {
       expect(canvas.height).toBe((260 + height + 100 + 180) * 2);
       expect(anchor.click).toHaveBeenCalledOnce();
       expect(tree).toEqual(original);
+      ctx.fillText.mockClear();
+      await exportPng({
+        ...tree,
+        homePersonId: a.id,
+        people: [...tree.people, unrelated],
+        relations: [...tree.relations, unassigned],
+      });
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).not.toContain(
+        "Relationship not established",
+      );
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain(
+        "Home person",
+      );
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain(
+        "1930 — Deceased",
+      );
+      expect(
+        ctx.fillText.mock.calls.some(([text]) => text.startsWith("Age ")),
+      ).toBe(false);
       c.name =
         "Jorge Alejandro Maximiliano Sebastián Fernández Villaseñor Montemayor Valderrama Santamaría Domínguez";
       ctx.fillText.mockClear();

@@ -1,7 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { Home, Trash2 } from "lucide-react";
 import { SexIcon } from "./SexIcon";
-import { personAgeLabel, dateYearLabel, type Person } from "./model";
+import { personAgeLabel, personLifeLabel, type Person } from "./model";
 import type { KinshipResult } from "./kinship";
 export type PersonNode = Node<
   {
@@ -15,12 +15,15 @@ export type PersonNode = Node<
   },
   "person"
 >;
-export function PersonCard({ data }: NodeProps<PersonNode>) {
+export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
   const p = data.person;
   const age = personAgeLabel(p);
+  const life = personLifeLabel(p);
+  const kinship =
+    data.isHome || data.kinship?.paths.length ? data.kinship : undefined;
   return (
     <>
-      {data.selected && (
+      {data.selected && selected && (
         <button
           className="person-delete nodrag nopan"
           type="button"
@@ -35,11 +38,11 @@ export function PersonCard({ data }: NodeProps<PersonNode>) {
         </button>
       )}
       <div
-        className={`person-card ${data.selected ? "selected" : ""} ${data.homeName !== null ? "has-home" : ""} ${data.isHome ? "is-home" : ""}`}
+        className={`person-card ${selected ? "selected" : ""} ${data.homeName !== null ? "has-home" : ""} ${data.isHome ? "is-home" : ""}`}
         onClick={() => data.onSelect(p.id)}
         role="button"
         tabIndex={0}
-        aria-label={`Edit ${p.name || "unnamed person"}${data.kinship ? `, ${data.isHome ? "Home person" : `${data.kinship.primary.label} of ${data.homeName}`}` : ""}`}
+        aria-label={`Edit ${p.name || "unnamed person"}${kinship ? `, ${data.isHome ? "Home person" : `${kinship.primary.label} of ${data.homeName}`}` : ""}`}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget) return;
           if (event.key === "Enter" || event.key === " ") {
@@ -86,29 +89,19 @@ export function PersonCard({ data }: NodeProps<PersonNode>) {
         <div className="person-info">
           <strong>{p.name || "Unnamed"}</strong>
           {p.nickname && <small>“{p.nickname}”</small>}
-          {(p.born.precision !== "unknown" ||
-            p.died.precision !== "unknown") && (
-            <span>
-              {dateYearLabel(p.born)}
-              {p.died.precision !== "unknown"
-                ? `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`
-                : ""}
-            </span>
-          )}
+          {life && <span>{life}</span>}
           {age && <span className="person-age">{age}</span>}
-          {data.kinship && (
+          {kinship && (
             <span
               className="person-kinship"
               title={
                 data.isHome
                   ? "Home person"
-                  : `${data.kinship.primary.label} of ${data.homeName}`
+                  : `${kinship.primary.label} of ${data.homeName}`
               }
             >
               {data.isHome && <Home size={12} aria-hidden="true" />}
-              <span className="kinship-label">
-                {data.kinship.primary.label}
-              </span>
+              <span className="kinship-label">{kinship.primary.label}</span>
             </span>
           )}
         </div>

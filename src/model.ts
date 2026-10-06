@@ -4,6 +4,7 @@ export type DateValue =
   | { precision: "unknown" }
   | { precision: "year"; year: number }
   | { precision: "full"; value: string };
+export type LifeStatus = "living" | "deceased";
 export type Person = {
   id: string;
   name: string;
@@ -12,6 +13,7 @@ export type Person = {
   nickname: string;
   born: DateValue;
   died: DateValue;
+  lifeStatus?: LifeStatus;
   sex: "" | "female" | "male" | "other";
   notes: string;
   portrait: string | null;
@@ -119,8 +121,24 @@ export function removePerson(tree: Tree, personId: string): Tree {
   };
 }
 export const personCardHeight = (hasHome: boolean) => (hasHome ? 164 : 140);
-export type LifeDates = Pick<Person, "born" | "died">;
-export function lifeDatesError({ born, died }: LifeDates): string {
+export type LifeDates = Pick<Person, "born" | "died" | "lifeStatus">;
+/** A recorded death implies deceased; missing legacy dates don't imply living. */
+export function personLifeStatus(
+  person: Pick<Person, "died" | "lifeStatus">,
+): LifeStatus | "" {
+  return (
+    person.lifeStatus || (person.died.precision !== "unknown" ? "deceased" : "")
+  );
+}
+export function personLifeLabel(person: LifeDates): string {
+  const born = dateYearLabel(person.born);
+  if (person.died.precision !== "unknown")
+    return `${born ? `${born} — ` : "Died "}${dateYearLabel(person.died)}`;
+  const status = personLifeStatus(person);
+  if (status === "deceased") return born ? `${born} — Deceased` : "Deceased";
+  return born || (status === "living" ? "Living" : "");
+}
+export function lifeDatesError({ born, died, lifeStatus }: LifeDates): string {
   for (const [label, date] of [
     ["birth", born],
     ["death", died],
@@ -131,6 +149,8 @@ export function lifeDatesError({ born, died }: LifeDates): string {
         ? `Enter a valid ${label} year from 1 to 9999.`
         : `Enter a complete, valid ${label} date.`;
   }
+  if (lifeStatus === "living" && died.precision !== "unknown")
+    return "Living people cannot have a death date.";
   if (born.precision === "unknown" || died.precision === "unknown") return "";
   const earliestBirth =
     born.precision === "year"
@@ -151,11 +171,13 @@ export function assertValidLifeDates(tree: Tree) {
       );
   }
 }
-export function personAgeLabel(
-  person: Pick<Person, "born" | "died">,
-  today = new Date(),
-): string {
+export function personAgeLabel(person: LifeDates, today = new Date()): string {
   if (person.born.precision === "unknown") return "";
+  if (
+    person.died.precision === "unknown" &&
+    personLifeStatus(person) !== "living"
+  )
+    return "";
   type CalendarDate = [number, number, number];
   const bounds = (
     date: Exclude<DateValue, { precision: "unknown" }>,
@@ -398,6 +420,9 @@ export function validateTree(input: unknown): Tree {
       typeof p.nickname !== "string" ||
       !isDate(p.born) ||
       !isDate(p.died) ||
+      (p.lifeStatus !== undefined &&
+        p.lifeStatus !== "living" &&
+        p.lifeStatus !== "deceased") ||
       !["", "female", "male", "other"].includes(String(p.sex)) ||
       typeof p.notes !== "string" ||
       !(

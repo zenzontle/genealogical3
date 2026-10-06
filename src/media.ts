@@ -1,6 +1,6 @@
 import {
   assertValidLifeDates,
-  dateYearLabel,
+  personLifeLabel,
   normalizeHomePerson,
   personAgeLabel,
   personCardHeight,
@@ -103,11 +103,10 @@ export async function exportPng(tree: Tree) {
         "copper",
         15,
       );
-      const life = `${dateYearLabel(p.born)}${p.died.precision === "unknown" ? "" : `${p.born.precision === "unknown" ? "Died " : " — "}${dateYearLabel(p.died)}`}`;
-      addText(life, "11px system-ui", "muted", 15);
+      addText(personLifeLabel(p), "11px system-ui", "muted", 15);
       addText(personAgeLabel(p), "11px system-ui", "accent", 15);
       const kinship = kinships.get(p.id);
-      if (kinship) {
+      if (kinship && (p.id === tree.homePersonId || kinship.paths.length)) {
         addText(kinship.primary.label, "11px system-ui", "copper", 15);
       }
       return [p.id, { rows, height: Math.max(cardH, top + 28) }] as const;
