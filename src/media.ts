@@ -2,8 +2,7 @@ import {
   assertValidLifeDates,
   personLifeLabel,
   normalizeHomePerson,
-  personAgeLabel,
-  personCardHeight,
+  personCardSize,
   relationLabel,
   type Tree,
 } from "./model";
@@ -67,8 +66,8 @@ export async function exportPng(tree: Tree) {
   tree = normalizeHomePerson(tree);
   if (!tree.people.length)
     throw Error("Add a person before exporting an image.");
-  const cardW = 220,
-    cardH = personCardHeight(tree.homePersonId !== null),
+  const cardW = personCardSize.width,
+    cardH = personCardSize.height,
     pad = 90;
   const size = { width: cardW, height: cardH };
   const canvas = document.createElement("canvas");
@@ -77,39 +76,51 @@ export async function exportPng(tree: Tree) {
   const kinships = calculateKinships(tree);
   const layouts = new Map(
     tree.people.map((p) => {
-      let top = 72;
+      let top = 80;
       const rows: {
         text: string;
         y: number;
         font: string;
-        color: "text" | "muted" | "accent" | "copper";
+        color: "text" | "muted" | "copper";
       }[] = [];
+      ctx.font = "16px Georgia";
+      rows.push(
+        ...wrapCardText(ctx, p.name || "Unnamed", 44, 18).map((line) => ({
+          ...line,
+          font: "16px Georgia",
+          color: "text" as const,
+        })),
+      );
       const addText = (
         text: string,
         font: string,
         color: (typeof rows)[number]["color"],
         lineHeight: number,
+        gap = 0,
       ) => {
         if (!text) return;
         ctx.font = font;
-        const lines = wrapCardText(ctx, text, top, lineHeight);
-        rows.push(...lines.map((line) => ({ ...line, font, color })));
-        top += lines.length * lineHeight + 4;
+        top += gap;
+        rows.push({
+          text: fitCanvasText(ctx, text, cardW - 24),
+          y: top + lineHeight * 0.8,
+          font,
+          color,
+        });
+        top += lineHeight;
       };
-      addText(p.name || "Unnamed", "16px Georgia", "text", 20);
       addText(
         p.nickname ? `“${p.nickname}”` : "",
         "11px system-ui",
         "copper",
-        15,
+        12,
       );
-      addText(personLifeLabel(p), "11px system-ui", "muted", 15);
-      addText(personAgeLabel(p), "11px system-ui", "accent", 15);
+      addText(personLifeLabel(p), "11px system-ui", "muted", 14, 2);
       const kinship = kinships.get(p.id);
-      if (kinship && (p.id === tree.homePersonId || kinship.paths.length)) {
-        addText(kinship.primary.label, "11px system-ui", "copper", 15);
+      if (kinship && p.id !== tree.homePersonId && kinship.paths.length) {
+        addText(kinship.primary.label, "11px system-ui", "copper", 14, 2);
       }
-      return [p.id, { rows, height: Math.max(cardH, top + 28) }] as const;
+      return [p.id, { rows, height: cardH }] as const;
     }),
   );
   const sizes = new Map(
@@ -280,48 +291,45 @@ export async function exportPng(tree: Tree) {
     ctx.stroke();
     ctx.fillStyle = palette.avatar;
     ctx.beginPath();
-    ctx.arc(x + cardW / 2, y + 38, 22, 0, Math.PI * 2);
+    ctx.arc(x + cardW / 2, y + 24, 16, 0, Math.PI * 2);
     ctx.fill();
     if (p.portrait) {
       const img = await loadImage(p.portrait);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x + cardW / 2, y + 38, 22, 0, Math.PI * 2);
+      ctx.arc(x + cardW / 2, y + 24, 16, 0, Math.PI * 2);
       ctx.clip();
-      ctx.drawImage(img, x + cardW / 2 - 22, y + 16, 44, 44);
+      ctx.drawImage(img, x + cardW / 2 - 16, y + 8, 32, 32);
       ctx.restore();
     } else {
       ctx.fillStyle = palette.accent;
-      ctx.font = "bold 20px Georgia";
+      ctx.font = "bold 18px Georgia";
       ctx.textAlign = "center";
-      ctx.fillText((p.name[0] || "?").toUpperCase(), x + cardW / 2, y + 45);
+      ctx.fillText((p.name[0] || "?").toUpperCase(), x + cardW / 2, y + 30);
       ctx.textAlign = "start";
+    }
+    if (p.id === tree.homePersonId) {
+      ctx.strokeStyle = palette.copper;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y + 15);
+      ctx.lineTo(x + 16, y + 8);
+      ctx.lineTo(x + 24, y + 15);
+      ctx.lineTo(x + 24, y + 24);
+      ctx.lineTo(x + 8, y + 24);
+      ctx.closePath();
+      ctx.stroke();
     }
     for (const row of layout.rows) {
       ctx.fillStyle = palette[row.color];
       ctx.font = row.font;
-      const isHomeLabel =
-        p.id === tree.homePersonId &&
-        row.text === kinships.get(p.id)?.primary.label;
       const textWidth = ctx.measureText(row.text).width;
-      const textX = x + (cardW - textWidth) / 2 + (isHomeLabel ? 9 : 0);
-      if (isHomeLabel) {
-        ctx.strokeStyle = palette.copper;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(textX - 18, y + row.y - 7);
-        ctx.lineTo(textX - 12, y + row.y - 12);
-        ctx.lineTo(textX - 6, y + row.y - 7);
-        ctx.lineTo(textX - 6, y + row.y);
-        ctx.lineTo(textX - 18, y + row.y);
-        ctx.closePath();
-        ctx.stroke();
-      }
+      const textX = x + (cardW - textWidth) / 2;
       ctx.fillText(row.text, textX, y + row.y);
     }
     if (p.sex === "male" || p.sex === "female") {
-      const sx = x + 201,
-        sy = y + layout.height - 21;
+      const sx = x + cardW - 20,
+        sy = y + 16;
       ctx.strokeStyle = palette.accent;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -349,7 +357,7 @@ export async function exportPng(tree: Tree) {
   if (!blob) throw Error("Could not render the PNG.");
   downloadBlob(blob, `${safeName(tree.name)}.png`);
 }
-// Every text line gets the full card width below the portrait.
+// Names occupy at most two lines; the final line truncates remaining text.
 function wrapCardText(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -358,8 +366,15 @@ function wrapCardText(
 ) {
   const lines: { text: string; y: number }[] = [];
   let remaining = text.trim();
-  while (remaining) {
-    const width = 220 - 16 * 2;
+  while (remaining && lines.length < 2) {
+    const width = personCardSize.width - 24;
+    if (lines.length === 1) {
+      lines.push({
+        text: fitCanvasText(ctx, remaining, width),
+        y: top + lineHeight * 0.8,
+      });
+      break;
+    }
     let end = 0;
     for (const character of remaining) {
       const next = end + character.length;

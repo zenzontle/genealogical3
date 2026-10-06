@@ -1254,13 +1254,13 @@ h2 {
   font-size: inherit;
 }
 .person-card {
-  width: 220px;
-  min-height: 140px;
+  width: 180px;
+  height: 136px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 9px;
   box-shadow: 0 5px 19px var(--shadow);
-  padding: 16px 16px 28px;
+  padding: 8px 12px;
   text-align: center;
   cursor: grab;
   position: relative;
@@ -1287,11 +1287,15 @@ h2 {
 .person-delete:hover {
   background: var(--surface-hover);
 }
-.person-card.has-home {
-  min-height: 164px;
-}
 .person-card.is-home {
   box-shadow: inset 0 0 0 1px var(--copper);
+}
+.person-home {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  color: var(--copper);
 }
 .person-card.is-home.selected {
   box-shadow:
@@ -1392,15 +1396,15 @@ h2 {
   stroke-width: 3;
 }
 .person-avatar {
-  width: 44px;
-  height: 44px;
-  margin: 0 auto 12px;
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 4px;
   border-radius: 50%;
   background: var(--accent-surface);
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-size: 1.35rem;
+  font-size: 1.1rem;
   font-family: "DM Serif Display", Georgia, serif;
   overflow: hidden;
 }
@@ -1415,10 +1419,14 @@ h2 {
 .person-info strong {
   font-family: "DM Serif Display", Georgia, serif;
   font-weight: 400;
-  font-size: 1.06rem;
+  font-size: 1rem;
   color: var(--text);
-  display: block;
-  line-height: 1.2;
+  display: -webkit-box;
+  height: 36px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   white-space: normal;
   overflow-wrap: anywhere;
   text-wrap: balance;
@@ -1427,6 +1435,7 @@ h2 {
   display: block;
   color: var(--copper);
   font-size: 0.65rem;
+  line-height: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1435,16 +1444,16 @@ h2 {
   display: block;
   color: var(--text-muted);
   font-size: 0.69rem;
-  margin-top: 0.25rem;
+  line-height: 14px;
+  margin-top: 2px;
   white-space: nowrap;
-}
-.person-info .person-age {
-  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .person-sex {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 8px;
+  top: 8px;
   display: flex;
 }
 .family-handle {

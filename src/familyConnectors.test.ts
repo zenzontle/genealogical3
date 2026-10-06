@@ -9,6 +9,7 @@ import {
   addRelation,
   makePerson,
   makeTree,
+  personCardSize,
   removePerson,
   updateRelation,
   type Relation,
@@ -243,7 +244,9 @@ describe("canvas relationship edges", () => {
     const shared = edges.find((e) => e.id === "family:couple")!;
     expect(shared.sourceHandle).toBe("left");
     expect(shared.targetHandle).toBe("right");
-    expect(shared.data?.path).toContain("L -65 228");
+    expect(shared.data?.path).toContain(
+      `L ${(-350 + personCardSize.width) / 2} 228`,
+    );
     const above = familyConnectors(
       f.tree.people.map((p) => ({
         ...p,
@@ -299,7 +302,9 @@ describe("canvas relationship edges", () => {
     const branch = dragged.find(
       (edge) => edge.data?.childId === f.children[0].id,
     )!;
-    expect(branch.data?.path).toContain("L -390 350");
+    expect(branch.data?.path).toContain(
+      `L ${-500 + personCardSize.width / 2} 350`,
+    );
     expect(branch.data?.path).not.toEqual(
       initial.find((edge) => edge.id === branch.id)?.data?.path,
     );

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { exportPng } from "./media";
 import { connectorPath, familyConnectors } from "./familyConnectors";
-import { makePerson, makeTree, personCardHeight, type Relation } from "./model";
+import { makePerson, makeTree, personCardSize, type Relation } from "./model";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -16,6 +16,7 @@ describe("shared connectors in PNG exports", () => {
         b = makePerson("B", 350, 0);
       const c = makePerson("C", 0, -100),
         d = makePerson("D", 400, 260);
+      a.sex = "male";
       const relations: Relation[] = [
         {
           id: "couple",
@@ -103,11 +104,12 @@ describe("shared connectors in PNG exports", () => {
         },
       );
       await exportPng(tree);
-      const height = personCardHeight(hasHome);
-      const [family] = familyConnectors(tree.people, tree.relations, {
-        width: 220,
-        height,
-      });
+      const { width, height } = personCardSize;
+      const [family] = familyConnectors(
+        tree.people,
+        tree.relations,
+        personCardSize,
+      );
       const expected = [
         family.stem,
         family.bar,
@@ -119,10 +121,17 @@ describe("shared connectors in PNG exports", () => {
       expect(ctx.stroke.mock.calls[0][0]).toEqual({ path: expected });
       expect(ctx.bezierCurveTo).not.toHaveBeenCalled();
       expect(ctx.translate).toHaveBeenCalledWith(90, 190);
-      expect(canvas.width).toBe((620 + 180) * 2);
+      expect(canvas.width).toBe((400 + width + 180) * 2);
       expect(canvas.height).toBe((260 + height + 100 + 180) * 2);
       expect(anchor.click).toHaveBeenCalledOnce();
       expect(tree).toEqual(original);
+      expect(ctx.arc).toHaveBeenCalledWith(
+        90 + width - 20,
+        206,
+        4,
+        0,
+        Math.PI * 2,
+      );
       ctx.fillText.mockClear();
       await exportPng({
         ...tree,
@@ -133,9 +142,11 @@ describe("shared connectors in PNG exports", () => {
       expect(ctx.fillText.mock.calls.map(([text]) => text)).not.toContain(
         "Relationship not established",
       );
-      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain(
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).not.toContain(
         "Home person",
       );
+      expect(ctx.moveTo).toHaveBeenCalledWith(98, 205);
+      expect(ctx.lineTo).toHaveBeenCalledWith(106, 198);
       expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain(
         "1930 — Deceased",
       );
@@ -144,23 +155,42 @@ describe("shared connectors in PNG exports", () => {
       ).toBe(false);
       c.name =
         "Jorge Alejandro Maximiliano Sebastián Fernández Villaseñor Montemayor Valderrama Santamaría Domínguez";
+      c.nickname = "Vilo";
+      c.lifeStatus = "living";
+      c.born = { precision: "year", year: 1987 };
       ctx.fillText.mockClear();
       ctx.roundRect.mockClear();
       await exportPng(tree);
       const nameRows = ctx.fillText.mock.calls.filter(([text]) =>
         c.name.split(" ").some((word) => text.includes(word)),
       );
-      expect(nameRows.map(([text]) => text).join(" ")).toBe(c.name);
+      expect(nameRows.map(([text]) => text).join(" ")).not.toBe(c.name);
+      expect(nameRows.at(-1)![0]).toMatch(/…$/);
+      expect(nameRows.every(([text]) => text.length * 6 <= width - 24)).toBe(
+        true,
+      );
       expect(nameRows.every((args) => args.length === 3)).toBe(true);
-      expect(nameRows.length).toBeGreaterThan(1);
+      expect(nameRows.length).toBe(2);
       expect(
-        nameRows.every(([text, x]) => Math.abs(x + text.length * 3 - 200) < 1),
+        nameRows.every(
+          ([text, x]) => Math.abs(x + text.length * 3 - (90 + width / 2)) < 1,
+        ),
       ).toBe(true);
       const card = ctx.roundRect.mock.calls.find(
         ([x, y]) => x === 90 && y === 90,
       )!;
-      expect(card[3]).toBeGreaterThan(height);
-      expect(nameRows.every(([, , y]) => y >= card[1] + 72)).toBe(true);
+      expect(card[3]).toBe(height);
+      expect(
+        ctx.roundRect.mock.calls.every(
+          ([, , w, h]) => w === width && h === height,
+        ),
+      ).toBe(true);
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain("“Vilo”");
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain("1987");
+      expect(
+        ctx.fillText.mock.calls.some(([text]) => text.startsWith("Age ")),
+      ).toBe(false);
+      expect(nameRows.every(([, , y]) => y >= card[1] + 44)).toBe(true);
       expect(nameRows.every(([, , y]) => y < card[1] + card[3] - 20)).toBe(
         true,
       );

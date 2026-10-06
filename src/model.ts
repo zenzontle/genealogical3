@@ -120,7 +120,7 @@ export function removePerson(tree: Tree, personId: string): Tree {
     ),
   };
 }
-export const personCardHeight = (hasHome: boolean) => (hasHome ? 164 : 140);
+export const personCardSize = { width: 180, height: 136 } as const;
 export type LifeDates = Pick<Person, "born" | "died" | "lifeStatus">;
 /** A recorded death implies deceased; missing legacy dates don't imply living. */
 export function personLifeStatus(
