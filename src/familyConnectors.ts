@@ -76,7 +76,6 @@ export function familyConnectors(
   }
   const result: FamilyConnector[] = [];
   for (const [key, children] of groups) {
-    if (children.length < 2) continue;
     const partner = partners.get(key)!;
     const a = byId.get(partner.personA),
       b = byId.get(partner.personB);

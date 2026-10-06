@@ -9,9 +9,14 @@ afterEach(() => {
 });
 
 describe("shared connectors in PNG exports", () => {
-  it.each([false, true])(
-    "uses canvas geometry and includes bar extents (home=%s)",
-    async (hasHome) => {
+  it.each([
+    { hasHome: false, count: 1 },
+    { hasHome: true, count: 1 },
+    { hasHome: false, count: 2 },
+    { hasHome: true, count: 2 },
+  ])(
+    "uses canvas geometry and includes connector extents (home=$hasHome, children=$count)",
+    async ({ hasHome, count }) => {
       const a = makePerson("A", 0, 0),
         b = makePerson("B", 350, 0);
       const c = makePerson("C", 0, -100),
@@ -26,7 +31,7 @@ describe("shared connectors in PNG exports", () => {
           status: "current",
           union: "married",
         },
-        ...[c, d].flatMap((child) =>
+        ...[c, d].slice(0, count).flatMap((child) =>
           [a, b].map((parent) => ({
             id: `${parent.id}-${child.id}`,
             type: "parent" as const,
@@ -38,7 +43,7 @@ describe("shared connectors in PNG exports", () => {
       ];
       const tree = {
         ...makeTree(),
-        people: [a, b, c, d],
+        people: [a, b, ...[c, d].slice(0, count)],
         relations,
         homePersonId: hasHome ? a.id : null,
       };
@@ -121,8 +126,10 @@ describe("shared connectors in PNG exports", () => {
       expect(ctx.stroke.mock.calls[0][0]).toEqual({ path: expected });
       expect(ctx.bezierCurveTo).not.toHaveBeenCalled();
       expect(ctx.translate).toHaveBeenCalledWith(90, 190);
-      expect(canvas.width).toBe((400 + width + 180) * 2);
-      expect(canvas.height).toBe((260 + height + 100 + 180) * 2);
+      expect(canvas.width).toBe(((count === 1 ? 350 : 400) + width + 180) * 2);
+      expect(canvas.height).toBe(
+        ((count === 1 ? 0 : 260) + height + 100 + 180) * 2,
+      );
       expect(anchor.click).toHaveBeenCalledOnce();
       expect(tree).toEqual(original);
       expect(ctx.arc).toHaveBeenCalledWith(
