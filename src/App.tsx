@@ -752,9 +752,7 @@ export default function App() {
             },
       );
     commit(next);
-    setSelectedId(person.id);
-    setSelectedRelationId(null);
-    setMobilePanel(true);
+    selectPerson(person.id);
     if (relative)
       requestAnimationFrame(() =>
         flowRef.current?.setCenter(
@@ -887,7 +885,7 @@ export default function App() {
       }));
     });
   }, [tree, kinships, home, selectedId, setNodes]);
-  const selectChild = useCallback(
+  const selectPerson = useCallback(
     (id: string) => {
       setNodes((current) =>
         current.map((node) => ({
@@ -920,10 +918,10 @@ export default function App() {
       tree,
       positions,
       selectedRelationId,
-      selectChild,
+      selectPerson,
       sizes,
     );
-  }, [tree, nodes, selectedRelationId, selectChild]);
+  }, [tree, nodes, selectedRelationId, selectPerson]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
@@ -1571,7 +1569,7 @@ export default function App() {
                   onEdgeClick={(_, edge) => {
                     if (edge.type === "family") {
                       if (!edge.data?.childId) return;
-                      selectChild(String(edge.data.childId));
+                      selectPerson(String(edge.data.childId));
                       return;
                     }
                     setSelectedRelationId(edge.id);
