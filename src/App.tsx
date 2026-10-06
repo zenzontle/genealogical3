@@ -22,6 +22,8 @@ import {
   ImagePlus,
   Link2,
   Menu,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Redo2,
   Search,
@@ -571,6 +573,9 @@ export default function App() {
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
   const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarRevealedBySelection, setSidebarRevealedBySelection] =
+    useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
@@ -786,7 +791,6 @@ export default function App() {
     });
     setSelectedId(null);
     setSelectedRelationId(null);
-    setMobilePanel(false);
   };
   const connect = (connection: Connection) => {
     const a = connection.source,
@@ -881,7 +885,7 @@ export default function App() {
           onSelect: (id: string) => {
             setSelectedId(id);
             setSelectedRelationId(null);
-            setMobilePanel(true);
+            setSidebarRevealedBySelection(true);
           },
         },
         draggable: true,
@@ -898,7 +902,7 @@ export default function App() {
       );
       setSelectedId(id);
       setSelectedRelationId(null);
-      setMobilePanel(true);
+      setSidebarRevealedBySelection(true);
     },
     [setNodes],
   );
@@ -928,6 +932,11 @@ export default function App() {
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation =
     tree?.relations.find((r) => r.id === selectedRelationId) || null;
+  // Selection temporarily reveals details without changing the toggle preference.
+  const revealSidebar =
+    sidebarRevealedBySelection && !!(selected || selectedRelation);
+  const sidebarIsCollapsed = sidebarCollapsed && !revealSidebar;
+  const mobilePanelIsOpen = mobilePanel || revealSidebar;
   const saveNow = async () => {
     if (!treeRef.current || draftTree.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -1490,15 +1499,46 @@ export default function App() {
                 )}
               </div>
               <button
-                className="icon-button mobile-menu"
-                aria-label="Open details"
-                onClick={() => setMobilePanel(true)}
+                className="icon-button sidebar-toggle"
+                aria-label={
+                  sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"
+                }
+                title={
+                  sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"
+                }
+                aria-expanded={!sidebarIsCollapsed}
+                aria-controls="details-panel"
+                onClick={() => {
+                  setSidebarCollapsed(!sidebarIsCollapsed);
+                  setSidebarRevealedBySelection(false);
+                }}
               >
-                <Menu size={19} />
+                {sidebarIsCollapsed ? (
+                  <PanelRightOpen size={19} aria-hidden="true" />
+                ) : (
+                  <PanelRightClose size={19} aria-hidden="true" />
+                )}
+              </button>
+              <button
+                className="icon-button mobile-menu"
+                aria-label={
+                  mobilePanelIsOpen ? "Close details" : "Open details"
+                }
+                title={mobilePanelIsOpen ? "Close details" : "Open details"}
+                aria-expanded={mobilePanelIsOpen}
+                aria-controls="details-panel"
+                onClick={() => {
+                  setMobilePanel(!mobilePanelIsOpen);
+                  setSidebarRevealedBySelection(false);
+                }}
+              >
+                {mobilePanelIsOpen ? <X size={19} /> : <Menu size={19} />}
               </button>
             </div>
           </header>
-          <div className="editor-layout">
+          <div
+            className={`editor-layout ${sidebarIsCollapsed ? "sidebar-collapsed" : ""}`}
+          >
             <div className="canvas-wrap" ref={canvasRef}>
               <div className="canvas-topbar">
                 <div className="canvas-label">
@@ -1580,7 +1620,7 @@ export default function App() {
                     }
                     setSelectedRelationId(edge.id);
                     setSelectedId(null);
-                    setMobilePanel(true);
+                    setSidebarRevealedBySelection(true);
                   }}
                   onPaneClick={() => {
                     setSelectedId(null);
@@ -1626,7 +1666,11 @@ export default function App() {
                 to link relatives
               </div>
             </div>
-            <aside className={`details-panel ${mobilePanel ? "open" : ""}`}>
+            <aside
+              id="details-panel"
+              aria-label="Tree details"
+              className={`details-panel ${mobilePanelIsOpen ? "open" : ""}`}
+            >
               {selected ? (
                 <PersonEditor
                   person={selected}
@@ -1663,7 +1707,6 @@ export default function App() {
                   }
                   onClose={() => {
                     setSelectedId(null);
-                    setMobilePanel(false);
                   }}
                 />
               ) : selectedRelation ? (
@@ -1678,7 +1721,6 @@ export default function App() {
                       aria-label="Close details"
                       onClick={() => {
                         setSelectedRelationId(null);
-                        setMobilePanel(false);
                       }}
                     >
                       <X size={19} />
