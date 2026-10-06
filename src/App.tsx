@@ -344,18 +344,20 @@ function PersonEditor({
           value={personLifeStatus(dates)}
           onChange={(event) => {
             const lifeStatus =
-              event.target.value === "living" ? "living" : "deceased";
+              event.target.value === "living"
+                ? "living"
+                : event.target.value === "deceased"
+                  ? "deceased"
+                  : undefined;
             onDatesChange({
               lifeStatus,
-              ...(lifeStatus === "living"
+              ...(lifeStatus !== "deceased"
                 ? { died: { precision: "unknown" as const } }
                 : {}),
             });
           }}
         >
-          <option value="" disabled>
-            Choose status
-          </option>
+          <option value="">Unknown</option>
           <option value="living">Living</option>
           <option value="deceased">Deceased</option>
         </select>
