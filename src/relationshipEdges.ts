@@ -6,7 +6,7 @@ import {
   type CardSize,
 } from "./familyConnectors";
 import { connectionHandles } from "./connectionHandles";
-import { personCardHeight, relationLabel, type Tree } from "./model";
+import { personCardSize, relationLabel, type Tree } from "./model";
 
 export function relationshipEdges(
   tree: Tree,
@@ -21,17 +21,14 @@ export function relationshipEdges(
   }));
   const byId = new Map(
     people.map((p) => {
-      const size = sizes.get(p.id) || {
-        width: 220,
-        height: personCardHeight(tree.homePersonId !== null),
-      };
+      const size = sizes.get(p.id) || personCardSize;
       return [p.id, { x: p.x + size.width / 2, y: p.y + size.height / 2 }];
     }),
   );
   const families = familyConnectors(
     people,
     tree.relations,
-    { width: 220, height: personCardHeight(tree.homePersonId !== null) },
+    personCardSize,
     sizes,
   );
   const groupedIds = new Set(families.flatMap((family) => family.relationIds));

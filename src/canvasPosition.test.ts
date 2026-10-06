@@ -3,7 +3,7 @@ import {
   movePeopleToPositions,
   personPositionAtViewCenter,
 } from "./canvasPosition";
-import { makePerson, makeTree, personCardHeight } from "./model";
+import { makePerson, makeTree, personCardSize } from "./model";
 
 describe("saving a group drag", () => {
   it("keeps all moved positions together and leaves other people unchanged", () => {
@@ -40,21 +40,22 @@ describe("saving a group drag", () => {
 
 describe("adding a person at the current view center", () => {
   it.each([
-    [0, 0, 1, 1200, 800, false],
-    [-1200, 450, 0.4, 1024, 768, true],
-    [750, -900, 2, 320, 600, false],
+    [0, 0, 1, 1200, 800],
+    [-1200, 450, 0.4, 1024, 768],
+    [750, -900, 2, 320, 600],
   ])(
     "centers a card at viewport (%i, %i) with zoom %f",
-    (x, y, zoom, width, height, hasHome) => {
+    (x, y, zoom, width, height) => {
       const position = personPositionAtViewCenter(
         { x, y, zoom },
         { width, height },
-        hasHome,
       );
-      expect((position.x + 110) * zoom + x).toBeCloseTo(width / 2);
-      expect(
-        (position.y + personCardHeight(hasHome) / 2) * zoom + y,
-      ).toBeCloseTo(height / 2);
+      expect((position.x + personCardSize.width / 2) * zoom + x).toBeCloseTo(
+        width / 2,
+      );
+      expect((position.y + personCardSize.height / 2) * zoom + y).toBeCloseTo(
+        height / 2,
+      );
     },
   );
 });

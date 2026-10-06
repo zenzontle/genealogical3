@@ -56,7 +56,7 @@ import {
   lifeDatesError,
   makePerson,
   makeTree,
-  personCardHeight,
+  personCardSize,
   personLifeStatus,
   removePerson,
   setHomePerson,
@@ -720,7 +720,6 @@ export default function App() {
     const center = personPositionAtViewCenter(
       flowRef.current.getViewport(),
       size,
-      current.homePersonId !== null,
     );
     const x = selected
       ? selected.x + (relative === "partner" ? 350 : shift)
@@ -756,8 +755,8 @@ export default function App() {
     if (relative)
       requestAnimationFrame(() =>
         flowRef.current?.setCenter(
-          person.x + 110,
-          person.y + personCardHeight(current.homePersonId !== null) / 2,
+          person.x + personCardSize.width / 2,
+          person.y + personCardSize.height / 2,
           {
             zoom: Math.min(flowRef.current?.getZoom() || 1, 1.1),
             duration: 350,
