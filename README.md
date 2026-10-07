@@ -14,6 +14,12 @@ Open the URL Vite prints. `pnpm build` checks TypeScript and creates a productio
 
 The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile. `pnpm-workspace.yaml` allows esbuild's install script, which Vite needs.
 
+### Linting
+
+Run `pnpm lint` to check JavaScript and TypeScript files, including tests and Node scripts. Run `pnpm lint:fix` to apply available automatic fixes. Both commands fail on errors or warnings, and pull requests check formatting and lint rules in the Code Quality workflow.
+
+`eslint.config.js` uses ESLint and TypeScript recommended rules, the core React Hooks rules (hook ordering and dependency completeness), Vite's React Refresh rules, and `react/no-multi-comp` to require one component per file. Browser globals apply to source files; Node globals apply to tooling and scripts. Generated output is ignored. React Compiler rules and linting that requires TypeScript type information are not enabled; `pnpm build` checks types. `eslint-config-prettier` keeps lint rules compatible with Prettier, which handles formatting separately.
+
 ### Formatting
 
 Run `pnpm format` to format the project or `pnpm format:check` to check formatting without changing files. Prettier is pinned to an exact version, and `.prettierrc.json` defines single quotes, a 100-column print width, and CRLF line endings. Two-space indentation, semicolons, and trailing commas use Prettier's defaults. Generated output and the pnpm lockfile are excluded via `.prettierignore`.

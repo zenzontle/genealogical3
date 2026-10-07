@@ -88,9 +88,15 @@ export default function App() {
   const [screen, setScreen] = useState<'home' | 'editor'>('home');
   const [library, setLibrary] = useState<Tree[]>([]);
   const [tree, setTree] = useState<Tree | null>(null);
+  const people = tree?.people;
+  const relations = tree?.relations;
+  const homePersonId = tree?.homePersonId ?? null;
   const kinships = useMemo(
-    () => (tree ? calculateKinships(tree) : new Map<string, KinshipResult>()),
-    [tree?.people, tree?.relations, tree?.homePersonId],
+    () =>
+      people && relations
+        ? calculateKinships({ people, relations, homePersonId })
+        : new Map<string, KinshipResult>(),
+    [people, relations, homePersonId],
   );
   const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
@@ -121,56 +127,60 @@ export default function App() {
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
   useConnectorProximity(canvasRef, screen === 'editor');
-  const showError = (error: unknown) =>
+  const showError = useCallback((error: unknown) => {
     setNotice(error instanceof Error ? error.message : 'Something went wrong.');
-  const refreshLibrary = async () => {
+  }, []);
+  const refreshLibrary = useCallback(async () => {
     try {
       setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
     } catch (error) {
       showError(error);
     }
-  };
+  }, [showError]);
   useEffect(() => {
     refreshLibrary();
-  }, []);
-  const queueSave = (value: Tree) => {
+  }, [refreshLibrary]);
+  const queueSave = useCallback((value: Tree) => {
     const queued = saveQueue.current.catch(() => undefined).then(() => saveTree(value));
     saveQueue.current = queued;
     return queued;
-  };
-  const commit = useCallback((next: Tree, record = true) => {
-    const previous = treeRef.current;
-    if (next === previous) return;
-    if (record && previous) {
-      history.current.push(cloneTree(previous));
-      if (history.current.length > 50) history.current.shift();
-      future.current = [];
-    }
-    const updated = { ...next, version: 2 as const, updatedAt: Date.now() };
-    treeRef.current = updated;
-    setTree(updated);
-    // Viewport updates do not turn an untouched new tree into a saved tree.
-    if (record) draftTree.current = false;
-    if (draftTree.current) return;
-    setSaveState('saving');
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const count = ++saveCounter.current;
-    saveTimer.current = setTimeout(async () => {
-      saveTimer.current = null;
-      try {
-        await queueSave(updated);
-        if (count === saveCounter.current) {
-          setSaveState('saved');
-          refreshLibrary();
-        }
-      } catch (error) {
-        if (count === saveCounter.current) {
-          setSaveState('error');
-          showError(error);
-        }
-      }
-    }, 450);
   }, []);
+  const commit = useCallback(
+    (next: Tree, record = true) => {
+      const previous = treeRef.current;
+      if (next === previous) return;
+      if (record && previous) {
+        history.current.push(cloneTree(previous));
+        if (history.current.length > 50) history.current.shift();
+        future.current = [];
+      }
+      const updated = { ...next, version: 2 as const, updatedAt: Date.now() };
+      treeRef.current = updated;
+      setTree(updated);
+      // Viewport updates do not turn an untouched new tree into a saved tree.
+      if (record) draftTree.current = false;
+      if (draftTree.current) return;
+      setSaveState('saving');
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      const count = ++saveCounter.current;
+      saveTimer.current = setTimeout(async () => {
+        saveTimer.current = null;
+        try {
+          await queueSave(updated);
+          if (count === saveCounter.current) {
+            setSaveState('saved');
+            refreshLibrary();
+          }
+        } catch (error) {
+          if (count === saveCounter.current) {
+            setSaveState('error');
+            showError(error);
+          }
+        }
+      }, 450);
+    },
+    [queueSave, refreshLibrary, showError],
+  );
   const openTree = async (id: string, draft?: Tree) => {
     try {
       if (saveTimer.current && treeRef.current) {
@@ -207,15 +217,18 @@ export default function App() {
     const newTree = makeTree('My family tree');
     await openTree(newTree.id, newTree);
   };
-  const apply = (update: (current: Tree) => Tree, record = true) => {
-    if (!treeRef.current) return;
-    try {
-      commit(update(treeRef.current), record);
-      setNotice('');
-    } catch (error) {
-      showError(error);
-    }
-  };
+  const apply = useCallback(
+    (update: (current: Tree) => Tree, record = true) => {
+      if (!treeRef.current) return;
+      try {
+        commit(update(treeRef.current), record);
+        setNotice('');
+      } catch (error) {
+        showError(error);
+      }
+    },
+    [commit, showError],
+  );
   const editLifeDates = (personId: string, changes: Partial<LifeDates>) => {
     const current = treeRef.current?.people.find((p) => p.id === personId);
     if (!current) return;
@@ -287,25 +300,28 @@ export default function App() {
         ),
       );
   };
-  const deletePerson = (id: string) => {
-    const current = treeRef.current;
-    const person = current?.people.find((p) => p.id === id);
-    if (!current || !person) return;
-    if (
-      !window.confirm(
-        `Delete ${person.name || 'this person'} and their relationships?${current.homePersonId === id ? ' This also clears the home person designation.' : ''}`,
+  const deletePerson = useCallback(
+    (id: string) => {
+      const current = treeRef.current;
+      const person = current?.people.find((p) => p.id === id);
+      if (!current || !person) return;
+      if (
+        !window.confirm(
+          `Delete ${person.name || 'this person'} and their relationships?${current.homePersonId === id ? ' This also clears the home person designation.' : ''}`,
+        )
       )
-    )
-      return;
-    apply((t) => removePerson(t, id));
-    setDateDrafts((previous) => {
-      const next = { ...previous };
-      delete next[id];
-      return next;
-    });
-    setSelectedId(null);
-    setSelectedRelationId(null);
-  };
+        return;
+      apply((t) => removePerson(t, id));
+      setDateDrafts((previous) => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
+      setSelectedId(null);
+      setSelectedRelationId(null);
+    },
+    [apply],
+  );
   const connect = (connection: Connection) => {
     const a = connection.source,
       b = connection.target;
@@ -390,7 +406,7 @@ export default function App() {
         draggable: true,
       }));
     });
-  }, [tree, kinships, home, selectedId, setNodes]);
+  }, [tree, kinships, home, selectedId, setNodes, deletePerson]);
   const selectPerson = useCallback(
     (id: string) => {
       setNodes((current) =>
