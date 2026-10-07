@@ -1,8 +1,8 @@
-import { assertValidLifeDates, normalizeHomePerson, type Tree } from "./model";
-import { normalizePersonNames } from "./personNames";
-const DB = "genealogical3";
-const STORE = "trees";
-const LINKS = "driveLinks";
+import { assertValidLifeDates, normalizeHomePerson, type Tree } from './model';
+import { normalizePersonNames } from './personNames';
+const DB = 'genealogical3';
+const STORE = 'trees';
+const LINKS = 'driveLinks';
 export type DriveLink = {
   treeId: string;
   id: string;
@@ -14,13 +14,12 @@ function openDb(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB, 2);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE))
-        request.result.createObjectStore(STORE, { keyPath: "id" });
+        request.result.createObjectStore(STORE, { keyPath: 'id' });
       if (!request.result.objectStoreNames.contains(LINKS))
-        request.result.createObjectStore(LINKS, { keyPath: "treeId" });
+        request.result.createObjectStore(LINKS, { keyPath: 'treeId' });
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
-      reject(request.error || Error("Could not open browser storage."));
+    request.onerror = () => reject(request.error || Error('Could not open browser storage.'));
   });
 }
 async function transaction<T>(
@@ -34,11 +33,11 @@ async function transaction<T>(
     const request = run(tx.objectStore(storeName));
     request.onerror = () => {
       db.close();
-      reject(request.error || Error("Browser storage failed."));
+      reject(request.error || Error('Browser storage failed.'));
     };
     tx.onabort = () => {
       db.close();
-      reject(tx.error || Error("Browser storage was interrupted."));
+      reject(tx.error || Error('Browser storage was interrupted.'));
     };
     tx.oncomplete = () => {
       const value = request.result;
@@ -48,30 +47,25 @@ async function transaction<T>(
   });
 }
 export const listTrees = () =>
-  transaction<Tree[]>(STORE, "readonly", (store) => store.getAll()).then(
-    (trees) =>
-      trees.map((tree) => normalizePersonNames(normalizeHomePerson(tree))),
+  transaction<Tree[]>(STORE, 'readonly', (store) => store.getAll()).then((trees) =>
+    trees.map((tree) => normalizePersonNames(normalizeHomePerson(tree))),
   );
 export const getTree = (id: string) =>
-  transaction<Tree | undefined>(STORE, "readonly", (store) =>
-    store.get(id),
-  ).then((tree) =>
+  transaction<Tree | undefined>(STORE, 'readonly', (store) => store.get(id)).then((tree) =>
     tree ? normalizePersonNames(normalizeHomePerson(tree)) : undefined,
   );
 export const saveTree = (tree: Tree) => {
   assertValidLifeDates(tree);
   const normalized = normalizeHomePerson(tree);
-  return transaction<IDBValidKey>(STORE, "readwrite", (store) =>
+  return transaction<IDBValidKey>(STORE, 'readwrite', (store) =>
     store.put({ ...normalized, version: 2 }),
   );
 };
 export const deleteTree = (id: string) =>
-  transaction<undefined>(STORE, "readwrite", (store) => store.delete(id));
+  transaction<undefined>(STORE, 'readwrite', (store) => store.delete(id));
 export const getDriveLink = (treeId: string) =>
-  transaction<DriveLink | undefined>(LINKS, "readonly", (store) =>
-    store.get(treeId),
-  );
+  transaction<DriveLink | undefined>(LINKS, 'readonly', (store) => store.get(treeId));
 export const saveDriveLink = (link: DriveLink) =>
-  transaction<IDBValidKey>(LINKS, "readwrite", (store) => store.put(link));
+  transaction<IDBValidKey>(LINKS, 'readwrite', (store) => store.put(link));
 export const deleteDriveLink = (treeId: string) =>
-  transaction<undefined>(LINKS, "readwrite", (store) => store.delete(treeId));
+  transaction<undefined>(LINKS, 'readwrite', (store) => store.delete(treeId));

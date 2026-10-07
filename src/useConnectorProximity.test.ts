@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { trackConnectorProximity } from "./useConnectorProximity";
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { trackConnectorProximity } from './useConnectorProximity';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -7,17 +7,16 @@ function canvasFixture(count = 1) {
   class Element extends EventTarget {
     values = new Map<string, string>();
     style = {
-      getPropertyValue: (name: string) => this.values.get(name) || "",
-      setProperty: (name: string, value: string) =>
-        this.values.set(name, value),
+      getPropertyValue: (name: string) => this.values.get(name) || '',
+      setProperty: (name: string, value: string) => this.values.set(name, value),
     };
     rect = { left: 0, right: 220, top: 0, bottom: 140 };
     getBoundingClientRect = vi.fn(() => this.rect);
-    constructor(public className = "person-card") {
+    constructor(public className = 'person-card') {
       super();
     }
     matches(selector: string) {
-      return selector.split(", ").includes(`.${this.className}`);
+      return selector.split(', ').includes(`.${this.className}`);
     }
   }
   const cards = Array.from({ length: count }, (_, index) => {
@@ -26,7 +25,7 @@ function canvasFixture(count = 1) {
     card.rect.right = card.rect.left + 220;
     return card;
   });
-  const canvas = Object.assign(new Element("canvas"), {
+  const canvas = Object.assign(new Element('canvas'), {
     querySelectorAll: vi.fn(() => cards),
   });
   const frames = new Map<number, FrameRequestCallback>();
@@ -36,17 +35,15 @@ function canvasFixture(count = 1) {
   const disconnectResize = vi.fn(),
     disconnectMutation = vi.fn();
   const unobserve = vi.fn();
-  vi.stubGlobal("HTMLElement", Element);
-  vi.stubGlobal("window", new EventTarget());
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+  vi.stubGlobal('HTMLElement', Element);
+  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     frames.set(++nextFrame, callback);
     return nextFrame;
   });
-  vi.stubGlobal("cancelAnimationFrame", (frame: number) =>
-    frames.delete(frame),
-  );
+  vi.stubGlobal('cancelAnimationFrame', (frame: number) => frames.delete(frame));
   vi.stubGlobal(
-    "ResizeObserver",
+    'ResizeObserver',
     class {
       constructor(callback: ResizeObserverCallback) {
         resize = callback;
@@ -57,7 +54,7 @@ function canvasFixture(count = 1) {
     },
   );
   vi.stubGlobal(
-    "MutationObserver",
+    'MutationObserver',
     class {
       constructor(callback: MutationCallback) {
         mutation = callback;
@@ -73,15 +70,13 @@ function canvasFixture(count = 1) {
     pending.forEach((callback) => callback(0));
   };
   const move = (x: number, y = 50) => {
-    canvas.dispatchEvent(
-      Object.assign(new Event("pointermove"), { clientX: x, clientY: y }),
-    );
+    canvas.dispatchEvent(Object.assign(new Event('pointermove'), { clientX: x, clientY: y }));
     flush();
   };
   const mutate = (
     type: string,
-    target = new Element("react-flow__node"),
-    attributeName = "style",
+    target = new Element('react-flow__node'),
+    attributeName = 'style',
   ) => {
     mutation!(
       [{ type, target, attributeName } as unknown as MutationRecord],
@@ -89,7 +84,7 @@ function canvasFixture(count = 1) {
     );
     flush();
   };
-  const opacity = (card = cards[0]) => card.values.get("--connector-opacity");
+  const opacity = (card = cards[0]) => card.values.get('--connector-opacity');
   return {
     canvas,
     cards,
@@ -109,49 +104,45 @@ function canvasFixture(count = 1) {
   };
 }
 
-describe("cached connector proximity", () => {
-  it("performs no further layout reads during pointer movement across 2,000 cards", () => {
+describe('cached connector proximity', () => {
+  it('performs no further layout reads during pointer movement across 2,000 cards', () => {
     const f = canvasFixture(2000);
     f.move(-40);
-    expect(f.opacity()).toBe("0.50");
+    expect(f.opacity()).toBe('0.50');
     for (let frame = 0; frame < 60; frame++) f.move(-frame);
     // Opacity writes are observed too; they must not invalidate geometry.
-    f.mutate("attributes", f.cards[0], "style");
+    f.mutate('attributes', f.cards[0], 'style');
     f.move(50);
-    expect(f.opacity()).toBe("1.00");
+    expect(f.opacity()).toBe('1.00');
     expect(f.canvas.querySelectorAll).toHaveBeenCalledOnce();
-    expect(
-      f.cards.every(
-        (card) => card.getBoundingClientRect.mock.calls.length === 1,
-      ),
-    ).toBe(true);
+    expect(f.cards.every((card) => card.getBoundingClientRect.mock.calls.length === 1)).toBe(true);
     f.stop();
   });
 
-  it("refreshes after drag, pan/zoom, resize, and card changes and cleans up", () => {
+  it('refreshes after drag, pan/zoom, resize, and card changes and cleans up', () => {
     const f = canvasFixture();
     f.move(40);
-    expect(f.opacity()).toBe("1.00");
+    expect(f.opacity()).toBe('1.00');
     f.cards[0].rect = { left: 500, right: 720, top: 0, bottom: 140 };
-    f.mutate("attributes");
-    expect(f.opacity()).toBe("0.00");
+    f.mutate('attributes');
+    expect(f.opacity()).toBe('0.00');
     f.cards[0].rect = { left: 80, right: 300, top: 0, bottom: 140 };
-    f.mutate("attributes", new f.Element("react-flow__viewport"));
-    expect(f.opacity()).toBe("0.50");
+    f.mutate('attributes', new f.Element('react-flow__viewport'));
+    expect(f.opacity()).toBe('0.50');
     f.cards[0].rect.left = 40;
     f.resized();
-    expect(f.opacity()).toBe("1.00");
+    expect(f.opacity()).toBe('1.00');
     const added = new f.Element();
     f.cards.push(added);
-    f.mutate("childList");
-    expect(f.opacity(added)).toBe("1.00");
+    f.mutate('childList');
+    expect(f.opacity(added)).toBe('1.00');
     f.cards.pop();
-    f.mutate("childList");
+    f.mutate('childList');
     expect(f.unobserve).toHaveBeenCalledWith(added);
     const reads = f.canvas.querySelectorAll.mock.calls.length;
-    f.canvas.dispatchEvent(new Event("pointerleave"));
+    f.canvas.dispatchEvent(new Event('pointerleave'));
     f.flush();
-    expect(f.opacity()).toBe("0.00");
+    expect(f.opacity()).toBe('0.00');
     expect(f.canvas.querySelectorAll.mock.calls.length).toBe(reads);
     f.stop();
     f.move(40);

@@ -1,4 +1,4 @@
-import { personCardSize, type Tree } from "./model";
+import { personCardSize, type Tree } from './model';
 
 /** Persist a whole drag gesture together; unchanged gestures don't add history. */
 export function movePeopleToPositions(
@@ -9,8 +9,7 @@ export function movePeopleToPositions(
   let changed = false;
   const people = tree.people.map((person) => {
     const position = positions.get(person.id);
-    if (!position || (person.x === position.x && person.y === position.y))
-      return person;
+    if (!position || (person.x === position.x && person.y === position.y)) return person;
     changed = true;
     return { ...person, x: position.x, y: position.y };
   });
@@ -18,13 +17,11 @@ export function movePeopleToPositions(
 }
 
 export function personPositionAtViewCenter(
-  viewport: Tree["viewport"],
+  viewport: Tree['viewport'],
   size: { width: number; height: number },
 ) {
   return {
     x: (size.width / 2 - viewport.x) / viewport.zoom - personCardSize.width / 2,
-    y:
-      (size.height / 2 - viewport.y) / viewport.zoom -
-      personCardSize.height / 2,
+    y: (size.height / 2 - viewport.y) / viewport.zoom - personCardSize.height / 2,
   };
 }

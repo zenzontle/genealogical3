@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 import {
   makePerson,
   makeTree,
@@ -6,14 +6,14 @@ import {
   removePerson,
   setHomePerson,
   validateTree,
-} from "./model";
-import { saveTree } from "./storage";
+} from './model';
+import { saveTree } from './storage';
 
-describe("home designation and portable documents", () => {
-  const a = makePerson("A"),
-    b = makePerson("B");
+describe('home designation and portable documents', () => {
+  const a = makePerson('A'),
+    b = makePerson('B');
   const tree = { ...makeTree(), people: [a, b] };
-  it("starts unset and can be assigned, replaced, and cleared without mutating snapshots", () => {
+  it('starts unset and can be assigned, replaced, and cleared without mutating snapshots', () => {
     const first = setHomePerson(tree, a.id),
       replaced = setHomePerson(first, b.id),
       cleared = setHomePerson(replaced, null);
@@ -26,33 +26,29 @@ describe("home designation and portable documents", () => {
     expect(structuredClone(first).homePersonId).toBe(a.id);
     expect(validateTree(JSON.parse(JSON.stringify(first)))).toEqual(first);
   });
-  it("normalizes missing home fields in version 1 and 2 documents without choosing a person", () => {
+  it('normalizes missing home fields in version 1 and 2 documents without choosing a person', () => {
     const { homePersonId: _home, ...legacy } = tree;
     expect(normalizeHomePerson(legacy).homePersonId).toBeNull();
     expect(validateTree({ ...legacy, version: 1 }).homePersonId).toBeNull();
     expect(validateTree(legacy)).toEqual(tree);
-    expect(legacy).not.toHaveProperty("homePersonId");
+    expect(legacy).not.toHaveProperty('homePersonId');
   });
-  it("rejects missing references and malformed values at import and persistence boundaries", () => {
-    for (const homePersonId of ["missing", 1, false, {}, []])
-      expect(() => validateTree({ ...tree, homePersonId })).toThrow(
-        /home person/,
-      );
-    expect(() => setHomePerson(tree, "missing")).toThrow(/home person/);
-    expect(() => saveTree({ ...tree, homePersonId: "missing" })).toThrow(
-      /home person/,
-    );
+  it('rejects missing references and malformed values at import and persistence boundaries', () => {
+    for (const homePersonId of ['missing', 1, false, {}, []])
+      expect(() => validateTree({ ...tree, homePersonId })).toThrow(/home person/);
+    expect(() => setHomePerson(tree, 'missing')).toThrow(/home person/);
+    expect(() => saveTree({ ...tree, homePersonId: 'missing' })).toThrow(/home person/);
   });
-  it("clears home and attached relationships atomically on deletion, leaving other snapshots intact", () => {
+  it('clears home and attached relationships atomically on deletion, leaving other snapshots intact', () => {
     const assigned = {
       ...setHomePerson(tree, a.id),
       relations: [
         {
-          id: "link",
-          type: "parent" as const,
+          id: 'link',
+          type: 'parent' as const,
           parentId: a.id,
           childId: b.id,
-          kind: "biological" as const,
+          kind: 'biological' as const,
         },
       ],
     };

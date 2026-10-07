@@ -1,10 +1,10 @@
-import { getSmoothStepPath, Position } from "@xyflow/react";
-import type { HandleSide, Person, Relation } from "./model";
+import { getSmoothStepPath, Position } from '@xyflow/react';
+import type { HandleSide, Person, Relation } from './model';
 
 export type Point = { x: number; y: number };
 export type CardSize = { width: number; height: number };
-type ParentRelation = Extract<Relation, { type: "parent" }>;
-type PartnerRelation = Extract<Relation, { type: "partner" }>;
+type ParentRelation = Extract<Relation, { type: 'parent' }>;
+type PartnerRelation = Extract<Relation, { type: 'partner' }>;
 export type FamilyConnector = {
   partner: PartnerRelation;
   relationIds: string[];
@@ -47,25 +47,22 @@ export function familyConnectors(
   const parents = new Map<string, ParentRelation[]>();
   const partners = new Map<string, PartnerRelation>();
   for (const relation of relations) {
-    if (relation.type === "partner")
+    if (relation.type === 'partner')
       partners.set(pairKey([relation.personA, relation.personB]), relation);
-    if (relation.type === "parent") {
+    if (relation.type === 'parent') {
       const links = parents.get(relation.childId) || [];
       links.push(relation);
       parents.set(relation.childId, links);
     }
   }
-  const groups = new Map<
-    string,
-    { child: Person; links: ParentRelation[] }[]
-  >();
+  const groups = new Map<string, { child: Person; links: ParentRelation[] }[]>();
   for (const [childId, links] of parents) {
     const child = byId.get(childId);
     if (
       !child ||
       links.length !== 2 ||
       links[0].parentId === links[1].parentId ||
-      links.some((r) => r.kind === "step" || r.kind === "guardian")
+      links.some((r) => r.kind === 'step' || r.kind === 'guardian')
     )
       continue;
     const key = pairKey(links.map((r) => r.parentId));
@@ -85,28 +82,20 @@ export function familyConnectors(
     // Children on opposite sides of their parents get separate sibling bars.
     const paths = [false, true].flatMap((above) => {
       const sideChildren = children.filter(
-        ({ child }) =>
-          child.y + cardSize(child).height / 2 < midpoint.y === above,
+        ({ child }) => child.y + cardSize(child).height / 2 < midpoint.y === above,
       );
       if (!sideChildren.length) return [];
       const parentEdge = above
         ? Math.min(a.y, b.y)
         : Math.max(a.y + cardSize(a).height, b.y + cardSize(b).height);
       const childEdge = above
-        ? Math.max(
-            ...sideChildren.map(
-              ({ child }) => child.y + cardSize(child).height,
-            ),
-          )
+        ? Math.max(...sideChildren.map(({ child }) => child.y + cardSize(child).height))
         : Math.min(...sideChildren.map(({ child }) => child.y));
       const gap = above ? parentEdge - childEdge : childEdge - parentEdge;
-      const barY =
-        gap >= 64
-          ? (parentEdge + childEdge) / 2
-          : childEdge + (above ? 32 : -32);
+      const barY = gap >= 64 ? (parentEdge + childEdge) / 2 : childEdge + (above ? 32 : -32);
       const branches = sideChildren.map(({ child }) => ({
         childId: child.id,
-        targetHandle: above ? ("bottom" as const) : ("top" as const),
+        targetHandle: above ? ('bottom' as const) : ('top' as const),
         points: [
           { x: child.x + cardSize(child).width / 2, y: barY },
           {
@@ -140,9 +129,7 @@ export function familyConnectors(
 }
 
 export const connectorPath = (points: Point[]) =>
-  points
-    .map((point, i) => `${i === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
+  points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 
 export const connectorPoints = (families: FamilyConnector[]) =>
   families.flatMap((family) => [

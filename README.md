@@ -14,6 +14,14 @@ Open the URL Vite prints. `pnpm build` checks TypeScript and creates a productio
 
 The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile. `pnpm-workspace.yaml` allows esbuild's install script, which Vite needs.
 
+### Formatting
+
+Run `pnpm format` to format the project or `pnpm format:check` to check formatting without changing files. Prettier is pinned to an exact version, and `.prettierrc.json` defines single quotes, a 100-column print width, and CRLF line endings. Two-space indentation, semicolons, and trailing commas use Prettier's defaults. Generated output and the pnpm lockfile are excluded via `.prettierignore`.
+
+For editor formatting, enable the Prettier integration in your editor and use the project's local version and configuration.
+
+`.gitattributes` enforces CRLF checkouts for text files on every platform, independently of `core.autocrlf`. Git stores normalized LF content; the generated pnpm lockfile stays LF. After pulling this policy into an existing checkout, run `pnpm format` once to align local files.
+
 ### Dependency audit
 
 The October 1, 2026 npm audit reported no high or critical findings. Vitest and its mocker have a moderate [path traversal advisory](https://github.com/advisories/GHSA-82fw-gwwq-j7x9). These are development dependencies; the test command runs in batch mode and does not expose a test server, and they are excluded from the production bundle. A major test-runner upgrade is deferred pending compatibility testing. Review this deferral by November 1, 2026, and do not expose a Vitest server to untrusted networks.

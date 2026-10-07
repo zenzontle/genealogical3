@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, type RefObject } from 'react';
 
 // Cache screen-space bounds until cards or the viewport change. Pointer frames
 // use only cached numbers, keeping the reveal radius consistent at any zoom.
@@ -12,9 +12,7 @@ export function trackConnectorProximity(canvas: HTMLElement) {
     frame = 0;
     if (dirty) {
       dirty = false;
-      const cards = Array.from(
-        canvas.querySelectorAll<HTMLElement>(".person-card"),
-      );
+      const cards = Array.from(canvas.querySelectorAll<HTMLElement>('.person-card'));
       bounds = cards.map((card) => ({
         card,
         rect: card.getBoundingClientRect(),
@@ -41,8 +39,8 @@ export function trackConnectorProximity(canvas: HTMLElement) {
           )
         : Infinity;
       const opacity = Math.max(0, 1 - distance / 80).toFixed(2);
-      if (card.style.getPropertyValue("--connector-opacity") !== opacity)
-        card.style.setProperty("--connector-opacity", opacity);
+      if (card.style.getPropertyValue('--connector-opacity') !== opacity)
+        card.style.setProperty('--connector-opacity', opacity);
     }
   };
   const schedule = () => {
@@ -58,13 +56,10 @@ export function trackConnectorProximity(canvas: HTMLElement) {
     if (
       mutations.some(
         (mutation) =>
-          mutation.type !== "attributes" ||
+          mutation.type !== 'attributes' ||
           (mutation.target instanceof HTMLElement &&
-            (mutation.target.matches(
-              ".react-flow__viewport, .react-flow__node",
-            ) ||
-              (mutation.attributeName === "class" &&
-                mutation.target.matches(".person-card")))),
+            (mutation.target.matches('.react-flow__viewport, .react-flow__node') ||
+              (mutation.attributeName === 'class' && mutation.target.matches('.person-card')))),
       )
     )
       invalidate();
@@ -74,7 +69,7 @@ export function trackConnectorProximity(canvas: HTMLElement) {
     childList: true,
     characterData: true,
     attributes: true,
-    attributeFilter: ["style", "class"],
+    attributeFilter: ['style', 'class'],
   });
   const move = (event: PointerEvent) => {
     pointer = { x: event.clientX, y: event.clientY };
@@ -84,18 +79,18 @@ export function trackConnectorProximity(canvas: HTMLElement) {
     pointer = null;
     schedule();
   };
-  canvas.addEventListener("pointermove", move);
-  canvas.addEventListener("pointerleave", leave);
-  window.addEventListener("resize", invalidate);
-  window.addEventListener("scroll", invalidate, true);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerleave', leave);
+  window.addEventListener('resize', invalidate);
+  window.addEventListener('scroll', invalidate, true);
   return () => {
     cancelAnimationFrame(frame);
     resizeObserver.disconnect();
     mutationObserver.disconnect();
-    canvas.removeEventListener("pointermove", move);
-    canvas.removeEventListener("pointerleave", leave);
-    window.removeEventListener("resize", invalidate);
-    window.removeEventListener("scroll", invalidate, true);
+    canvas.removeEventListener('pointermove', move);
+    canvas.removeEventListener('pointerleave', leave);
+    window.removeEventListener('resize', invalidate);
+    window.removeEventListener('scroll', invalidate, true);
   };
 }
 
