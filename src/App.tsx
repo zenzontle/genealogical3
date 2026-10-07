@@ -19,31 +19,26 @@ import {
   FileImage,
   Heart,
   Home,
-  ImagePlus,
-  Link2,
   Menu,
   PanelRightClose,
   PanelRightOpen,
   Plus,
   Redo2,
   Search,
-  ShieldCheck,
-  Trash2,
   Undo2,
-  Upload,
-  Users,
   X,
 } from 'lucide-react';
 import { PersonCard, type PersonNode } from './PersonCard';
 import { BrandMark } from './BrandMark';
-import { SexIcon } from './SexIcon';
-import { RelationshipFields } from './RelationshipFields';
+import { PersonEditor, type ConnectMode } from './PersonEditor';
+import { RelationshipEditor } from './RelationshipEditor';
+import { HomeScreen } from './HomeScreen';
+import { DriveActionsDialog } from './DriveActionsDialog';
+import { DriveTreeDialog } from './DriveTreeDialog';
 import { RelationshipEdge } from './RelationshipEdge';
 import { FamilyEdge } from './FamilyEdge';
 import { relationshipEdges } from './relationshipEdges';
-import { HomePersonDetails } from './HomePersonDetails';
-import { calculateKinships, partnerKinshipLabel, type KinshipResult } from './kinship';
-import { setPersonName } from './personNames';
+import { calculateKinships, type KinshipResult } from './kinship';
 import { movePeopleToPositions, personPositionAtViewCenter } from './canvasPosition';
 import { useConnectorProximity } from './useConnectorProximity';
 import {
@@ -55,15 +50,12 @@ import {
   personLifeStatus,
   removePerson,
   setHomePerson,
-  relationLabel,
   relationFromConnection,
   updateRelation,
   uid,
   validateTree,
-  type DateValue,
   type HandleSide,
   type LifeDates,
-  type Person,
   type Relation,
   type Tree,
 } from './model';
@@ -76,7 +68,7 @@ import {
   saveDriveLink,
   saveTree,
 } from './storage';
-import { exportJson, exportPng, portraitData } from './media';
+import { exportJson, exportPng } from './media';
 import {
   authorizeDrive,
   disconnectDrive,
@@ -91,423 +83,7 @@ const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = 'draft' | 'saved' | 'saving' | 'error';
-type ConnectMode = 'parent' | 'child' | 'partner' | null;
-function DateInput({
-  label,
-  value,
-  onChange,
-  invalid = false,
-  errorId,
-}: {
-  label: string;
-  value: DateValue;
-  onChange: (value: DateValue) => void;
-  invalid?: boolean;
-  errorId?: string;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const savedValue =
-    value.precision === 'full'
-      ? value.value
-      : value.precision === 'year'
-        ? Number.isFinite(value.year)
-          ? String(value.year)
-          : ''
-        : '';
-  useEffect(() => {
-    if (input.current && document.activeElement !== input.current) input.current.value = savedValue;
-  }, [savedValue, value.precision]);
-  return (
-    <div className="date-field">
-      <label>
-        {label}
-        <select
-          value={value.precision}
-          onChange={(e) =>
-            onChange(
-              e.target.value === 'year'
-                ? { precision: 'year', year: new Date().getFullYear() }
-                : e.target.value === 'full'
-                  ? { precision: 'full', value: '2000-01-01' }
-                  : { precision: 'unknown' },
-            )
-          }
-        >
-          <option value="unknown">Unknown</option>
-          <option value="year">Year only</option>
-          <option value="full">Full date</option>
-        </select>
-      </label>
-      {value.precision === 'year' && (
-        <input
-          ref={input}
-          type="number"
-          aria-label={`${label} year`}
-          aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? errorId : undefined}
-          min="1"
-          max="9999"
-          defaultValue={Number.isFinite(value.year) ? value.year : ''}
-          onChange={(e) => {
-            onChange({
-              precision: 'year',
-              year: e.currentTarget.valueAsNumber,
-            });
-          }}
-        />
-      )}
-      {value.precision === 'full' && (
-        <input
-          ref={input}
-          type="date"
-          min="0001-01-01"
-          max="9999-12-31"
-          aria-label={`${label} date`}
-          aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? errorId : undefined}
-          defaultValue={value.value}
-          onChange={(e) => {
-            onChange({ precision: 'full', value: e.currentTarget.value });
-          }}
-        />
-      )}
-    </div>
-  );
-}
-function PersonEditor({
-  person,
-  home,
-  kinship,
-  onSetHome,
-  dates,
-  onDatesChange,
-  relations,
-  people,
-  onChange,
-  onDelete,
-  onAddRelative,
-  connectMode,
-  setConnectMode,
-  onConnectTo,
-  onRemoveRelation,
-  onUpdateRelation,
-  onClose,
-}: {
-  person: Person;
-  home: Person | null;
-  kinship?: KinshipResult;
-  onSetHome: (id: string | null) => void;
-  dates: LifeDates;
-  onDatesChange: (changes: Partial<LifeDates>) => void;
-  relations: Relation[];
-  people: Person[];
-  onChange: (p: Person) => void;
-  onDelete: () => void;
-  onAddRelative: (type: Exclude<ConnectMode, null>) => void;
-  connectMode: ConnectMode;
-  setConnectMode: (mode: ConnectMode) => void;
-  onConnectTo: (targetId: string) => void;
-  onRemoveRelation: (id: string) => void;
-  onUpdateRelation: (relation: Relation) => void;
-  onClose: () => void;
-}) {
-  const portraitInput = useRef<HTMLInputElement>(null);
-  const dateError = lifeDatesError(dates);
-  const dateErrorId = `date-error-${person.id}`;
-  const attached = relations.filter((r) =>
-    r.type === 'parent'
-      ? r.parentId === person.id || r.childId === person.id
-      : r.personA === person.id || r.personB === person.id,
-  );
-  const otherPerson = (r: Relation) =>
-    people.find(
-      (p) =>
-        p.id ===
-        (r.type === 'parent'
-          ? r.parentId === person.id
-            ? r.childId
-            : r.parentId
-          : r.personA === person.id
-            ? r.personB
-            : r.personA),
-    );
-  const other = (r: Relation) => otherPerson(r)?.name || 'Unnamed person';
-  return (
-    <div className="editor-content">
-      <div className="panel-title">
-        <div>
-          <p className="eyebrow">PERSON DETAILS</p>
-          <h2>{person.name || 'Unnamed person'}</h2>
-        </div>
-        <button className="icon-button" aria-label="Close details" onClick={onClose}>
-          <X size={19} />
-        </button>
-      </div>
-      <HomePersonDetails
-        person={person}
-        home={home}
-        people={people}
-        kinship={kinship}
-        onSetHome={onSetHome}
-      />
-      <div className="portrait-upload">
-        <button
-          type="button"
-          className="portrait-preview"
-          aria-label={person.portrait ? 'Change photo' : 'Add photo'}
-          title={person.portrait ? 'Change photo' : 'Add photo'}
-          onClick={() => portraitInput.current?.click()}
-        >
-          {person.portrait ? (
-            <img src={person.portrait} alt="Portrait" />
-          ) : (
-            <span>{(person.name[0] || '?').toUpperCase()}</span>
-          )}
-          <span className="portrait-upload-icon">
-            <ImagePlus size={16} />
-          </span>
-        </button>
-        <div>
-          <input
-            ref={portraitInput}
-            className="sr-only"
-            tabIndex={-1}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              e.currentTarget.value = '';
-              try {
-                onChange({ ...person, portrait: await portraitData(f) });
-              } catch (error) {
-                alert((error as Error).message);
-              }
-            }}
-          />
-          <p className="tiny">JPEG, PNG or WebP · processed locally</p>
-          {person.portrait && (
-            <button className="text-button" onClick={() => onChange({ ...person, portrait: null })}>
-              Remove photo
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="field-grid">
-        <label>
-          First name
-          <input
-            autoComplete="given-name"
-            value={person.firstName}
-            onChange={(e) => onChange(setPersonName(person, 'firstName', e.target.value))}
-            placeholder="First name"
-          />
-        </label>
-        <label>
-          Last name
-          <input
-            autoComplete="family-name"
-            value={person.lastName}
-            onChange={(e) => onChange(setPersonName(person, 'lastName', e.target.value))}
-            placeholder="Last name"
-          />
-        </label>
-      </div>
-      <label>
-        Nickname
-        <input
-          value={person.nickname}
-          onChange={(e) => onChange({ ...person, nickname: e.target.value })}
-          placeholder="Nickname"
-        />
-      </label>
-      <label>
-        Status
-        <select
-          value={personLifeStatus(dates)}
-          onChange={(event) => {
-            const lifeStatus =
-              event.target.value === 'living'
-                ? 'living'
-                : event.target.value === 'deceased'
-                  ? 'deceased'
-                  : undefined;
-            onDatesChange({
-              lifeStatus,
-              ...(lifeStatus !== 'deceased' ? { died: { precision: 'unknown' as const } } : {}),
-            });
-          }}
-        >
-          <option value="">Unknown</option>
-          <option value="living">Living</option>
-          <option value="deceased">Deceased</option>
-        </select>
-      </label>
-      <div className="field-grid">
-        <DateInput
-          key={`${person.id}-born`}
-          label="Born"
-          value={dates.born}
-          onChange={(born) => onDatesChange({ born })}
-          invalid={!!dateError}
-          errorId={dateErrorId}
-        />
-        {personLifeStatus(dates) === 'deceased' && (
-          <DateInput
-            key={`${person.id}-died`}
-            label="Died"
-            value={dates.died}
-            onChange={(died) => onDatesChange({ died })}
-            invalid={!!dateError}
-            errorId={dateErrorId}
-          />
-        )}
-      </div>
-      {dateError && (
-        <p className="date-error" id={dateErrorId} role="alert">
-          {dateError} These date changes haven’t been saved. Adjust either field to continue.
-        </p>
-      )}
-      <fieldset className="sex-field">
-        <legend>Sex</legend>
-        <div className="sex-options">
-          {(['male', 'female'] as const).map((sex) => (
-            <button
-              key={sex}
-              className={`sex-${sex}`}
-              type="button"
-              aria-pressed={person.sex === sex}
-              onClick={() => onChange({ ...person, sex: person.sex === sex ? '' : sex })}
-            >
-              <SexIcon sex={sex} />
-              {sex === 'male' ? 'Male' : 'Female'}
-            </button>
-          ))}
-        </div>
-        {person.sex === 'other' && (
-          <p className="tiny">Other recorded. Choose an option to change it.</p>
-        )}
-      </fieldset>
-      <label>
-        Notes
-        <textarea
-          rows={4}
-          value={person.notes}
-          onChange={(e) => onChange({ ...person, notes: e.target.value })}
-          placeholder="Stories, places, memories…"
-        />
-      </label>
-      <details className="panel-section" key={person.id}>
-        <summary className="section-heading">
-          <h3>Relationships</h3>
-          <span>{attached.length}</span>
-          <ChevronDown size={16} aria-hidden="true" />
-        </summary>
-        {attached.length ? (
-          <div className="relation-list">
-            {attached.map((r) => (
-              <div className="relation-item" key={r.id}>
-                <div>
-                  <strong>{other(r)}</strong>
-                  <span>
-                    {r.type === 'partner'
-                      ? partnerKinshipLabel(r, otherPerson(r)?.sex || '').replace(/^./, (letter) =>
-                          letter.toUpperCase(),
-                        )
-                      : relationLabel(r)}
-                  </span>
-                </div>
-                <button
-                  className="icon-button"
-                  aria-label={`Remove relationship with ${other(r)}`}
-                  title="Remove relationship"
-                  onClick={() => onRemoveRelation(r.id)}
-                >
-                  <X size={16} />
-                </button>
-                <RelationshipFields
-                  relation={r}
-                  people={people}
-                  referenceId={person.id}
-                  onChange={onUpdateRelation}
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="muted">No relationships yet.</p>
-        )}
-        <div className="relative-actions">
-          <button className="button subtle" onClick={() => onAddRelative('parent')}>
-            + Parent
-          </button>
-          <button className="button subtle" onClick={() => onAddRelative('child')}>
-            + Child
-          </button>
-          <button className="button subtle" onClick={() => onAddRelative('partner')}>
-            + Partner
-          </button>
-        </div>
-        <div className="connect-box">
-          <p>Connect to someone already in this tree</p>
-          <div className="field-grid">
-            <select
-              aria-label="Connection role"
-              value={connectMode === 'partner' ? 'partner' : connectMode ? 'parent-child' : ''}
-              onChange={(e) =>
-                setConnectMode(
-                  e.target.value === 'parent-child'
-                    ? 'child'
-                    : e.target.value === 'partner'
-                      ? 'partner'
-                      : null,
-                )
-              }
-            >
-              <option value="">Choose relationship</option>
-              <option value="parent-child">Parent / Child</option>
-              <option value="partner">Partner</option>
-            </select>
-            {(connectMode === 'parent' || connectMode === 'child') && (
-              <label>
-                Parent in this connection
-                <select
-                  aria-label="Parent in new connection"
-                  value={connectMode}
-                  onChange={(e) => setConnectMode(e.target.value as ConnectMode)}
-                >
-                  <option value="child">{person.name || 'This person'}</option>
-                  <option value="parent">Person being connected</option>
-                </select>
-              </label>
-            )}
-            <select
-              aria-label="Person to connect"
-              disabled={!connectMode}
-              defaultValue=""
-              onChange={(e) => {
-                if (e.target.value) onConnectTo(e.target.value);
-                e.target.value = '';
-              }}
-            >
-              <option value="">Choose person…</option>
-              {people
-                .filter((p) => p.id !== person.id)
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-      </details>
-      <button className="button danger" onClick={onDelete}>
-        <Trash2 size={16} /> Delete person
-      </button>
-    </div>
-  );
-}
+
 export default function App() {
   const [screen, setScreen] = useState<'home' | 'editor'>('home');
   const [library, setLibrary] = useState<Tree[]>([]);
@@ -1035,258 +611,14 @@ export default function App() {
         }}
       />
       {screen === 'home' ? (
-        <div className="home">
-          <header className="site-header">
-            <div className="brand">
-              <BrandMark />
-              <span>
-                GENEalogical<span className="brand-three">3</span>
-              </span>
-            </div>
-            <nav>
-              <a href="#how-it-works">How it works</a>
-              <a href="#privacy">Privacy</a>
-              <button className="button light" onClick={() => fileInput.current?.click()}>
-                <Upload size={15} /> Import a tree
-              </button>
-            </nav>
-          </header>
-          <main>
-            <div className="hero">
-              <div className="hero-copy">
-                <div className="eyebrow with-line">A PLACE FOR YOUR PEOPLE</div>
-                <h1>
-                  Every family has
-                  <br />
-                  a story worth
-                  <br />
-                  <em>keeping.</em>
-                </h1>
-                <p>
-                  Gather the names, faces, and connections that make your family yours. Build at
-                  your own pace, right here in your browser.
-                </p>
-                <div className="hero-actions">
-                  <button className="button primary large" onClick={createTree}>
-                    Start a family tree <ArrowRight size={18} />
-                  </button>
-                  <span>No account needed. Your story stays yours.</span>
-                </div>
-              </div>
-              <div className="hero-art" aria-hidden="true">
-                <div className="hero-leaf leaf-one">✻</div>
-                <div className="hero-leaf leaf-two">✻</div>
-                <div className="art-line line-one" />
-                <div className="art-line line-two" />
-                <div className="art-card art-one">
-                  <span className="art-avatar sage">E</span>
-                  <div>
-                    <b>Eleanor</b>
-                    <small>1924 — 2008</small>
-                  </div>
-                </div>
-                <div className="art-card art-two">
-                  <span className="art-avatar peach">J</span>
-                  <div>
-                    <b>James</b>
-                    <small>1920 — 1996</small>
-                  </div>
-                </div>
-                <div className="art-card art-three">
-                  <span className="art-avatar cream">M</span>
-                  <div>
-                    <b>Margaret</b>
-                    <small>1952 —</small>
-                  </div>
-                </div>
-                <div className="art-card art-four">
-                  <span className="art-avatar blue">S</span>
-                  <div>
-                    <b>Samuel</b>
-                    <small>1981 —</small>
-                  </div>
-                </div>
-                <div className="art-caption">One connection at a time.</div>
-              </div>
-            </div>
-            <section className="library-section">
-              <div className="section-intro">
-                <div>
-                  <p className="eyebrow">YOUR WORKSPACE</p>
-                  <h2>Your family trees</h2>
-                </div>
-                <button className="button outline" onClick={createTree}>
-                  <Plus size={17} /> New tree
-                </button>
-              </div>
-              {library.length ? (
-                <div className="tree-grid">
-                  {library.map((item) => (
-                    <div className="tree-tile" key={item.id}>
-                      <button className="tree-open" onClick={() => openTree(item.id)}>
-                        <div className="tree-tile-icon">
-                          <Users size={27} />
-                        </div>
-                        <strong>{item.name}</strong>
-                        {item.homePersonId !== null && (
-                          <span className="library-home">
-                            <Home size={13} aria-hidden="true" />
-                            <span>
-                              Home:{' '}
-                              {item.people.find((p) => p.id === item.homePersonId)?.name ||
-                                'Unnamed person'}
-                            </span>
-                          </span>
-                        )}
-                        <span>
-                          {item.people.length} {item.people.length === 1 ? 'person' : 'people'} ·
-                          Edited {new Date(item.updatedAt).toLocaleDateString()}
-                        </span>
-                        <span className="open-cue">
-                          Open tree <ArrowRight size={15} />
-                        </span>
-                      </button>
-                      <div className="tree-tile-tools">
-                        <button
-                          aria-label={`Rename ${item.name}`}
-                          title="Rename"
-                          onClick={() => rename(item)}
-                        >
-                          Rename
-                        </button>
-                        <button
-                          aria-label={`Delete ${item.name}`}
-                          title="Delete"
-                          onClick={() => removeTree(item)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-library">
-                  <div className="empty-icon">
-                    <Users size={31} />
-                  </div>
-                  <div>
-                    <strong>Your first story starts here.</strong>
-                    <p>Create a tree to start adding the people who matter.</p>
-                  </div>
-                  <button className="button primary" onClick={createTree}>
-                    Create your first tree <ArrowRight size={16} />
-                  </button>
-                </div>
-              )}
-            </section>
-            <section id="how-it-works" className="how-section">
-              <p className="eyebrow">MADE FOR REAL FAMILIES</p>
-              <h2>Simple to start. Yours to keep.</h2>
-              <div className="how-grid">
-                <div>
-                  <span className="how-icon how-icon-peach">
-                    <Users size={27} />
-                  </span>
-                  <h3>Make it yours</h3>
-                  <p>
-                    Add names, dates, photos, and the little notes that make a person more than a
-                    name on a page.
-                  </p>
-                </div>
-                <div>
-                  <span className="how-icon how-icon-sage">
-                    <Link2 size={27} />
-                  </span>
-                  <h3>See how you connect</h3>
-                  <p>
-                    Draw the lines between generations. Move things around until your family story
-                    feels right.
-                  </p>
-                </div>
-                <div>
-                  <span className="how-icon how-icon-lilac">
-                    <Download size={27} />
-                  </span>
-                  <h3>Save and share</h3>
-                  <p>
-                    Your tree stays in this browser. Download a JSON backup or export a PNG to share
-                    with family.
-                  </p>
-                </div>
-              </div>
-            </section>
-            <section id="privacy" className="privacy-section">
-              <div className="privacy-intro">
-                <span className="privacy-icon">
-                  <ShieldCheck size={27} />
-                </span>
-                <div>
-                  <p className="eyebrow">YOUR FAMILY STORY STAYS YOURS</p>
-                  <h2>
-                    Private by default.
-                    <br />
-                    <span>Clear about every connection.</span>
-                  </h2>
-                  <p>
-                    Your tree is saved in this browser. GENEalogical3 has no account system or app
-                    database, so we can’t view or retrieve your family details.
-                  </p>
-                </div>
-              </div>
-              <div className="privacy-steps">
-                <div className="privacy-card">
-                  <div className="privacy-card-heading">
-                    <span>01</span>
-                    <h3>Your device</h3>
-                  </div>
-                  <p>Edit people and photos. Autosave keeps the tree in this browser’s storage.</p>
-                  <small>
-                    <Check size={17} /> GENEalogical3 can’t see it
-                  </small>
-                </div>
-                <div className="privacy-card">
-                  <div className="privacy-card-heading">
-                    <span>02</span>
-                    <h3>Your choice</h3>
-                  </div>
-                  <p>
-                    Export an editable JSON backup or a PNG image, or connect Google Drive when you
-                    want a cloud copy.
-                  </p>
-                  <small>
-                    <Check size={17} /> Nothing uploads by default
-                  </small>
-                </div>
-                <div className="privacy-card">
-                  <div className="privacy-card-heading">
-                    <span>03</span>
-                    <h3>Google Drive, if connected</h3>
-                  </div>
-                  <p>
-                    GENEalogical3 sends the tree only when you choose Drive save. Google stores that
-                    copy under your account.
-                  </p>
-                  <small>
-                    <ShieldCheck size={17} /> App-created files only
-                  </small>
-                </div>
-              </div>
-              <p className="privacy-note">
-                <ShieldCheck size={20} /> GENEalogical3 does not store family trees, portraits, or
-                profile data on its own servers. Browser storage stays on this device; clearing
-                browser data removes that local copy.
-              </p>
-            </section>
-          </main>
-          <footer>
-            <div className="footer-brand">
-              <BrandMark small />
-              <span>GENEalogical3</span>
-            </div>
-            <span>Made for the stories that connect us.</span>
-          </footer>
-        </div>
+        <HomeScreen
+          library={library}
+          onCreateTree={createTree}
+          onImportTree={() => fileInput.current?.click()}
+          onOpenTree={openTree}
+          onRenameTree={rename}
+          onRemoveTree={removeTree}
+        />
       ) : (
         <div className="app-shell">
           <header className="editor-header">
@@ -1572,40 +904,19 @@ export default function App() {
                   }}
                 />
               ) : selectedRelation ? (
-                <div className="editor-content">
-                  <div className="panel-title">
-                    <div>
-                      <p className="eyebrow">RELATIONSHIP</p>
-                      <h2>{relationLabel(selectedRelation)}</h2>
-                    </div>
-                    <button
-                      className="icon-button"
-                      aria-label="Close details"
-                      onClick={() => {
-                        setSelectedRelationId(null);
-                      }}
-                    >
-                      <X size={19} />
-                    </button>
-                  </div>
-                  <RelationshipFields
-                    relation={selectedRelation}
-                    people={tree!.people}
-                    onChange={(relation) => apply((t) => updateRelation(t, relation))}
-                  />
-                  <button
-                    className="button danger"
-                    onClick={() => {
-                      apply((t) => ({
-                        ...t,
-                        relations: t.relations.filter((r) => r.id !== selectedRelation.id),
-                      }));
-                      setSelectedRelationId(null);
-                    }}
-                  >
-                    <Trash2 size={16} /> Remove relationship
-                  </button>
-                </div>
+                <RelationshipEditor
+                  relation={selectedRelation}
+                  people={tree!.people}
+                  onChange={(relation) => apply((t) => updateRelation(t, relation))}
+                  onDelete={() => {
+                    apply((t) => ({
+                      ...t,
+                      relations: t.relations.filter((r) => r.id !== selectedRelation.id),
+                    }));
+                    setSelectedRelationId(null);
+                  }}
+                  onClose={() => setSelectedRelationId(null)}
+                />
               ) : (
                 <div className="panel-welcome">
                   <div className="panel-welcome-icon">
@@ -1646,123 +957,29 @@ export default function App() {
         </div>
       )}
       {driveActionsOpen && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setDriveActionsOpen(false);
+        <DriveActionsDialog
+          configured={driveConfigured}
+          busy={driveBusy}
+          onAction={doDrive}
+          onDisconnect={() => {
+            disconnectDrive();
+            setDriveFile(null);
+            setDriveSavedAt('');
+            setDriveActionsOpen(false);
+            setNotice(
+              'Disconnected Google Drive for this session. Your local tree is still saved.',
+            );
           }}
-        >
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="drive-actions-title"
-          >
-            <div className="modal-heading">
-              <div>
-                <p className="eyebrow">GOOGLE DRIVE</p>
-                <h2 id="drive-actions-title">Drive options</h2>
-              </div>
-              <button
-                className="icon-button"
-                aria-label="Close"
-                onClick={() => setDriveActionsOpen(false)}
-              >
-                <X size={19} />
-              </button>
-            </div>
-            {driveConfigured ? (
-              <div className="drive-action-list">
-                <button
-                  disabled={driveBusy}
-                  onClick={() => {
-                    setDriveActionsOpen(false);
-                    doDrive('save');
-                  }}
-                >
-                  Save to Drive
-                </button>
-                <button
-                  disabled={driveBusy}
-                  onClick={() => {
-                    setDriveActionsOpen(false);
-                    doDrive('copy');
-                  }}
-                >
-                  Save a copy
-                </button>
-                <button
-                  disabled={driveBusy}
-                  onClick={() => {
-                    setDriveActionsOpen(false);
-                    doDrive('open');
-                  }}
-                >
-                  Open from Drive
-                </button>
-                <button
-                  onClick={() => {
-                    disconnectDrive();
-                    setDriveFile(null);
-                    setDriveSavedAt('');
-                    setDriveActionsOpen(false);
-                    setNotice(
-                      'Disconnected Google Drive for this session. Your local tree is still saved.',
-                    );
-                  }}
-                >
-                  Disconnect Drive
-                </button>
-              </div>
-            ) : (
-              <p>
-                Google Drive is not configured for this deployment. Add a Google OAuth client ID to
-                enable these actions.
-              </p>
-            )}
-          </div>
-        </div>
+          onClose={() => setDriveActionsOpen(false)}
+        />
       )}{' '}
       {driveFiles && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setDriveFiles(null);
-          }}
-        >
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="drive-title">
-            <div className="modal-heading">
-              <div>
-                <p className="eyebrow">GOOGLE DRIVE</p>
-                <h2 id="drive-title">Open a tree</h2>
-              </div>
-              <button
-                className="icon-button"
-                aria-label="Close"
-                onClick={() => setDriveFiles(null)}
-              >
-                <X size={19} />
-              </button>
-            </div>
-            <p>Choose an app-created tree. It opens as a local working copy.</p>
-            {driveFiles.length ? (
-              <div className="drive-file-list">
-                {driveFiles.map((f) => (
-                  <button key={f.id} disabled={driveBusy} onClick={() => loadDrive(f)}>
-                    <Users size={20} />
-                    <span>
-                      <strong>{f.name}</strong>
-                      <small>Edited {new Date(f.modifiedTime).toLocaleDateString()}</small>
-                    </span>
-                    <ArrowRight size={16} />
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-drive">No GENEalogical3 trees found in this Drive.</div>
-            )}
-          </div>
-        </div>
+        <DriveTreeDialog
+          files={driveFiles}
+          busy={driveBusy}
+          onOpen={loadDrive}
+          onClose={() => setDriveFiles(null)}
+        />
       )}
     </>
   );
