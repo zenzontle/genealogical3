@@ -20,6 +20,8 @@ Run `pnpm format` to format the project or `pnpm format:check` to check formatti
 
 For editor formatting, enable the Prettier integration in your editor and use the project's local version and configuration.
 
+`.gitattributes` enforces CRLF checkouts for text files on every platform, independently of `core.autocrlf`. Git stores normalized LF content; the generated pnpm lockfile stays LF. After pulling this policy into an existing checkout, run `pnpm format` once to align local files.
+
 ### Dependency audit
 
 The October 1, 2026 npm audit reported no high or critical findings. Vitest and its mocker have a moderate [path traversal advisory](https://github.com/advisories/GHSA-82fw-gwwq-j7x9). These are development dependencies; the test command runs in batch mode and does not expose a test server, and they are excluded from the production bundle. A major test-runner upgrade is deferred pending compatibility testing. Review this deferral by November 1, 2026, and do not expose a Vitest server to untrusted networks.
