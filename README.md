@@ -16,7 +16,7 @@ The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for
 
 ### Linting
 
-Run `pnpm lint` to check JavaScript and TypeScript files, including tests and Node scripts. Run `pnpm lint:fix` to apply available automatic fixes. Both commands fail on errors or warnings, and pull requests check formatting and lint rules in the Code Quality workflow.
+Run `pnpm lint` to check JavaScript and TypeScript files, including tests and Node scripts. Run `pnpm lint:fix` to apply available automatic fixes. Both commands fail on errors but allow warnings. Pull requests check formatting and lint rules in the Code Quality workflow, which still fails on warnings.
 
 `eslint.config.js` uses ESLint and TypeScript recommended rules, the core React Hooks rules (hook ordering and dependency completeness), Vite's React Refresh rules, and `react/no-multi-comp` to require one component per file. Browser globals apply to source files; Node globals apply to tooling and scripts. Generated output is ignored. React Compiler rules and linting that requires TypeScript type information are not enabled; `pnpm build` checks types. `eslint-config-prettier` keeps lint rules compatible with Prettier, which handles formatting separately.
 
