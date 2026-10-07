@@ -1,12 +1,7 @@
-import type { Edge } from "@xyflow/react";
-import {
-  connectorPath,
-  familyConnectors,
-  type Point,
-  type CardSize,
-} from "./familyConnectors";
-import { connectionHandles } from "./connectionHandles";
-import { personCardSize, relationLabel, type Tree } from "./model";
+import type { Edge } from '@xyflow/react';
+import { connectorPath, familyConnectors, type Point, type CardSize } from './familyConnectors';
+import { connectionHandles } from './connectionHandles';
+import { personCardSize, relationLabel, type Tree } from './model';
 
 export function relationshipEdges(
   tree: Tree,
@@ -25,40 +20,35 @@ export function relationshipEdges(
       return [p.id, { x: p.x + size.width / 2, y: p.y + size.height / 2 }];
     }),
   );
-  const families = familyConnectors(
-    people,
-    tree.relations,
-    personCardSize,
-    sizes,
-  );
+  const families = familyConnectors(people, tree.relations, personCardSize, sizes);
   const groupedIds = new Set(families.flatMap((family) => family.relationIds));
   const names = new Map(tree.people.map((p) => [p.id, p.name]));
   const regularEdges: Edge[] = tree.relations
     .filter((r) => !groupedIds.has(r.id))
     .map((r) => ({
       id: r.id,
-      source: r.type === "parent" ? r.parentId : r.personA,
-      target: r.type === "parent" ? r.childId : r.personB,
+      source: r.type === 'parent' ? r.parentId : r.personA,
+      target: r.type === 'parent' ? r.childId : r.personB,
       ...connectionHandles(
         r,
-        byId.get(r.type === "parent" ? r.parentId : r.personA)!,
-        byId.get(r.type === "parent" ? r.childId : r.personB)!,
+        byId.get(r.type === 'parent' ? r.parentId : r.personA)!,
+        byId.get(r.type === 'parent' ? r.childId : r.personB)!,
       ),
-      type: "relationship",
+      type: 'relationship',
       data: { relationshipType: r.type },
       ariaLabel: relationLabel(r),
       label: relationLabel(r),
       style: {
         stroke:
-          r.type === "parent"
-            ? "var(--copper)"
-            : r.type === "partner"
-              ? "var(--partner)"
-              : "var(--text-muted)",
+          r.type === 'parent'
+            ? 'var(--copper)'
+            : r.type === 'partner'
+              ? 'var(--partner)'
+              : 'var(--text-muted)',
         strokeWidth: selectedRelationId === r.id ? 3 : 2,
       },
-      labelStyle: { fill: "var(--text-muted)", fontSize: 11, fontWeight: 600 },
-      labelBgStyle: { fill: "var(--bg)", fillOpacity: 0.96 },
+      labelStyle: { fill: 'var(--text-muted)', fontSize: 11, fontWeight: 600 },
+      labelBgStyle: { fill: 'var(--bg)', fillOpacity: 0.96 },
       selectable: true,
     }));
   const familyEdges: Edge[] = families.flatMap((family) => {
@@ -70,12 +60,12 @@ export function relationshipEdges(
     const base = {
       source: family.partner.personA,
       sourceHandle: handles.sourceHandle,
-      type: "family",
+      type: 'family',
       selectable: false,
       focusable: false,
       deletable: false,
       reconnectable: false,
-      style: { stroke: "var(--copper)", strokeWidth: 2 },
+      style: { stroke: 'var(--copper)', strokeWidth: 2 },
     };
     const branches: Edge[] = family.branches.map((branch) => ({
       ...base,
@@ -83,13 +73,13 @@ export function relationshipEdges(
       target: branch.childId,
       targetHandle: branch.targetHandle,
       focusable: true,
-      className: "family-branch",
-      ariaRole: "button",
-      ariaLabel: `Edit parents of ${names.get(branch.childId) || "unnamed person"}`,
+      className: 'family-branch',
+      ariaRole: 'button',
+      ariaLabel: `Edit parents of ${names.get(branch.childId) || 'unnamed person'}`,
       domAttributes: {
-        "aria-describedby": undefined,
+        'aria-describedby': undefined,
         onKeyDown: (event) => {
-          if (event.key === "Enter" || event.key === " ") {
+          if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             event.stopPropagation();
             onSelectChild(branch.childId);
@@ -105,12 +95,10 @@ export function relationshipEdges(
         target: family.partner.personB,
         targetHandle: handles.targetHandle,
         data: {
-          path: [family.stem, family.bar, ...family.additionalPaths]
-            .map(connectorPath)
-            .join(" "),
+          path: [family.stem, family.bar, ...family.additionalPaths].map(connectorPath).join(' '),
         },
-        style: { ...base.style, pointerEvents: "none" },
-        domAttributes: { "aria-hidden": true },
+        style: { ...base.style, pointerEvents: 'none' },
+        domAttributes: { 'aria-hidden': true },
       },
       ...branches,
     ];

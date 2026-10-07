@@ -1,4 +1,4 @@
-import type { HandleSide, Relation } from "./model";
+import type { HandleSide, Relation } from './model';
 
 type Point = { x: number; y: number };
 
@@ -8,16 +8,16 @@ export function connectionHandles(
   source: Point,
   target: Point,
 ): { sourceHandle: HandleSide; targetHandle: HandleSide } {
-  if (relation.type === "unassigned")
+  if (relation.type === 'unassigned')
     return {
       sourceHandle: relation.sourceHandle,
       targetHandle: relation.targetHandle,
     };
-  if (relation.type === "partner")
+  if (relation.type === 'partner')
     return source.x <= target.x
-      ? { sourceHandle: "right", targetHandle: "left" }
-      : { sourceHandle: "left", targetHandle: "right" };
+      ? { sourceHandle: 'right', targetHandle: 'left' }
+      : { sourceHandle: 'left', targetHandle: 'right' };
   return source.y <= target.y
-    ? { sourceHandle: "bottom", targetHandle: "top" }
-    : { sourceHandle: "top", targetHandle: "bottom" };
+    ? { sourceHandle: 'bottom', targetHandle: 'top' }
+    : { sourceHandle: 'top', targetHandle: 'bottom' };
 }

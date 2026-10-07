@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap');
 :root {
   color-scheme: dark;
   --brand-bg: #315846;
@@ -37,7 +37,7 @@
   --overlay: #070d0acc;
   --surface-overlay: #1d2722ed;
   --toast: #304638;
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -74,7 +74,7 @@ p {
 h1,
 h2,
 h3 {
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-weight: 400;
 }
 h1 {
@@ -251,7 +251,7 @@ h2 {
   align-items: center;
 }
 .with-line:before {
-  content: "";
+  content: '';
   display: block;
   width: 28px;
   height: 1px;
@@ -325,7 +325,7 @@ h2 {
 }
 .art-card b {
   display: block;
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-size: 1.1rem;
   font-weight: 400;
 }
@@ -342,7 +342,7 @@ h2 {
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-size: 1.45rem;
 }
 .art-avatar.sage {
@@ -403,7 +403,7 @@ h2 {
   position: absolute;
   bottom: 19px;
   right: 8%;
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-style: italic;
   color: var(--accent);
 }
@@ -447,7 +447,7 @@ h2 {
   color: inherit;
 }
 .tree-open strong {
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-size: 1.27rem;
   font-weight: 400;
   margin-top: 0.7rem;
@@ -512,7 +512,7 @@ h2 {
   background: var(--accent-surface);
 }
 .empty-library strong {
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-size: 1.3rem;
 }
 .empty-library p {
@@ -559,7 +559,7 @@ h2 {
   color: var(--lilac);
 }
 .how-grid h3 {
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 1.18rem;
   font-weight: 700;
   margin: 1.4rem 0 0.75rem;
@@ -623,12 +623,12 @@ h2 {
   padding: 1.7rem 1.5rem;
 }
 .privacy-card:not(:last-child)::after {
-  content: "→";
+  content: '→';
   position: absolute;
   right: -2.2rem;
   top: 45%;
   color: var(--line);
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 1.8rem;
 }
 .privacy-card-heading {
@@ -643,7 +643,7 @@ h2 {
   letter-spacing: 0.1em;
 }
 .privacy-card h3 {
-  font-family: "DM Sans", system-ui, sans-serif;
+  font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
   margin: 0;
@@ -741,7 +741,7 @@ h2 {
   gap: 0.45rem;
   border: 0;
   background: transparent;
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-size: 1.05rem;
   white-space: nowrap;
   max-width: 260px;
@@ -957,7 +957,7 @@ h2 {
   background: var(--accent-surface);
   display: grid;
   place-items: center;
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   color: var(--accent);
   font-size: 2rem;
   overflow: visible;
@@ -1020,7 +1020,7 @@ h2 {
   color: var(--text-muted);
   font-size: 0.79rem;
 }
-.sex-options button[aria-pressed="true"] {
+.sex-options button[aria-pressed='true'] {
   border-color: var(--sex-color);
   background: var(--sex-surface);
   box-shadow: inset 0 0 0 1px var(--sex-color);
@@ -1089,7 +1089,7 @@ h2 {
 .date-field input {
   margin-top: 0.35rem;
 }
-.editor-content input[aria-invalid="true"] {
+.editor-content input[aria-invalid='true'] {
   border-color: var(--danger);
 }
 .date-error {
@@ -1413,7 +1413,7 @@ h2 {
   place-items: center;
   color: var(--accent);
   font-size: 1.1rem;
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   overflow: hidden;
 }
 .person-avatar img {
@@ -1425,7 +1425,7 @@ h2 {
   min-width: 0;
 }
 .person-info strong {
-  font-family: "DM Serif Display", Georgia, serif;
+  font-family: 'DM Serif Display', Georgia, serif;
   font-weight: 400;
   font-size: 1rem;
   color: var(--text);
@@ -1795,7 +1795,7 @@ h2 {
     gap: 0;
   }
   .drive-menu .header-button:before {
-    content: "Drive";
+    content: 'Drive';
     font-size: 0.7rem;
   }
   .tree-title {

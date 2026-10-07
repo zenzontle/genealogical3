@@ -8,7 +8,7 @@ import {
   type Relation,
   type RelationshipRole,
   type UnionKind,
-} from "./model";
+} from './model';
 
 export function RelationshipFields({
   relation,
@@ -23,12 +23,10 @@ export function RelationshipFields({
 }) {
   const [a, b] = relationEndpoints(relation);
   const subjectId =
-    referenceId ||
-    (relation.type === "parent" && relation.displayRole === "parent" ? b : a);
+    referenceId || (relation.type === 'parent' && relation.displayRole === 'parent' ? b : a);
   const otherId = subjectId === a ? b : a;
-  const name = (id: string) =>
-    people.find((p) => p.id === id)?.name || "Unnamed person";
-  const role = relation.type === "parent" ? "parent-child" : relation.type;
+  const name = (id: string) => people.find((p) => p.id === id)?.name || 'Unnamed person';
+  const role = relation.type === 'parent' ? 'parent-child' : relation.type;
   return (
     <div className="relationship-fields">
       <label>
@@ -37,13 +35,7 @@ export function RelationshipFields({
           aria-label={`Relationship of ${name(otherId)} to ${name(subjectId)}`}
           value={role}
           onChange={(e) =>
-            onChange(
-              changeRelationRole(
-                relation,
-                subjectId,
-                e.target.value as RelationshipRole,
-              ),
-            )
+            onChange(changeRelationRole(relation, subjectId, e.target.value as RelationshipRole))
           }
         >
           <option value="unassigned">Not set</option>
@@ -51,30 +43,26 @@ export function RelationshipFields({
           <option value="partner">Partner</option>
         </select>
       </label>
-      {relation.type === "parent" && (
+      {relation.type === 'parent' && (
         <label>
           Parent
           <select
             aria-label={`Parent in relationship between ${name(a)} and ${name(b)}`}
             value={relation.parentId}
-            onChange={(e) =>
-              onChange(setRelationParent(relation, e.target.value))
-            }
+            onChange={(e) => onChange(setRelationParent(relation, e.target.value))}
           >
             <option value={subjectId}>{name(subjectId)}</option>
             <option value={otherId}>{name(otherId)}</option>
           </select>
         </label>
       )}
-      {relation.type === "parent" && (
+      {relation.type === 'parent' && (
         <label>
           Parent type
           <select
             value={relation.kind}
             aria-label={`Parent type with ${name(otherId)}`}
-            onChange={(e) =>
-              onChange({ ...relation, kind: e.target.value as ParentKind })
-            }
+            onChange={(e) => onChange({ ...relation, kind: e.target.value as ParentKind })}
           >
             <option value="unspecified">Unspecified</option>
             <option value="biological">Biological</option>
@@ -84,7 +72,7 @@ export function RelationshipFields({
           </select>
         </label>
       )}
-      {relation.type === "partner" && (
+      {relation.type === 'partner' && (
         <div className="relation-selects">
           <label>
             Status
@@ -108,9 +96,7 @@ export function RelationshipFields({
             <select
               value={relation.union}
               aria-label={`Union type with ${name(otherId)}`}
-              onChange={(e) =>
-                onChange({ ...relation, union: e.target.value as UnionKind })
-              }
+              onChange={(e) => onChange({ ...relation, union: e.target.value as UnionKind })}
             >
               <option value="unspecified">Unspecified</option>
               <option value="married">Married</option>

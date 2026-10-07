@@ -1,10 +1,4 @@
-export function SexIcon({
-  sex,
-  size = 18,
-}: {
-  sex: "male" | "female";
-  size?: number;
-}) {
+export function SexIcon({ sex, size = 18 }: { sex: 'male' | 'female'; size?: number }) {
   return (
     <svg
       width={size}
@@ -18,7 +12,7 @@ export function SexIcon({
       aria-hidden="true"
       focusable="false"
     >
-      {sex === "male" ? (
+      {sex === 'male' ? (
         <>
           <circle cx="8.5" cy="15.5" r="5.5" />
           <path d="m12.5 11.5 7-7M14 4h6v6" />

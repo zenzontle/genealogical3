@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "dependencies": {
     "@xyflow/react": "^12.9.3",
@@ -19,7 +21,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.7.0",
-    "prettier": "^3.9.9",
+    "prettier": "3.9.9",
     "typescript": "~5.9.2",
     "vite": "^6.3.5",
     "vitest": "^3.2.4"

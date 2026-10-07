@@ -1,15 +1,12 @@
-import { describe, expect, it } from "vitest";
-import {
-  movePeopleToPositions,
-  personPositionAtViewCenter,
-} from "./canvasPosition";
-import { makePerson, makeTree, personCardSize } from "./model";
+import { describe, expect, it } from 'vitest';
+import { movePeopleToPositions, personPositionAtViewCenter } from './canvasPosition';
+import { makePerson, makeTree, personCardSize } from './model';
 
-describe("saving a group drag", () => {
-  it("keeps all moved positions together and leaves other people unchanged", () => {
-    const a = makePerson("A", -100, 50);
-    const b = makePerson("B", 200, -80);
-    const c = makePerson("C", 700, 300);
+describe('saving a group drag', () => {
+  it('keeps all moved positions together and leaves other people unchanged', () => {
+    const a = makePerson('A', -100, 50);
+    const b = makePerson('B', 200, -80);
+    const c = makePerson('C', 700, 300);
     const tree = { ...makeTree(), people: [a, b, c] };
     const moved = movePeopleToPositions(tree, [
       { id: a.id, position: { x: -40, y: 90 } },
@@ -27,35 +24,21 @@ describe("saving a group drag", () => {
   });
 
   it("doesn't create another history entry for duplicate or empty stop events", () => {
-    const person = makePerson("A", 30, 40);
+    const person = makePerson('A', 30, 40);
     const tree = { ...makeTree(), people: [person] };
     expect(movePeopleToPositions(tree, [])).toBe(tree);
-    expect(
-      movePeopleToPositions(tree, [
-        { id: person.id, position: { x: 30, y: 40 } },
-      ]),
-    ).toBe(tree);
+    expect(movePeopleToPositions(tree, [{ id: person.id, position: { x: 30, y: 40 } }])).toBe(tree);
   });
 });
 
-describe("adding a person at the current view center", () => {
+describe('adding a person at the current view center', () => {
   it.each([
     [0, 0, 1, 1200, 800],
     [-1200, 450, 0.4, 1024, 768],
     [750, -900, 2, 320, 600],
-  ])(
-    "centers a card at viewport (%i, %i) with zoom %f",
-    (x, y, zoom, width, height) => {
-      const position = personPositionAtViewCenter(
-        { x, y, zoom },
-        { width, height },
-      );
-      expect((position.x + personCardSize.width / 2) * zoom + x).toBeCloseTo(
-        width / 2,
-      );
-      expect((position.y + personCardSize.height / 2) * zoom + y).toBeCloseTo(
-        height / 2,
-      );
-    },
-  );
+  ])('centers a card at viewport (%i, %i) with zoom %f', (x, y, zoom, width, height) => {
+    const position = personPositionAtViewCenter({ x, y, zoom }, { width, height });
+    expect((position.x + personCardSize.width / 2) * zoom + x).toBeCloseTo(width / 2);
+    expect((position.y + personCardSize.height / 2) * zoom + y).toBeCloseTo(height / 2);
+  });
 });

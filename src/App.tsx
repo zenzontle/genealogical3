@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -8,7 +8,7 @@ import {
   type Edge,
   type ReactFlowInstance,
   useNodesState,
-} from "@xyflow/react";
+} from '@xyflow/react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,26 +33,19 @@ import {
   Upload,
   Users,
   X,
-} from "lucide-react";
-import { PersonCard, type PersonNode } from "./PersonCard";
-import { BrandMark } from "./BrandMark";
-import { SexIcon } from "./SexIcon";
-import { RelationshipFields } from "./RelationshipFields";
-import { RelationshipEdge } from "./RelationshipEdge";
-import { FamilyEdge } from "./FamilyEdge";
-import { relationshipEdges } from "./relationshipEdges";
-import { HomePersonDetails } from "./HomePersonDetails";
-import {
-  calculateKinships,
-  partnerKinshipLabel,
-  type KinshipResult,
-} from "./kinship";
-import { setPersonName } from "./personNames";
-import {
-  movePeopleToPositions,
-  personPositionAtViewCenter,
-} from "./canvasPosition";
-import { useConnectorProximity } from "./useConnectorProximity";
+} from 'lucide-react';
+import { PersonCard, type PersonNode } from './PersonCard';
+import { BrandMark } from './BrandMark';
+import { SexIcon } from './SexIcon';
+import { RelationshipFields } from './RelationshipFields';
+import { RelationshipEdge } from './RelationshipEdge';
+import { FamilyEdge } from './FamilyEdge';
+import { relationshipEdges } from './relationshipEdges';
+import { HomePersonDetails } from './HomePersonDetails';
+import { calculateKinships, partnerKinshipLabel, type KinshipResult } from './kinship';
+import { setPersonName } from './personNames';
+import { movePeopleToPositions, personPositionAtViewCenter } from './canvasPosition';
+import { useConnectorProximity } from './useConnectorProximity';
 import {
   addRelation,
   lifeDatesError,
@@ -73,7 +66,7 @@ import {
   type Person,
   type Relation,
   type Tree,
-} from "./model";
+} from './model';
 import {
   deleteDriveLink,
   deleteTree,
@@ -82,8 +75,8 @@ import {
   listTrees,
   saveDriveLink,
   saveTree,
-} from "./storage";
-import { exportJson, exportPng, portraitData } from "./media";
+} from './storage';
+import { exportJson, exportPng, portraitData } from './media';
 import {
   authorizeDrive,
   disconnectDrive,
@@ -92,13 +85,13 @@ import {
   openDriveTree,
   saveDriveTree,
   type DriveFile,
-} from "./drive";
+} from './drive';
 
 const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
-type SaveState = "draft" | "saved" | "saving" | "error";
-type ConnectMode = "parent" | "child" | "partner" | null;
+type SaveState = 'draft' | 'saved' | 'saving' | 'error';
+type ConnectMode = 'parent' | 'child' | 'partner' | null;
 function DateInput({
   label,
   value,
@@ -114,16 +107,15 @@ function DateInput({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const savedValue =
-    value.precision === "full"
+    value.precision === 'full'
       ? value.value
-      : value.precision === "year"
+      : value.precision === 'year'
         ? Number.isFinite(value.year)
           ? String(value.year)
-          : ""
-        : "";
+          : ''
+        : '';
   useEffect(() => {
-    if (input.current && document.activeElement !== input.current)
-      input.current.value = savedValue;
+    if (input.current && document.activeElement !== input.current) input.current.value = savedValue;
   }, [savedValue, value.precision]);
   return (
     <div className="date-field">
@@ -133,11 +125,11 @@ function DateInput({
           value={value.precision}
           onChange={(e) =>
             onChange(
-              e.target.value === "year"
-                ? { precision: "year", year: new Date().getFullYear() }
-                : e.target.value === "full"
-                  ? { precision: "full", value: "2000-01-01" }
-                  : { precision: "unknown" },
+              e.target.value === 'year'
+                ? { precision: 'year', year: new Date().getFullYear() }
+                : e.target.value === 'full'
+                  ? { precision: 'full', value: '2000-01-01' }
+                  : { precision: 'unknown' },
             )
           }
         >
@@ -146,7 +138,7 @@ function DateInput({
           <option value="full">Full date</option>
         </select>
       </label>
-      {value.precision === "year" && (
+      {value.precision === 'year' && (
         <input
           ref={input}
           type="number"
@@ -155,16 +147,16 @@ function DateInput({
           aria-describedby={invalid ? errorId : undefined}
           min="1"
           max="9999"
-          defaultValue={Number.isFinite(value.year) ? value.year : ""}
+          defaultValue={Number.isFinite(value.year) ? value.year : ''}
           onChange={(e) => {
             onChange({
-              precision: "year",
+              precision: 'year',
               year: e.currentTarget.valueAsNumber,
             });
           }}
         />
       )}
-      {value.precision === "full" && (
+      {value.precision === 'full' && (
         <input
           ref={input}
           type="date"
@@ -175,7 +167,7 @@ function DateInput({
           aria-describedby={invalid ? errorId : undefined}
           defaultValue={value.value}
           onChange={(e) => {
-            onChange({ precision: "full", value: e.currentTarget.value });
+            onChange({ precision: 'full', value: e.currentTarget.value });
           }}
         />
       )}
@@ -223,7 +215,7 @@ function PersonEditor({
   const dateError = lifeDatesError(dates);
   const dateErrorId = `date-error-${person.id}`;
   const attached = relations.filter((r) =>
-    r.type === "parent"
+    r.type === 'parent'
       ? r.parentId === person.id || r.childId === person.id
       : r.personA === person.id || r.personB === person.id,
   );
@@ -231,7 +223,7 @@ function PersonEditor({
     people.find(
       (p) =>
         p.id ===
-        (r.type === "parent"
+        (r.type === 'parent'
           ? r.parentId === person.id
             ? r.childId
             : r.parentId
@@ -239,19 +231,15 @@ function PersonEditor({
             ? r.personB
             : r.personA),
     );
-  const other = (r: Relation) => otherPerson(r)?.name || "Unnamed person";
+  const other = (r: Relation) => otherPerson(r)?.name || 'Unnamed person';
   return (
     <div className="editor-content">
       <div className="panel-title">
         <div>
           <p className="eyebrow">PERSON DETAILS</p>
-          <h2>{person.name || "Unnamed person"}</h2>
+          <h2>{person.name || 'Unnamed person'}</h2>
         </div>
-        <button
-          className="icon-button"
-          aria-label="Close details"
-          onClick={onClose}
-        >
+        <button className="icon-button" aria-label="Close details" onClick={onClose}>
           <X size={19} />
         </button>
       </div>
@@ -266,14 +254,14 @@ function PersonEditor({
         <button
           type="button"
           className="portrait-preview"
-          aria-label={person.portrait ? "Change photo" : "Add photo"}
-          title={person.portrait ? "Change photo" : "Add photo"}
+          aria-label={person.portrait ? 'Change photo' : 'Add photo'}
+          title={person.portrait ? 'Change photo' : 'Add photo'}
           onClick={() => portraitInput.current?.click()}
         >
           {person.portrait ? (
             <img src={person.portrait} alt="Portrait" />
           ) : (
-            <span>{(person.name[0] || "?").toUpperCase()}</span>
+            <span>{(person.name[0] || '?').toUpperCase()}</span>
           )}
           <span className="portrait-upload-icon">
             <ImagePlus size={16} />
@@ -289,7 +277,7 @@ function PersonEditor({
             onChange={async (e) => {
               const f = e.target.files?.[0];
               if (!f) return;
-              e.currentTarget.value = "";
+              e.currentTarget.value = '';
               try {
                 onChange({ ...person, portrait: await portraitData(f) });
               } catch (error) {
@@ -299,10 +287,7 @@ function PersonEditor({
           />
           <p className="tiny">JPEG, PNG or WebP · processed locally</p>
           {person.portrait && (
-            <button
-              className="text-button"
-              onClick={() => onChange({ ...person, portrait: null })}
-            >
+            <button className="text-button" onClick={() => onChange({ ...person, portrait: null })}>
               Remove photo
             </button>
           )}
@@ -314,9 +299,7 @@ function PersonEditor({
           <input
             autoComplete="given-name"
             value={person.firstName}
-            onChange={(e) =>
-              onChange(setPersonName(person, "firstName", e.target.value))
-            }
+            onChange={(e) => onChange(setPersonName(person, 'firstName', e.target.value))}
             placeholder="First name"
           />
         </label>
@@ -325,9 +308,7 @@ function PersonEditor({
           <input
             autoComplete="family-name"
             value={person.lastName}
-            onChange={(e) =>
-              onChange(setPersonName(person, "lastName", e.target.value))
-            }
+            onChange={(e) => onChange(setPersonName(person, 'lastName', e.target.value))}
             placeholder="Last name"
           />
         </label>
@@ -346,16 +327,14 @@ function PersonEditor({
           value={personLifeStatus(dates)}
           onChange={(event) => {
             const lifeStatus =
-              event.target.value === "living"
-                ? "living"
-                : event.target.value === "deceased"
-                  ? "deceased"
+              event.target.value === 'living'
+                ? 'living'
+                : event.target.value === 'deceased'
+                  ? 'deceased'
                   : undefined;
             onDatesChange({
               lifeStatus,
-              ...(lifeStatus !== "deceased"
-                ? { died: { precision: "unknown" as const } }
-                : {}),
+              ...(lifeStatus !== 'deceased' ? { died: { precision: 'unknown' as const } } : {}),
             });
           }}
         >
@@ -373,7 +352,7 @@ function PersonEditor({
           invalid={!!dateError}
           errorId={dateErrorId}
         />
-        {personLifeStatus(dates) === "deceased" && (
+        {personLifeStatus(dates) === 'deceased' && (
           <DateInput
             key={`${person.id}-died`}
             label="Died"
@@ -386,29 +365,26 @@ function PersonEditor({
       </div>
       {dateError && (
         <p className="date-error" id={dateErrorId} role="alert">
-          {dateError} These date changes haven’t been saved. Adjust either field
-          to continue.
+          {dateError} These date changes haven’t been saved. Adjust either field to continue.
         </p>
       )}
       <fieldset className="sex-field">
         <legend>Sex</legend>
         <div className="sex-options">
-          {(["male", "female"] as const).map((sex) => (
+          {(['male', 'female'] as const).map((sex) => (
             <button
               key={sex}
               className={`sex-${sex}`}
               type="button"
               aria-pressed={person.sex === sex}
-              onClick={() =>
-                onChange({ ...person, sex: person.sex === sex ? "" : sex })
-              }
+              onClick={() => onChange({ ...person, sex: person.sex === sex ? '' : sex })}
             >
               <SexIcon sex={sex} />
-              {sex === "male" ? "Male" : "Female"}
+              {sex === 'male' ? 'Male' : 'Female'}
             </button>
           ))}
         </div>
-        {person.sex === "other" && (
+        {person.sex === 'other' && (
           <p className="tiny">Other recorded. Choose an option to change it.</p>
         )}
       </fieldset>
@@ -434,11 +410,10 @@ function PersonEditor({
                 <div>
                   <strong>{other(r)}</strong>
                   <span>
-                    {r.type === "partner"
-                      ? partnerKinshipLabel(
-                          r,
-                          otherPerson(r)?.sex || "",
-                        ).replace(/^./, (letter) => letter.toUpperCase())
+                    {r.type === 'partner'
+                      ? partnerKinshipLabel(r, otherPerson(r)?.sex || '').replace(/^./, (letter) =>
+                          letter.toUpperCase(),
+                        )
                       : relationLabel(r)}
                   </span>
                 </div>
@@ -463,22 +438,13 @@ function PersonEditor({
           <p className="muted">No relationships yet.</p>
         )}
         <div className="relative-actions">
-          <button
-            className="button subtle"
-            onClick={() => onAddRelative("parent")}
-          >
+          <button className="button subtle" onClick={() => onAddRelative('parent')}>
             + Parent
           </button>
-          <button
-            className="button subtle"
-            onClick={() => onAddRelative("child")}
-          >
+          <button className="button subtle" onClick={() => onAddRelative('child')}>
             + Child
           </button>
-          <button
-            className="button subtle"
-            onClick={() => onAddRelative("partner")}
-          >
+          <button className="button subtle" onClick={() => onAddRelative('partner')}>
             + Partner
           </button>
         </div>
@@ -487,19 +453,13 @@ function PersonEditor({
           <div className="field-grid">
             <select
               aria-label="Connection role"
-              value={
-                connectMode === "partner"
-                  ? "partner"
-                  : connectMode
-                    ? "parent-child"
-                    : ""
-              }
+              value={connectMode === 'partner' ? 'partner' : connectMode ? 'parent-child' : ''}
               onChange={(e) =>
                 setConnectMode(
-                  e.target.value === "parent-child"
-                    ? "child"
-                    : e.target.value === "partner"
-                      ? "partner"
+                  e.target.value === 'parent-child'
+                    ? 'child'
+                    : e.target.value === 'partner'
+                      ? 'partner'
                       : null,
                 )
               }
@@ -508,17 +468,15 @@ function PersonEditor({
               <option value="parent-child">Parent / Child</option>
               <option value="partner">Partner</option>
             </select>
-            {(connectMode === "parent" || connectMode === "child") && (
+            {(connectMode === 'parent' || connectMode === 'child') && (
               <label>
                 Parent in this connection
                 <select
                   aria-label="Parent in new connection"
                   value={connectMode}
-                  onChange={(e) =>
-                    setConnectMode(e.target.value as ConnectMode)
-                  }
+                  onChange={(e) => setConnectMode(e.target.value as ConnectMode)}
                 >
-                  <option value="child">{person.name || "This person"}</option>
+                  <option value="child">{person.name || 'This person'}</option>
                   <option value="parent">Person being connected</option>
                 </select>
               </label>
@@ -529,7 +487,7 @@ function PersonEditor({
               defaultValue=""
               onChange={(e) => {
                 if (e.target.value) onConnectTo(e.target.value);
-                e.target.value = "";
+                e.target.value = '';
               }}
             >
               <option value="">Choose person…</option>
@@ -551,7 +509,7 @@ function PersonEditor({
   );
 }
 export default function App() {
-  const [screen, setScreen] = useState<"home" | "editor">("home");
+  const [screen, setScreen] = useState<'home' | 'editor'>('home');
   const [library, setLibrary] = useState<Tree[]>([]);
   const [tree, setTree] = useState<Tree | null>(null);
   const kinships = useMemo(
@@ -561,21 +519,18 @@ export default function App() {
   const home = tree?.people.find((p) => p.id === tree.homePersonId) || null;
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedRelationId, setSelectedRelationId] = useState<string | null>(
-    null,
-  );
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [notice, setNotice] = useState("");
+  const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>('saved');
+  const [notice, setNotice] = useState('');
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
-  const [driveSavedAt, setDriveSavedAt] = useState("");
+  const [driveSavedAt, setDriveSavedAt] = useState('');
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
   const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarRevealedBySelection, setSidebarRevealedBySelection] =
-    useState(false);
+  const [sidebarRevealedBySelection, setSidebarRevealedBySelection] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
@@ -589,9 +544,9 @@ export default function App() {
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
-  useConnectorProximity(canvasRef, screen === "editor");
+  useConnectorProximity(canvasRef, screen === 'editor');
   const showError = (error: unknown) =>
-    setNotice(error instanceof Error ? error.message : "Something went wrong.");
+    setNotice(error instanceof Error ? error.message : 'Something went wrong.');
   const refreshLibrary = async () => {
     try {
       setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
@@ -603,9 +558,7 @@ export default function App() {
     refreshLibrary();
   }, []);
   const queueSave = (value: Tree) => {
-    const queued = saveQueue.current
-      .catch(() => undefined)
-      .then(() => saveTree(value));
+    const queued = saveQueue.current.catch(() => undefined).then(() => saveTree(value));
     saveQueue.current = queued;
     return queued;
   };
@@ -623,7 +576,7 @@ export default function App() {
     // Viewport updates do not turn an untouched new tree into a saved tree.
     if (record) draftTree.current = false;
     if (draftTree.current) return;
-    setSaveState("saving");
+    setSaveState('saving');
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const count = ++saveCounter.current;
     saveTimer.current = setTimeout(async () => {
@@ -631,12 +584,12 @@ export default function App() {
       try {
         await queueSave(updated);
         if (count === saveCounter.current) {
-          setSaveState("saved");
+          setSaveState('saved');
           refreshLibrary();
         }
       } catch (error) {
         if (count === saveCounter.current) {
-          setSaveState("error");
+          setSaveState('error');
           showError(error);
         }
       }
@@ -651,43 +604,38 @@ export default function App() {
       }
       await saveQueue.current;
       const found = draft || (await getTree(id));
-      if (!found) throw Error("This tree was not found.");
+      if (!found) throw Error('This tree was not found.');
       history.current = [];
       future.current = [];
       treeRef.current = found;
       draftTree.current = !!draft;
       fitViewOnOpen.current =
         found.people.length > 0 &&
-        (window.innerWidth < 700 ||
-          (found.viewport.x === 0 && found.viewport.y === 0));
+        (window.innerWidth < 700 || (found.viewport.x === 0 && found.viewport.y === 0));
       setTree(found);
       setNodes([]);
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
       const link = draft ? undefined : await getDriveLink(id);
-      setDriveFile(
-        link
-          ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime }
-          : null,
-      );
-      setDriveSavedAt("");
-      setScreen("editor");
-      setSaveState(draft ? "draft" : "saved");
-      setNotice("");
+      setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
+      setDriveSavedAt('');
+      setScreen('editor');
+      setSaveState(draft ? 'draft' : 'saved');
+      setNotice('');
     } catch (error) {
       showError(error);
     }
   };
   const createTree = async () => {
-    const newTree = makeTree("My family tree");
+    const newTree = makeTree('My family tree');
     await openTree(newTree.id, newTree);
   };
   const apply = (update: (current: Tree) => Tree, record = true) => {
     if (!treeRef.current) return;
     try {
       commit(update(treeRef.current), record);
-      setNotice("");
+      setNotice('');
     } catch (error) {
       showError(error);
     }
@@ -712,51 +660,41 @@ export default function App() {
     if (!lifeDatesError(dates))
       apply((t) => ({
         ...t,
-        people: t.people.map((p) =>
-          p.id === personId ? { ...p, ...dates } : p,
-        ),
+        people: t.people.map((p) => (p.id === personId ? { ...p, ...dates } : p)),
       }));
   };
   const addPerson = (relative?: Exclude<ConnectMode, null>) => {
     const current = treeRef.current;
     if (!current) return;
-    const selected = relative
-      ? current.people.find((p) => p.id === selectedId)
-      : undefined;
+    const selected = relative ? current.people.find((p) => p.id === selectedId) : undefined;
     const shift = (current.people.length % 4) * 30;
     const size = canvasRef.current?.getBoundingClientRect();
     if (!size || !flowRef.current) return;
-    const center = personPositionAtViewCenter(
-      flowRef.current.getViewport(),
-      size,
-    );
-    const x = selected
-      ? selected.x + (relative === "partner" ? 350 : shift)
-      : center.x;
+    const center = personPositionAtViewCenter(flowRef.current.getViewport(), size);
+    const x = selected ? selected.x + (relative === 'partner' ? 350 : shift) : center.x;
     const y = selected
-      ? selected.y +
-        (relative === "parent" ? -220 : relative === "child" ? 220 : 0)
+      ? selected.y + (relative === 'parent' ? -220 : relative === 'child' ? 220 : 0)
       : center.y;
-    const person = makePerson("", x, y);
+    const person = makePerson('', x, y);
     let next = { ...current, people: [...current.people, person] };
     if (selected && relative)
       next = addRelation(
         next,
-        relative === "partner"
+        relative === 'partner'
           ? {
               id: uid(),
-              type: "partner",
+              type: 'partner',
               personA: selected.id,
               personB: person.id,
-              status: "unspecified",
-              union: "unspecified",
+              status: 'unspecified',
+              union: 'unspecified',
             }
           : {
               id: uid(),
-              type: "parent",
-              parentId: relative === "parent" ? person.id : selected.id,
-              childId: relative === "child" ? person.id : selected.id,
-              kind: "unspecified",
+              type: 'parent',
+              parentId: relative === 'parent' ? person.id : selected.id,
+              childId: relative === 'child' ? person.id : selected.id,
+              kind: 'unspecified',
             },
       );
     commit(next);
@@ -779,7 +717,7 @@ export default function App() {
     if (!current || !person) return;
     if (
       !window.confirm(
-        `Delete ${person.name || "this person"} and their relationships?${current.homePersonId === id ? " This also clears the home person designation." : ""}`,
+        `Delete ${person.name || 'this person'} and their relationships?${current.homePersonId === id ? ' This also clears the home person designation.' : ''}`,
       )
     )
       return;
@@ -795,36 +733,30 @@ export default function App() {
   const connect = (connection: Connection) => {
     const a = connection.source,
       b = connection.target;
-    if (!a || !b || !connection.sourceHandle || !connection.targetHandle)
-      return;
-    const sh = connection.sourceHandle.replace("-target", ""),
-      th = connection.targetHandle.replace("-target", "");
-    const relation = relationFromConnection(
-      a,
-      b,
-      sh as HandleSide,
-      th as HandleSide,
-    );
+    if (!a || !b || !connection.sourceHandle || !connection.targetHandle) return;
+    const sh = connection.sourceHandle.replace('-target', ''),
+      th = connection.targetHandle.replace('-target', '');
+    const relation = relationFromConnection(a, b, sh as HandleSide, th as HandleSide);
     apply((t) => addRelation(t, relation));
   };
   const connectFromPanel = (targetId: string) => {
     if (!selectedId || !connectMode) return;
     const r: Relation =
-      connectMode === "partner"
+      connectMode === 'partner'
         ? {
             id: uid(),
-            type: "partner",
+            type: 'partner',
             personA: selectedId,
             personB: targetId,
-            status: "unspecified",
-            union: "unspecified",
+            status: 'unspecified',
+            union: 'unspecified',
           }
         : {
             id: uid(),
-            type: "parent",
-            parentId: connectMode === "parent" ? targetId : selectedId,
-            childId: connectMode === "child" ? targetId : selectedId,
-            kind: "unspecified",
+            type: 'parent',
+            parentId: connectMode === 'parent' ? targetId : selectedId,
+            childId: connectMode === 'child' ? targetId : selectedId,
+            kind: 'unspecified',
           };
     apply((t) => addRelation(t, r));
     setConnectMode(null);
@@ -845,23 +777,14 @@ export default function App() {
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (
-        !(e.ctrlKey || e.metaKey) ||
-        !["z", "y"].includes(e.key.toLowerCase())
-      )
-        return;
-      if (
-        ["INPUT", "TEXTAREA", "SELECT"].includes(
-          (e.target as HTMLElement).tagName,
-        )
-      )
-        return;
+      if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
       e.preventDefault();
-      if (e.key.toLowerCase() === "z" && !e.shiftKey) undo();
+      if (e.key.toLowerCase() === 'z' && !e.shiftKey) undo();
       else redo();
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
   });
   useEffect(() => {
     if (!tree) return;
@@ -870,14 +793,14 @@ export default function App() {
       return tree.people.map((p) => ({
         ...existing.get(p.id),
         id: p.id,
-        type: "person",
+        type: 'person',
         selected: existing.get(p.id)?.selected ?? selectedId === p.id,
         position: movingRef.current
           ? existing.get(p.id)?.position || { x: p.x, y: p.y }
           : { x: p.x, y: p.y },
         data: {
           person: p,
-          homeName: home ? home.name || "Unnamed person" : null,
+          homeName: home ? home.name || 'Unnamed person' : null,
           isHome: tree.homePersonId === p.id,
           kinship: kinships.get(p.id),
           selected: selectedId === p.id,
@@ -912,29 +835,16 @@ export default function App() {
     const sizes = new Map(
       nodes.flatMap((node) =>
         node.measured?.width && node.measured.height
-          ? [
-              [
-                node.id,
-                { width: node.measured.width, height: node.measured.height },
-              ] as const,
-            ]
+          ? [[node.id, { width: node.measured.width, height: node.measured.height }] as const]
           : [],
       ),
     );
-    return relationshipEdges(
-      tree,
-      positions,
-      selectedRelationId,
-      selectPerson,
-      sizes,
-    );
+    return relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes);
   }, [tree, nodes, selectedRelationId, selectPerson]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
-  const selectedRelation =
-    tree?.relations.find((r) => r.id === selectedRelationId) || null;
+  const selectedRelation = tree?.relations.find((r) => r.id === selectedRelationId) || null;
   // Selection temporarily reveals details without changing the toggle preference.
-  const revealSidebar =
-    sidebarRevealedBySelection && !!(selected || selectedRelation);
+  const revealSidebar = sidebarRevealedBySelection && !!(selected || selectedRelation);
   const sidebarIsCollapsed = sidebarCollapsed && !revealSidebar;
   const mobilePanelIsOpen = mobilePanel || revealSidebar;
   const saveNow = async () => {
@@ -945,18 +855,17 @@ export default function App() {
     try {
       await queueSave(treeRef.current);
       if (count === saveCounter.current) {
-        setSaveState("saved");
+        setSaveState('saved');
         refreshLibrary();
       }
     } catch (error) {
-      setSaveState("error");
+      setSaveState('error');
       showError(error);
     }
   };
   const importFile = async (file: File) => {
     try {
-      if (file.size > 30_000_000)
-        throw Error("Choose a JSON file smaller than 30 MB.");
+      if (file.size > 30_000_000) throw Error('Choose a JSON file smaller than 30 MB.');
       const imported = validateTree(JSON.parse(await file.text()));
       const copy = {
         ...imported,
@@ -971,32 +880,30 @@ export default function App() {
       showError(error);
     }
   };
-  const doDrive = async (action: "save" | "copy" | "open") => {
-    if (!treeRef.current && action !== "open") return;
+  const doDrive = async (action: 'save' | 'copy' | 'open') => {
+    if (!treeRef.current && action !== 'open') return;
     setDriveBusy(true);
     try {
       await authorizeDrive();
-      if (action === "open") {
+      if (action === 'open') {
         setDriveFiles(await listDriveTrees());
         return;
       }
       if (
-        action === "save" &&
+        action === 'save' &&
         driveFile &&
-        !window.confirm(
-          `Replace “${driveFile.name}” in Google Drive with the current tree?`,
-        )
+        !window.confirm(`Replace “${driveFile.name}” in Google Drive with the current tree?`)
       )
         return;
       const file = await saveDriveTree(
         treeRef.current!,
-        action === "save" ? driveFile?.id : undefined,
+        action === 'save' ? driveFile?.id : undefined,
       );
       setDriveFile(file);
       setDriveSavedAt(
         new Date().toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
+          hour: 'numeric',
+          minute: '2-digit',
         }),
       );
       try {
@@ -1029,9 +936,9 @@ export default function App() {
       await refreshLibrary();
       await openTree(copy.id);
       setDriveFile(file);
-      setDriveSavedAt("");
+      setDriveSavedAt('');
       setDriveFiles(null);
-      setNotice("Opened a local working copy. Save to Drive when ready.");
+      setNotice('Opened a local working copy. Save to Drive when ready.');
     } catch (error) {
       showError(error);
     } finally {
@@ -1039,7 +946,7 @@ export default function App() {
     }
   };
   const rename = async (item: Tree) => {
-    const name = window.prompt("Tree name", item.name)?.trim();
+    const name = window.prompt('Tree name', item.name)?.trim();
     if (!name || name === item.name) return;
     try {
       const updated = { ...item, name, updatedAt: Date.now() };
@@ -1063,7 +970,7 @@ export default function App() {
       if (treeRef.current?.id === item.id) {
         treeRef.current = null;
         setTree(null);
-        setScreen("home");
+        setScreen('home');
       }
       await refreshLibrary();
     } catch (error) {
@@ -1072,7 +979,7 @@ export default function App() {
   };
   const leaveEditor = async () => {
     await saveNow();
-    setScreen("home");
+    setScreen('home');
     setSelectedId(null);
     setMobilePanel(false);
   };
@@ -1083,10 +990,7 @@ export default function App() {
     const next = movePeopleToPositions(current, movedNodes);
     if (next !== current) apply(() => next);
   };
-  const onViewportEnd = (
-    _: unknown,
-    viewport: { x: number; y: number; zoom: number },
-  ) => {
+  const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;
     const current = treeRef.current;
     if (!current) return;
@@ -1099,9 +1003,7 @@ export default function App() {
       return;
     commit({ ...current, viewport }, false);
   };
-  const hasInvalidDateDraft = tree?.people.some(
-    (p) => !!lifeDatesError(dateDrafts[p.id] || p),
-  );
+  const hasInvalidDateDraft = tree?.people.some((p) => !!lifeDatesError(dateDrafts[p.id] || p));
   const downloadJson = () => {
     try {
       if (tree) exportJson(tree);
@@ -1110,15 +1012,15 @@ export default function App() {
     }
   };
   const localStatus =
-    hasInvalidDateDraft && saveState !== "error"
-      ? "Date edits not saved"
-      : saveState === "saved"
-        ? "Saved locally"
-        : saveState === "draft"
-          ? "Make a change to start saving"
-          : saveState === "saving"
-            ? "Saving locally…"
-            : "Local save failed · export JSON";
+    hasInvalidDateDraft && saveState !== 'error'
+      ? 'Date edits not saved'
+      : saveState === 'saved'
+        ? 'Saved locally'
+        : saveState === 'draft'
+          ? 'Make a change to start saving'
+          : saveState === 'saving'
+            ? 'Saving locally…'
+            : 'Local save failed · export JSON';
   return (
     <>
       <input
@@ -1129,10 +1031,10 @@ export default function App() {
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) importFile(f);
-          e.currentTarget.value = "";
+          e.currentTarget.value = '';
         }}
       />
-      {screen === "home" ? (
+      {screen === 'home' ? (
         <div className="home">
           <header className="site-header">
             <div className="brand">
@@ -1144,10 +1046,7 @@ export default function App() {
             <nav>
               <a href="#how-it-works">How it works</a>
               <a href="#privacy">Privacy</a>
-              <button
-                className="button light"
-                onClick={() => fileInput.current?.click()}
-              >
+              <button className="button light" onClick={() => fileInput.current?.click()}>
                 <Upload size={15} /> Import a tree
               </button>
             </nav>
@@ -1164,8 +1063,8 @@ export default function App() {
                   <em>keeping.</em>
                 </h1>
                 <p>
-                  Gather the names, faces, and connections that make your family
-                  yours. Build at your own pace, right here in your browser.
+                  Gather the names, faces, and connections that make your family yours. Build at
+                  your own pace, right here in your browser.
                 </p>
                 <div className="hero-actions">
                   <button className="button primary large" onClick={createTree}>
@@ -1224,10 +1123,7 @@ export default function App() {
                 <div className="tree-grid">
                   {library.map((item) => (
                     <div className="tree-tile" key={item.id}>
-                      <button
-                        className="tree-open"
-                        onClick={() => openTree(item.id)}
-                      >
+                      <button className="tree-open" onClick={() => openTree(item.id)}>
                         <div className="tree-tile-icon">
                           <Users size={27} />
                         </div>
@@ -1236,16 +1132,14 @@ export default function App() {
                           <span className="library-home">
                             <Home size={13} aria-hidden="true" />
                             <span>
-                              Home:{" "}
-                              {item.people.find(
-                                (p) => p.id === item.homePersonId,
-                              )?.name || "Unnamed person"}
+                              Home:{' '}
+                              {item.people.find((p) => p.id === item.homePersonId)?.name ||
+                                'Unnamed person'}
                             </span>
                           </span>
                         )}
                         <span>
-                          {item.people.length}{" "}
-                          {item.people.length === 1 ? "person" : "people"} ·
+                          {item.people.length} {item.people.length === 1 ? 'person' : 'people'} ·
                           Edited {new Date(item.updatedAt).toLocaleDateString()}
                         </span>
                         <span className="open-cue">
@@ -1296,8 +1190,8 @@ export default function App() {
                   </span>
                   <h3>Make it yours</h3>
                   <p>
-                    Add names, dates, photos, and the little notes that make a
-                    person more than a name on a page.
+                    Add names, dates, photos, and the little notes that make a person more than a
+                    name on a page.
                   </p>
                 </div>
                 <div>
@@ -1306,8 +1200,8 @@ export default function App() {
                   </span>
                   <h3>See how you connect</h3>
                   <p>
-                    Draw the lines between generations. Move things around until
-                    your family story feels right.
+                    Draw the lines between generations. Move things around until your family story
+                    feels right.
                   </p>
                 </div>
                 <div>
@@ -1316,8 +1210,8 @@ export default function App() {
                   </span>
                   <h3>Save and share</h3>
                   <p>
-                    Your tree stays in this browser. Download a JSON backup or
-                    export a PNG to share with family.
+                    Your tree stays in this browser. Download a JSON backup or export a PNG to share
+                    with family.
                   </p>
                 </div>
               </div>
@@ -1335,9 +1229,8 @@ export default function App() {
                     <span>Clear about every connection.</span>
                   </h2>
                   <p>
-                    Your tree is saved in this browser. GENEalogical3 has no
-                    account system or app database, so we can’t view or retrieve
-                    your family details.
+                    Your tree is saved in this browser. GENEalogical3 has no account system or app
+                    database, so we can’t view or retrieve your family details.
                   </p>
                 </div>
               </div>
@@ -1347,10 +1240,7 @@ export default function App() {
                     <span>01</span>
                     <h3>Your device</h3>
                   </div>
-                  <p>
-                    Edit people and photos. Autosave keeps the tree in this
-                    browser’s storage.
-                  </p>
+                  <p>Edit people and photos. Autosave keeps the tree in this browser’s storage.</p>
                   <small>
                     <Check size={17} /> GENEalogical3 can’t see it
                   </small>
@@ -1361,8 +1251,8 @@ export default function App() {
                     <h3>Your choice</h3>
                   </div>
                   <p>
-                    Export an editable JSON backup or a PNG image, or connect
-                    Google Drive when you want a cloud copy.
+                    Export an editable JSON backup or a PNG image, or connect Google Drive when you
+                    want a cloud copy.
                   </p>
                   <small>
                     <Check size={17} /> Nothing uploads by default
@@ -1374,8 +1264,8 @@ export default function App() {
                     <h3>Google Drive, if connected</h3>
                   </div>
                   <p>
-                    GENEalogical3 sends the tree only when you choose Drive
-                    save. Google stores that copy under your account.
+                    GENEalogical3 sends the tree only when you choose Drive save. Google stores that
+                    copy under your account.
                   </p>
                   <small>
                     <ShieldCheck size={17} /> App-created files only
@@ -1383,10 +1273,9 @@ export default function App() {
                 </div>
               </div>
               <p className="privacy-note">
-                <ShieldCheck size={20} /> GENEalogical3 does not store family
-                trees, portraits, or profile data on its own servers. Browser
-                storage stays on this device; clearing browser data removes that
-                local copy.
+                <ShieldCheck size={20} /> GENEalogical3 does not store family trees, portraits, or
+                profile data on its own servers. Browser storage stays on this device; clearing
+                browser data removes that local copy.
               </p>
             </section>
           </main>
@@ -1419,21 +1308,17 @@ export default function App() {
                   {tree?.name} <ChevronDown size={14} />
                 </button>
                 <div
-                  className={`save-status ${hasInvalidDateDraft ? "error" : saveState}`}
+                  className={`save-status ${hasInvalidDateDraft ? 'error' : saveState}`}
                   role="status"
                 >
-                  {saveState === "saved" && !hasInvalidDateDraft && (
-                    <Check size={12} />
-                  )}{" "}
+                  {saveState === 'saved' && !hasInvalidDateDraft && <Check size={12} />}{' '}
                   {localStatus}
                 </div>
               </div>
             </div>
             <div className="editor-header-actions">
               <span className="drive-status">
-                {driveSavedAt
-                  ? `Drive saved ${driveSavedAt}`
-                  : "Drive not saved"}
+                {driveSavedAt ? `Drive saved ${driveSavedAt}` : 'Drive not saved'}
               </span>
               <button
                 className="button header-button"
@@ -1457,10 +1342,10 @@ export default function App() {
                   disabled={driveBusy || !driveConfigured}
                   title={
                     driveConfigured
-                      ? "Google Drive options"
-                      : "Set VITE_GOOGLE_CLIENT_ID to enable Google Drive"
+                      ? 'Google Drive options'
+                      : 'Set VITE_GOOGLE_CLIENT_ID to enable Google Drive'
                   }
-                  onClick={() => doDrive("save")}
+                  onClick={() => doDrive('save')}
                 >
                   Save to Drive
                 </button>
@@ -1469,7 +1354,7 @@ export default function App() {
                   disabled={driveBusy || !driveConfigured}
                   aria-label="Save a copy to Google Drive"
                   title="Save a copy to Drive"
-                  onClick={() => doDrive("copy")}
+                  onClick={() => doDrive('copy')}
                 >
                   <Plus size={18} />
                 </button>
@@ -1478,7 +1363,7 @@ export default function App() {
                   disabled={driveBusy || !driveConfigured}
                   aria-label="Open from Google Drive"
                   title="Open from Drive"
-                  onClick={() => doDrive("open")}
+                  onClick={() => doDrive('open')}
                 >
                   <Search size={18} />
                 </button>
@@ -1500,12 +1385,8 @@ export default function App() {
               </div>
               <button
                 className="icon-button sidebar-toggle"
-                aria-label={
-                  sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"
-                }
-                title={
-                  sidebarIsCollapsed ? "Expand sidebar" : "Collapse sidebar"
-                }
+                aria-label={sidebarIsCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                title={sidebarIsCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                 aria-expanded={!sidebarIsCollapsed}
                 aria-controls="details-panel"
                 onClick={() => {
@@ -1521,10 +1402,8 @@ export default function App() {
               </button>
               <button
                 className="icon-button mobile-menu"
-                aria-label={
-                  mobilePanelIsOpen ? "Close details" : "Open details"
-                }
-                title={mobilePanelIsOpen ? "Close details" : "Open details"}
+                aria-label={mobilePanelIsOpen ? 'Close details' : 'Open details'}
+                title={mobilePanelIsOpen ? 'Close details' : 'Open details'}
                 aria-expanded={mobilePanelIsOpen}
                 aria-controls="details-panel"
                 onClick={() => {
@@ -1536,20 +1415,15 @@ export default function App() {
               </button>
             </div>
           </header>
-          <div
-            className={`editor-layout ${sidebarIsCollapsed ? "sidebar-collapsed" : ""}`}
-          >
+          <div className={`editor-layout ${sidebarIsCollapsed ? 'sidebar-collapsed' : ''}`}>
             <div className="canvas-wrap" ref={canvasRef}>
               <div className="canvas-topbar">
                 <div className="canvas-label">
                   <span className="canvas-label-dot" /> FAMILY CANVAS
                   {home && (
-                    <span
-                      className="canvas-home"
-                      title={`Home: ${home.name || "Unnamed person"}`}
-                    >
+                    <span className="canvas-home" title={`Home: ${home.name || 'Unnamed person'}`}>
                       <Home size={13} aria-hidden="true" />
-                      <span>Home: {home.name || "Unnamed person"}</span>
+                      <span>Home: {home.name || 'Unnamed person'}</span>
                     </span>
                   )}
                 </div>
@@ -1605,15 +1479,13 @@ export default function App() {
                   onSelectionDragStart={() => {
                     movingRef.current = true;
                   }}
-                  onSelectionDragStop={(_, movedNodes) =>
-                    saveMovedNodes(movedNodes)
-                  }
+                  onSelectionDragStop={(_, movedNodes) => saveMovedNodes(movedNodes)}
                   onMoveEnd={onViewportEnd}
                   onInit={(instance) => {
                     flowRef.current = instance;
                   }}
                   onEdgeClick={(_, edge) => {
-                    if (edge.type === "family") {
+                    if (edge.type === 'family') {
                       if (!edge.data?.childId) return;
                       selectPerson(String(edge.data.childId));
                       return;
@@ -1633,7 +1505,7 @@ export default function App() {
                   fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
                   nodesDraggable
                   elementsSelectable
-                  multiSelectionKeyCode={["Shift", "Meta", "Control"]}
+                  multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
                   selectionOnDrag={false}
                   deleteKeyCode={null}
                   proOptions={{ hideAttribution: false }}
@@ -1647,13 +1519,10 @@ export default function App() {
                   <div className="empty-symbol">✳</div>
                   <h2>Start with someone you know.</h2>
                   <p>
-                    Every family tree begins with one person. You can always add
-                    more branches later.
+                    Every family tree begins with one person. You can always add more branches
+                    later.
                   </p>
-                  <button
-                    className="button primary"
-                    onClick={() => addPerson()}
-                  >
+                  <button className="button primary" onClick={() => addPerson()}>
                     Add first person <ArrowRight size={16} />
                   </button>
                 </div>
@@ -1662,14 +1531,13 @@ export default function App() {
                 <Plus size={19} /> Add person
               </button>
               <div className="canvas-tip">
-                <CircleHelp size={15} /> Drag cards to arrange · connect handles
-                to link relatives
+                <CircleHelp size={15} /> Drag cards to arrange · connect handles to link relatives
               </div>
             </div>
             <aside
               id="details-panel"
               aria-label="Tree details"
-              className={`details-panel ${mobilePanelIsOpen ? "open" : ""}`}
+              className={`details-panel ${mobilePanelIsOpen ? 'open' : ''}`}
             >
               {selected ? (
                 <PersonEditor
@@ -1678,17 +1546,13 @@ export default function App() {
                   kinship={kinships.get(selected.id)}
                   onSetHome={(id) => apply((t) => setHomePerson(t, id))}
                   dates={dateDrafts[selected.id] || selected}
-                  onDatesChange={(changes) =>
-                    editLifeDates(selected.id, changes)
-                  }
+                  onDatesChange={(changes) => editLifeDates(selected.id, changes)}
                   relations={tree!.relations}
                   people={tree!.people}
                   onChange={(p) =>
                     apply((t) => ({
                       ...t,
-                      people: t.people.map((old) =>
-                        old.id === p.id ? p : old,
-                      ),
+                      people: t.people.map((old) => (old.id === p.id ? p : old)),
                     }))
                   }
                   onDelete={() => deletePerson(selected.id)}
@@ -1702,9 +1566,7 @@ export default function App() {
                       relations: t.relations.filter((r) => r.id !== id),
                     }))
                   }
-                  onUpdateRelation={(relation) =>
-                    apply((t) => updateRelation(t, relation))
-                  }
+                  onUpdateRelation={(relation) => apply((t) => updateRelation(t, relation))}
                   onClose={() => {
                     setSelectedId(null);
                   }}
@@ -1729,18 +1591,14 @@ export default function App() {
                   <RelationshipFields
                     relation={selectedRelation}
                     people={tree!.people}
-                    onChange={(relation) =>
-                      apply((t) => updateRelation(t, relation))
-                    }
+                    onChange={(relation) => apply((t) => updateRelation(t, relation))}
                   />
                   <button
                     className="button danger"
                     onClick={() => {
                       apply((t) => ({
                         ...t,
-                        relations: t.relations.filter(
-                          (r) => r.id !== selectedRelation.id,
-                        ),
+                        relations: t.relations.filter((r) => r.id !== selectedRelation.id),
                       }));
                       setSelectedRelationId(null);
                     }}
@@ -1755,19 +1613,14 @@ export default function App() {
                   </div>
                   <p className="eyebrow">YOUR FAMILY TREE</p>
                   <h2>Stories take shape together.</h2>
-                  <p>
-                    Select a person to add details, photos, and relationships.
-                  </p>
-                  <button
-                    className="button primary"
-                    onClick={() => addPerson()}
-                  >
+                  <p>Select a person to add details, photos, and relationships.</p>
+                  <button className="button primary" onClick={() => addPerson()}>
                     <Plus size={16} /> Add a person
                   </button>
                   <div className="panel-hint">
-                    <span>TIP</span> Top and bottom handles connect parents and
-                    children. Side handles connect partners. Other connections
-                    can be assigned a relationship later.
+                    <span>TIP</span> Top and bottom handles connect parents and children. Side
+                    handles connect partners. Other connections can be assigned a relationship
+                    later.
                   </div>
                 </div>
               )}
@@ -1775,14 +1628,11 @@ export default function App() {
           </div>
           <div className="editor-footer">
             <span>
-              {saveState === "draft"
-                ? "Temporary tree"
-                : "Stored in this browser"}{" "}
-              · <button onClick={downloadJson}>Download a backup</button>
+              {saveState === 'draft' ? 'Temporary tree' : 'Stored in this browser'} ·{' '}
+              <button onClick={downloadJson}>Download a backup</button>
             </span>
             <span>
-              {tree?.people.length || 0} people · {tree?.relations.length || 0}{" "}
-              connections
+              {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
             </span>
           </div>
         </div>
@@ -1790,7 +1640,7 @@ export default function App() {
       {notice && (
         <div className="toast" role="alert">
           <span>{notice}</span>
-          <button aria-label="Dismiss message" onClick={() => setNotice("")}>
+          <button aria-label="Dismiss message" onClick={() => setNotice('')}>
             <X size={16} />
           </button>
         </div>
@@ -1827,7 +1677,7 @@ export default function App() {
                   disabled={driveBusy}
                   onClick={() => {
                     setDriveActionsOpen(false);
-                    doDrive("save");
+                    doDrive('save');
                   }}
                 >
                   Save to Drive
@@ -1836,7 +1686,7 @@ export default function App() {
                   disabled={driveBusy}
                   onClick={() => {
                     setDriveActionsOpen(false);
-                    doDrive("copy");
+                    doDrive('copy');
                   }}
                 >
                   Save a copy
@@ -1845,7 +1695,7 @@ export default function App() {
                   disabled={driveBusy}
                   onClick={() => {
                     setDriveActionsOpen(false);
-                    doDrive("open");
+                    doDrive('open');
                   }}
                 >
                   Open from Drive
@@ -1854,10 +1704,10 @@ export default function App() {
                   onClick={() => {
                     disconnectDrive();
                     setDriveFile(null);
-                    setDriveSavedAt("");
+                    setDriveSavedAt('');
                     setDriveActionsOpen(false);
                     setNotice(
-                      "Disconnected Google Drive for this session. Your local tree is still saved.",
+                      'Disconnected Google Drive for this session. Your local tree is still saved.',
                     );
                   }}
                 >
@@ -1866,13 +1716,13 @@ export default function App() {
               </div>
             ) : (
               <p>
-                Google Drive is not configured for this deployment. Add a Google
-                OAuth client ID to enable these actions.
+                Google Drive is not configured for this deployment. Add a Google OAuth client ID to
+                enable these actions.
               </p>
             )}
           </div>
         </div>
-      )}{" "}
+      )}{' '}
       {driveFiles && (
         <div
           className="modal-backdrop"
@@ -1880,12 +1730,7 @@ export default function App() {
             if (e.target === e.currentTarget) setDriveFiles(null);
           }}
         >
-          <div
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="drive-title"
-          >
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="drive-title">
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">GOOGLE DRIVE</p>
@@ -1903,26 +1748,18 @@ export default function App() {
             {driveFiles.length ? (
               <div className="drive-file-list">
                 {driveFiles.map((f) => (
-                  <button
-                    key={f.id}
-                    disabled={driveBusy}
-                    onClick={() => loadDrive(f)}
-                  >
+                  <button key={f.id} disabled={driveBusy} onClick={() => loadDrive(f)}>
                     <Users size={20} />
                     <span>
                       <strong>{f.name}</strong>
-                      <small>
-                        Edited {new Date(f.modifiedTime).toLocaleDateString()}
-                      </small>
+                      <small>Edited {new Date(f.modifiedTime).toLocaleDateString()}</small>
                     </span>
                     <ArrowRight size={16} />
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="empty-drive">
-                No GENEalogical3 trees found in this Drive.
-              </div>
+              <div className="empty-drive">No GENEalogical3 trees found in this Drive.</div>
             )}
           </div>
         </div>

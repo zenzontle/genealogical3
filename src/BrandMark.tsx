@@ -1,6 +1,6 @@
 export function BrandMark({ small = false }: { small?: boolean }) {
   return (
-    <span className={`brand-mark${small ? " small" : ""}`} aria-hidden="true">
+    <span className={`brand-mark${small ? ' small' : ''}`} aria-hidden="true">
       <svg viewBox="0 0 40 40" focusable="false">
         <rect width="40" height="40" rx="8" fill="currentColor" />
         <path
