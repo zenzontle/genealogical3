@@ -376,6 +376,7 @@ export default function App() {
     const key = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+      if (e.target instanceof Element && e.target.closest('.person-search')) return;
       e.preventDefault();
       if (e.key.toLowerCase() === 'z' && !e.shiftKey) undo();
       else redo();
