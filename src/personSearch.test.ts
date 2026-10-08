@@ -90,4 +90,21 @@ describe('matching note previews', () => {
     expect(preview.endsWith('…')).toBe(true);
     expect(preview.length).toBeLessThanOrEqual(162);
   });
+
+  it.each([
+    ['decomposed accents', 'e\u0301 '.repeat(200)],
+    ['removed combining marks', '\u0301'.repeat(200)],
+    ['expanded Hangul syllables', '각 '.repeat(200)],
+    ['surrogate pairs and decomposed accents', '🙂e\u0301 '.repeat(200)],
+  ])('keeps the matching word visible after %s', (_description, prefix) => {
+    const person = {
+      ...makePerson('José'),
+      notes: `${prefix}Carpenter ${'later '.repeat(100)}`,
+    };
+    expect(searchPeople([person], 'carpenter')).toEqual([person]);
+    const preview = matchedNotePreview(person.notes, 'carpenter');
+    expect(preview).toContain('Carpenter');
+    expect(preview.endsWith('…')).toBe(true);
+    expect(preview.length).toBeLessThanOrEqual(162);
+  });
 });

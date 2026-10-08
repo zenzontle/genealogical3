@@ -31,7 +31,17 @@ export function matchedNotePreview(notes: string, query: string): string {
     .map((word) => normalized.indexOf(word))
     .filter((index) => index >= 0);
   if (!matches.length) return '';
-  const start = Math.max(0, Math.min(...matches) - 40);
+  const firstMatch = Math.min(...matches);
+  let originalOffset = 0;
+  let normalizedOffset = 0;
+  // Translate the normalized match back to UTF-16 offsets in the displayed text.
+  for (const character of text) {
+    const normalizedLength = normalize(character).length;
+    if (normalizedOffset + normalizedLength > firstMatch) break;
+    normalizedOffset += normalizedLength;
+    originalOffset += character.length;
+  }
+  const start = Math.max(0, originalOffset - 40);
   const end = Math.min(text.length, start + 160);
   return `${start ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`;
 }
