@@ -29,7 +29,8 @@ function pathPoints(path: string): Point[] {
 }
 
 export function treePreview(tree: Tree) {
-  if (!tree.people.length) return null;
+  // Large trees use a summary tile. Bound layout work, SVG nodes and portrait decodes.
+  if (!tree.people.length || tree.people.length > 24 || tree.relations.length > 32) return null;
   const families = familyConnectors(tree.people, tree.relations, personCardSize);
   const grouped = new Set(families.flatMap((family) => family.relationIds));
   const paths: PreviewPath[] = families.map((family) => ({

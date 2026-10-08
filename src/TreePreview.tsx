@@ -11,7 +11,11 @@ export function TreePreview({ tree }: { tree: Tree }) {
     return (
       <div className="tree-preview tree-preview-empty" aria-hidden="true">
         <Users size={27} />
-        <span>No people yet</span>
+        <span>
+          {tree.people.length
+            ? `${tree.people.length} people · ${tree.relations.length} connections`
+            : 'No people yet'}
+        </span>
       </div>
     );
   const { bounds, paths } = preview;

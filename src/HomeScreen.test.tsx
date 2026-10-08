@@ -84,4 +84,21 @@ describe('homepage library hierarchy', () => {
     expect(clipIds).toHaveLength(4);
     expect(new Set(clipIds).size).toBe(4);
   });
+
+  it('keeps libraries with several 2,000-person trees compact without rendering their portraits', () => {
+    const people = Array.from({ length: 2000 }, (_, i) => ({
+      ...makePerson(`Person ${i}`, i * 200, 0),
+      portrait: 'data:image/png;base64,portrait',
+    }));
+    const library = Array.from({ length: 8 }, (_, i) => ({
+      ...makeTree(`Large tree ${i}`),
+      people,
+    }));
+    const html = render('ready', library);
+    expect(html.match(/class="tree-preview tree-preview-empty"/g)).toHaveLength(8);
+    expect(html.match(/2000 people · 0 connections/g)).toHaveLength(8);
+    expect(html).not.toContain('preview-person');
+    expect(html).not.toContain('<image');
+    expect((html.match(/<[a-z][^>]*>/g) || []).length).toBeLessThan(1000);
+  });
 });

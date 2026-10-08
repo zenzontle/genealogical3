@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { duplicateTree, makePerson, makeTree, setHomePerson } from './model';
-import { deleteTree, getDriveLink, getTree, listTrees, saveDriveLink, saveTree } from './storage';
+import { makePerson, makeTree, setHomePerson, type Tree } from './model';
+import {
+  deleteTree,
+  duplicateSavedTree,
+  getDriveLink,
+  getTree,
+  listTrees,
+  saveDriveLink,
+  saveTree,
+} from './storage';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -72,8 +80,7 @@ describe('home designation in browser storage', () => {
       name: 'Original.json',
       modifiedTime: '2026-10-08',
     });
-    const copy = duplicateTree(tree);
-    await saveTree(copy);
+    const copy = await duplicateSavedTree(tree.id);
     expect(await getTree(copy.id)).toEqual(copy);
     expect(await getTree(tree.id)).toEqual(original);
     expect(await listTrees()).toHaveLength(2);
@@ -86,6 +93,60 @@ describe('home designation in browser storage', () => {
     await deleteTree(copy.id);
     expect(await getTree(copy.id)).toBeUndefined();
     expect(await listTrees()).toEqual([original]);
+  });
+  it('duplicates the latest persisted edit while the library still holds an older tile', async () => {
+    const cachedTile = { ...makeTree('Before edit'), people: [makePerson('A')] };
+    const snapshot = structuredClone(cachedTile);
+    const storage = browserStorage([cachedTile]);
+    const parent = { ...cachedTile.people[0], x: -500, notes: 'Latest notes' };
+    const child = makePerson('New child', 350, 400);
+    const persisted: Tree = {
+      ...cachedTile,
+      name: 'After edit',
+      people: [parent, child],
+      homePersonId: child.id,
+      relations: [
+        {
+          id: 'new-parent',
+          type: 'parent',
+          parentId: parent.id,
+          childId: child.id,
+          kind: 'biological',
+        },
+      ],
+      viewport: { x: -200, y: 50, zoom: 0.5 },
+    };
+    await saveTree(persisted);
+    const copy = await duplicateSavedTree(cachedTile.id);
+    expect(copy).toEqual({
+      ...persisted,
+      id: copy.id,
+      name: 'After edit (copy)',
+      updatedAt: copy.updatedAt,
+    });
+    expect(copy.id).not.toBe(persisted.id);
+    expect(await getTree(copy.id)).toEqual(copy);
+    expect(await getTree(persisted.id)).toEqual(persisted);
+    expect(cachedTile).toEqual(snapshot);
+    expect(storage.put).toHaveBeenCalledTimes(2);
+  });
+  it('does not recreate a tree that disappeared after the library was loaded', async () => {
+    const storage = browserStorage([]);
+    await expect(duplicateSavedTree('deleted-tree')).rejects.toThrow('This tree was not found.');
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(await listTrees()).toEqual([]);
+  });
+  it('reports a failed source read instead of falling back to a cached tree', async () => {
+    const storage = browserStorage([]);
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        const request = { error: Error('Storage unavailable'), onerror: () => {} };
+        queueMicrotask(() => request.onerror());
+        return request;
+      },
+    });
+    await expect(duplicateSavedTree('cached-id')).rejects.toThrow('Storage unavailable');
+    expect(storage.put).not.toHaveBeenCalled();
   });
   it('persists explicit life status even when the death date is unknown', async () => {
     browserStorage([]);

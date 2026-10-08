@@ -44,7 +44,6 @@ import { movePeopleToPositions, personPositionAtViewCenter } from './canvasPosit
 import { useConnectorProximity } from './useConnectorProximity';
 import {
   addRelation,
-  duplicateTree,
   lifeDatesError,
   makePerson,
   makeTree,
@@ -64,6 +63,7 @@ import {
 import {
   deleteDriveLink,
   deleteTree,
+  duplicateSavedTree,
   getDriveLink,
   getTree,
   listTrees,
@@ -601,8 +601,7 @@ export default function App() {
     duplicateBusy.current = true;
     setDuplicatingTreeId(item.id);
     try {
-      const copy = duplicateTree(item);
-      await saveTree(copy);
+      const copy = await duplicateSavedTree(item.id);
       // Keep the persisted copy visible even if the subsequent library read fails.
       setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
       if (await refreshLibrary()) setNotice(`Created ${copy.name}.`);
