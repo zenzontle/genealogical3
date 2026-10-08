@@ -41,11 +41,25 @@ describe('homepage library hierarchy', () => {
     expect(html).not.toContain('Your first story starts here');
   });
 
-  it('keeps the marketing hero and empty-library experience once an empty library has loaded', () => {
+  it('offers create and import in the hero without a workspace when the library is empty', () => {
     const html = render('ready');
     expect(html).toContain('class="hero"');
-    expect(html).toContain('Your first story starts here');
-    expect(html).toContain('<h2 id="library-heading">Your family trees</h2>');
+    expect(html).not.toContain('YOUR WORKSPACE');
+    expect(html).not.toContain('library-section');
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html.match(/Start a family tree/g)).toHaveLength(1);
+    expect(html).not.toContain('New tree');
+    expect(html).not.toContain('Create your first tree');
+    expect(html.match(/> Import(?: a tree)?<\/button>/g)).toHaveLength(1);
+    const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+    expect(header).not.toContain('Import');
+    expect(header).not.toContain('github.com');
+    expect(html).toMatch(
+      /<div class="hero-buttons">[\s\S]*?Start a family tree[\s\S]*?Import a tree/,
+    );
+    expect(html.slice(html.indexOf('<footer'))).toContain(
+      'href="https://github.com/zenzontle/genealogical3"',
+    );
   });
 
   it('leads with a single workspace h1 and gives each saved tree a static preview and actions', () => {
@@ -54,7 +68,10 @@ describe('homepage library hierarchy', () => {
     const html = render('ready', [tree]);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('<h1 id="library-heading">Your family trees</h1>');
+    expect(html).toContain('YOUR WORKSPACE');
     expect(html).not.toContain('class="hero"');
+    expect(html.match(/> Import(?: a tree)?<\/button>/g)).toHaveLength(1);
+    expect(html.match(/New tree/g)).toHaveLength(1);
     expect(html).toContain('class="tree-preview"');
     expect(html).toContain('aria-hidden="true" focusable="false"');
     for (const action of ['Open', 'Duplicate', 'Rename', 'Delete'])

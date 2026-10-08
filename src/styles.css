@@ -235,11 +235,10 @@ h2 {
 .hero {
   max-width: 1360px;
   margin: auto;
-  padding: 4rem 4.5% 7rem;
+  padding: 2rem 4.5% 0;
   display: grid;
   grid-template-columns: 52% 48%;
   align-items: center;
-  min-height: 630px;
 }
 .hero-copy {
   position: relative;
@@ -270,8 +269,14 @@ h2 {
   font-size: 0.74rem;
   color: var(--text-muted);
 }
+.hero-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
 .hero-art {
   height: 540px;
+  align-self: end;
   position: relative;
   background: radial-gradient(
     circle at 50% 51%,
@@ -494,37 +499,6 @@ h2 {
 }
 .tree-tile-tools button:hover {
   text-decoration: underline;
-}
-.empty-library {
-  background: var(--surface);
-  border: 1px dashed var(--border-control);
-  border-radius: 8px;
-  padding: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.empty-icon {
-  width: 56px;
-  height: 56px;
-  flex: none;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  background: var(--accent-surface);
-}
-.empty-library strong {
-  font-family: 'DM Serif Display', Georgia, serif;
-  font-size: 1.3rem;
-}
-.empty-library p {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin: 0.25rem 0 0;
-}
-.empty-library .button {
-  margin-left: auto;
 }
 .how-section {
   background: var(--surface-muted);
@@ -777,6 +751,7 @@ h2 {
   font-weight: 700;
   color: var(--accent);
 }
+.repository-link,
 .back-to-top {
   display: inline-flex;
   align-items: center;
@@ -786,6 +761,7 @@ h2 {
   font-weight: 600;
   text-decoration: none;
 }
+.repository-link:hover,
 .back-to-top:hover {
   text-decoration: underline;
 }
@@ -1867,18 +1843,9 @@ h2 {
   .site-header nav a {
     display: none;
   }
-  .site-header nav .button {
-    font-size: 0;
-    gap: 0;
-    min-width: 38px;
-  }
-  .site-header nav .button svg {
-    width: 17px;
-  }
   .hero {
     display: block;
-    padding: 3rem 6% 2rem;
-    min-height: auto;
+    padding: 1.5rem 6% 0;
   }
   .hero h1 {
     font-size: clamp(3.7rem, 11vw, 5rem);
@@ -1934,12 +1901,6 @@ h2 {
     padding: 1.25rem 0 0;
     border-left: 0;
     border-top: 1px solid var(--border);
-  }
-  .empty-library {
-    flex-wrap: wrap;
-  }
-  .empty-library .button {
-    margin-left: 0;
   }
   .home footer {
     padding: 1.5rem 6%;

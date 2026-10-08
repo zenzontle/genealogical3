@@ -5,6 +5,7 @@ import {
   Cloud,
   Download,
   FileDown,
+  Github,
   Globe,
   Heart,
   Home,
@@ -52,7 +53,6 @@ export function HomeScreen({
   onRemoveTree: (tree: Tree) => void;
 }) {
   const showHero = libraryState === 'ready' && library.length === 0;
-  const LibraryHeading = showHero ? 'h2' : 'h1';
   return (
     <div className={`home${showHero ? '' : ' home-workspace'}`}>
       <header id="top" className="site-header" tabIndex={-1}>
@@ -65,9 +65,6 @@ export function HomeScreen({
         <nav>
           <a href="#how-it-works">How it works</a>
           <a href="#privacy">Privacy</a>
-          <button className="button light" aria-label="Import a tree" onClick={onImportTree}>
-            <Upload size={15} /> Import a tree
-          </button>
         </nav>
       </header>
       <main>
@@ -86,9 +83,14 @@ export function HomeScreen({
                 own pace, right here in your browser.
               </p>
               <div className="hero-actions">
-                <button className="button primary large" onClick={onCreateTree}>
-                  Start a family tree <ArrowRight size={18} />
-                </button>
+                <div className="hero-buttons">
+                  <button className="button primary large" onClick={onCreateTree}>
+                    Start a family tree <ArrowRight size={18} />
+                  </button>
+                  <button className="button outline large" onClick={onImportTree}>
+                    <Upload size={18} aria-hidden="true" /> Import a tree
+                  </button>
+                </div>
                 <span>No account needed.</span>
               </div>
             </div>
@@ -120,108 +122,92 @@ export function HomeScreen({
             </div>
           </div>
         )}
-        <section className="library-section" aria-labelledby="library-heading">
-          <div className="section-intro">
-            <div>
-              <p className="eyebrow">YOUR WORKSPACE</p>
-              <LibraryHeading id="library-heading">Your family trees</LibraryHeading>
-            </div>
-            <div className="library-actions">
-              {!showHero && (
+        {!showHero && (
+          <section className="library-section" aria-labelledby="library-heading">
+            <div className="section-intro">
+              <div>
+                {library.length > 0 && <p className="eyebrow">YOUR WORKSPACE</p>}
+                <h1 id="library-heading">Your family trees</h1>
+              </div>
+              <div className="library-actions">
                 <button className="button outline" onClick={onImportTree}>
                   <Upload size={17} /> Import
                 </button>
-              )}
-              <button
-                className={`button ${showHero ? 'outline' : 'primary'}`}
-                onClick={onCreateTree}
-              >
-                <Plus size={17} /> New tree
-              </button>
+                <button className="button primary" onClick={onCreateTree}>
+                  <Plus size={17} /> New tree
+                </button>
+              </div>
             </div>
-          </div>
-          {libraryState === 'loading' ? (
-            <div className="library-status" role="status" aria-busy="true">
-              Loading your family trees…
-            </div>
-          ) : libraryState === 'error' ? (
-            <div className="library-status" role="alert">
-              <p>Your family trees could not be loaded from this browser.</p>
-              <button className="button outline" onClick={onRetryLibrary}>
-                Retry
-              </button>
-            </div>
-          ) : library.length ? (
-            <div className="tree-grid">
-              {library.map((item) => (
-                <div className="tree-tile" key={item.id}>
-                  <button
-                    className="tree-open"
-                    aria-label={`Open ${item.name}`}
-                    onClick={() => onOpenTree(item.id)}
-                  >
-                    <TreePreview tree={item} />
-                    <strong title={item.name}>{item.name}</strong>
-                    {item.homePersonId !== null && (
-                      <span className="library-home">
-                        <Home size={13} aria-hidden="true" />
-                        <span>
-                          Home:{' '}
-                          {item.people.find((p) => p.id === item.homePersonId)?.name ||
-                            'Unnamed person'}
+            {libraryState === 'loading' ? (
+              <div className="library-status" role="status" aria-busy="true">
+                Loading your family trees…
+              </div>
+            ) : libraryState === 'error' ? (
+              <div className="library-status" role="alert">
+                <p>Your family trees could not be loaded from this browser.</p>
+                <button className="button outline" onClick={onRetryLibrary}>
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="tree-grid">
+                {library.map((item) => (
+                  <div className="tree-tile" key={item.id}>
+                    <button
+                      className="tree-open"
+                      aria-label={`Open ${item.name}`}
+                      onClick={() => onOpenTree(item.id)}
+                    >
+                      <TreePreview tree={item} />
+                      <strong title={item.name}>{item.name}</strong>
+                      {item.homePersonId !== null && (
+                        <span className="library-home">
+                          <Home size={13} aria-hidden="true" />
+                          <span>
+                            Home:{' '}
+                            {item.people.find((p) => p.id === item.homePersonId)?.name ||
+                              'Unnamed person'}
+                          </span>
                         </span>
+                      )}
+                      <span>
+                        {item.people.length} {item.people.length === 1 ? 'person' : 'people'} ·
+                        Edited {new Date(item.updatedAt).toLocaleDateString()}
                       </span>
-                    )}
-                    <span>
-                      {item.people.length} {item.people.length === 1 ? 'person' : 'people'} · Edited{' '}
-                      {new Date(item.updatedAt).toLocaleDateString()}
-                    </span>
-                    <span className="open-cue">
-                      Open tree <ArrowRight size={15} />
-                    </span>
-                  </button>
-                  <div className="tree-tile-tools">
-                    <button
-                      aria-label={`Duplicate ${item.name}`}
-                      title="Duplicate"
-                      disabled={duplicatingTreeId !== null}
-                      onClick={() => onDuplicateTree(item)}
-                    >
-                      {duplicatingTreeId === item.id ? 'Duplicating…' : 'Duplicate'}
+                      <span className="open-cue">
+                        Open tree <ArrowRight size={15} />
+                      </span>
                     </button>
-                    <button
-                      aria-label={`Rename ${item.name}`}
-                      title="Rename"
-                      onClick={() => onRenameTree(item)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      aria-label={`Delete ${item.name}`}
-                      title="Delete"
-                      onClick={() => onRemoveTree(item)}
-                    >
-                      Delete
-                    </button>
+                    <div className="tree-tile-tools">
+                      <button
+                        aria-label={`Duplicate ${item.name}`}
+                        title="Duplicate"
+                        disabled={duplicatingTreeId !== null}
+                        onClick={() => onDuplicateTree(item)}
+                      >
+                        {duplicatingTreeId === item.id ? 'Duplicating…' : 'Duplicate'}
+                      </button>
+                      <button
+                        aria-label={`Rename ${item.name}`}
+                        title="Rename"
+                        onClick={() => onRenameTree(item)}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        aria-label={`Delete ${item.name}`}
+                        title="Delete"
+                        onClick={() => onRemoveTree(item)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-library">
-              <div className="empty-icon">
-                <Users size={31} />
+                ))}
               </div>
-              <div>
-                <strong>Your first story starts here.</strong>
-                <p>Create a tree to start adding the people who matter.</p>
-              </div>
-              <button className="button primary" onClick={onCreateTree}>
-                Create your first tree <ArrowRight size={16} />
-              </button>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
+        )}
         <section id="how-it-works" className="how-section">
           <h2>Simple to start. Yours to keep.</h2>
           <div className="how-grid">
@@ -387,6 +373,13 @@ export function HomeScreen({
           <span>GENEalogical3</span>
         </div>
         <span>&copy; 2026 Jorge Hernandez</span>
+        <a
+          className="repository-link"
+          href="https://github.com/zenzontle/genealogical3"
+          aria-label="GitHub repository"
+        >
+          <Github size={17} aria-hidden="true" /> GitHub
+        </a>
         <a className="back-to-top" href="#top">
           Back to top <ArrowUp size={14} aria-hidden="true" />
         </a>
