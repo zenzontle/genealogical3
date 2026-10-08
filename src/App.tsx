@@ -35,7 +35,7 @@ import { RelationshipEditor } from './RelationshipEditor';
 import { HomeScreen } from './HomeScreen';
 import { DriveActionsDialog } from './DriveActionsDialog';
 import { DriveTreeDialog } from './DriveTreeDialog';
-import { PersonSearchDialog } from './PersonSearchDialog';
+import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { RelationshipEdge } from './RelationshipEdge';
 import { FamilyEdge } from './FamilyEdge';
 import { relationshipEdges } from './relationshipEdges';
@@ -110,7 +110,6 @@ export default function App() {
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
-  const [personSearchOpen, setPersonSearchOpen] = useState(false);
   const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
     null,
   );
@@ -127,7 +126,6 @@ export default function App() {
     saveCounter = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
     fileInput = useRef<HTMLInputElement>(null),
-    personSearchButtonRef = useRef<HTMLButtonElement>(null),
     flowRef = useRef<ReactFlowInstance<PersonNode> | null>(null),
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
@@ -209,7 +207,6 @@ export default function App() {
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
-      setPersonSearchOpen(false);
       setPendingCenter(null);
       const link = draft ? undefined : await getDriveLink(id);
       setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
@@ -377,9 +374,9 @@ export default function App() {
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (personSearchOpen) return;
       if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
+      if (e.target instanceof Element && e.target.closest('.person-search')) return;
       e.preventDefault();
       if (e.key.toLowerCase() === 'z' && !e.shiftKey) undo();
       else redo();
@@ -477,7 +474,6 @@ export default function App() {
   const jumpToPerson = (id: string) => {
     const current = treeRef.current;
     if (!current?.people.some((person) => person.id === id)) return;
-    setPersonSearchOpen(false);
     setConnectMode(null);
     selectPerson(id);
     setPendingCenter({ treeId: current.id, personId: id });
@@ -614,7 +610,6 @@ export default function App() {
   };
   const leaveEditor = async () => {
     await saveNow();
-    setPersonSearchOpen(false);
     setPendingCenter(null);
     setScreen('home');
     setSelectedId(null);
@@ -714,18 +709,9 @@ export default function App() {
               <span className="drive-status">
                 {driveSavedAt ? `Drive saved ${driveSavedAt}` : 'Drive not saved'}
               </span>
-              <button
-                type="button"
-                className="button header-button"
-                aria-label="Find person"
-                title="Find person"
-                aria-haspopup="dialog"
-                ref={personSearchButtonRef}
-                onClick={() => setPersonSearchOpen(true)}
-              >
-                <Search size={16} aria-hidden="true" />
-                <span>Find person</span>
-              </button>
+              {tree && (
+                <HeaderPersonSearch key={tree.id} people={tree.people} onJump={jumpToPerson} />
+              )}
               <button
                 className="button header-button"
                 onClick={downloadJson}
@@ -1052,15 +1038,6 @@ export default function App() {
             <X size={16} />
           </button>
         </div>
-      )}
-      {screen === 'editor' && tree && personSearchOpen && (
-        <PersonSearchDialog
-          key={tree.id}
-          people={tree.people}
-          triggerRef={personSearchButtonRef}
-          onJump={jumpToPerson}
-          onClose={() => setPersonSearchOpen(false)}
-        />
       )}
       {driveActionsOpen && (
         <DriveActionsDialog

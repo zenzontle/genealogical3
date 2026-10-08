@@ -739,6 +739,7 @@ h2 {
   overflow: hidden;
 }
 .editor-header {
+  position: relative;
   height: 65px;
   flex: none;
   background: var(--surface);
@@ -748,7 +749,7 @@ h2 {
   justify-content: space-between;
   padding: 0 1rem;
   gap: 1rem;
-  z-index: 5;
+  z-index: 9;
 }
 .editor-header-left,
 .editor-header-actions,
@@ -1619,26 +1620,38 @@ h2 {
   line-height: 1.6;
   margin: 1rem 0;
 }
-.person-search-dialog {
-  width: min(640px, calc(100% - 2rem));
-  max-height: calc(100dvh - 2rem);
-  margin: auto;
+.person-search {
+  position: relative;
+  width: clamp(120px, 18vw, 260px);
+}
+.person-search-toggle {
+  display: none;
+}
+.person-search-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: min(640px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
   border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--text);
+  box-shadow: 0 8px 24px var(--shadow);
 }
-.person-search-dialog::backdrop {
-  background: var(--overlay);
-}
-.person-search-label {
-  display: block;
-  margin: 1rem 0 0.5rem;
+.person-search-panel > .muted {
+  margin-bottom: 0;
   font-size: 0.8rem;
 }
 .person-search-field {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  min-height: 36px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-raised);
@@ -1655,9 +1668,18 @@ h2 {
   outline: 0;
   background: transparent;
   color: var(--text);
+  font-size: 0.8rem;
 }
 .person-search-field svg {
   flex: none;
+}
+.person-search-field .icon-button {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.person-search-field input::-webkit-search-cancel-button {
+  display: none;
 }
 .person-search-results {
   list-style: none;
@@ -1928,8 +1950,43 @@ h2 {
     flex: none;
     margin-left: auto;
   }
-  .person-search-dialog {
-    padding: 1rem;
+  .person-search {
+    position: static;
+    width: auto;
+  }
+  .person-search-toggle {
+    display: inline-flex;
+  }
+  .person-search-content {
+    display: none;
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0.5rem;
+    right: 0.5rem;
+    max-height: calc(100dvh - 65px - 1rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: 0 8px 24px var(--shadow);
+  }
+  .person-search.is-open .person-search-content {
+    display: block;
+  }
+  .person-search-panel {
+    position: static;
+    width: auto;
+    max-height: none;
+    overflow: visible;
+    margin-top: 0.5rem;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+  .person-search-field input {
+    font-size: 1rem;
   }
   .person-search-results button {
     align-items: flex-start;
