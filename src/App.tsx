@@ -35,6 +35,7 @@ import { RelationshipEditor } from './RelationshipEditor';
 import { HomeScreen } from './HomeScreen';
 import { DriveActionsDialog } from './DriveActionsDialog';
 import { DriveTreeDialog } from './DriveTreeDialog';
+import { PersonSearchDialog } from './PersonSearchDialog';
 import { RelationshipEdge } from './RelationshipEdge';
 import { FamilyEdge } from './FamilyEdge';
 import { relationshipEdges } from './relationshipEdges';
@@ -109,6 +110,10 @@ export default function App() {
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
+  const [personSearchOpen, setPersonSearchOpen] = useState(false);
+  const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
+    null,
+  );
   const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -122,6 +127,7 @@ export default function App() {
     saveCounter = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
     fileInput = useRef<HTMLInputElement>(null),
+    personSearchButtonRef = useRef<HTMLButtonElement>(null),
     flowRef = useRef<ReactFlowInstance<PersonNode> | null>(null),
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
@@ -203,6 +209,8 @@ export default function App() {
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
+      setPersonSearchOpen(false);
+      setPendingCenter(null);
       const link = draft ? undefined : await getDriveLink(id);
       setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
       setDriveSavedAt('');
@@ -369,6 +377,7 @@ export default function App() {
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (personSearchOpen) return;
       if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
       e.preventDefault();
@@ -439,6 +448,40 @@ export default function App() {
   const revealSidebar = sidebarRevealedBySelection && !!(selected || selectedRelation);
   const sidebarIsCollapsed = sidebarCollapsed && !revealSidebar;
   const mobilePanelIsOpen = mobilePanel || revealSidebar;
+  const centerPerson = useCallback((id: string) => {
+    const person = treeRef.current?.people.find((value) => value.id === id);
+    const flow = flowRef.current;
+    if (!person || !flow) return;
+    const node = flow.getNode(id);
+    const position = node?.position || person;
+    void flow.setCenter(
+      position.x + (node?.measured?.width || personCardSize.width) / 2,
+      position.y + (node?.measured?.height || personCardSize.height) / 2,
+      {
+        zoom: 1,
+        duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 350,
+      },
+    );
+  }, []);
+  useEffect(() => {
+    if (!pendingCenter) return;
+    // Let React Flow measure the canvas after selection expands the sidebar.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        if (treeRef.current?.id === pendingCenter.treeId) centerPerson(pendingCenter.personId);
+        setPendingCenter(null);
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingCenter, centerPerson]);
+  const jumpToPerson = (id: string) => {
+    const current = treeRef.current;
+    if (!current?.people.some((person) => person.id === id)) return;
+    setPersonSearchOpen(false);
+    setConnectMode(null);
+    selectPerson(id);
+    setPendingCenter({ treeId: current.id, personId: id });
+  };
   const saveNow = async () => {
     if (!treeRef.current || draftTree.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -571,6 +614,8 @@ export default function App() {
   };
   const leaveEditor = async () => {
     await saveNow();
+    setPersonSearchOpen(false);
+    setPendingCenter(null);
     setScreen('home');
     setSelectedId(null);
     setMobilePanel(false);
@@ -653,7 +698,8 @@ export default function App() {
                   onClick={() => tree && rename(tree)}
                   title="Rename tree"
                 >
-                  {tree?.name} <ChevronDown size={14} />
+                  <span className="tree-title-name">{tree?.name}</span>
+                  <ChevronDown size={14} />
                 </button>
                 <div
                   className={`save-status ${hasInvalidDateDraft ? 'error' : saveState}`}
@@ -668,6 +714,18 @@ export default function App() {
               <span className="drive-status">
                 {driveSavedAt ? `Drive saved ${driveSavedAt}` : 'Drive not saved'}
               </span>
+              <button
+                type="button"
+                className="button header-button"
+                aria-label="Find person"
+                title="Find person"
+                aria-haspopup="dialog"
+                ref={personSearchButtonRef}
+                onClick={() => setPersonSearchOpen(true)}
+              >
+                <Search size={16} aria-hidden="true" />
+                <span>Find person</span>
+              </button>
               <button
                 className="button header-button"
                 onClick={downloadJson}
@@ -794,6 +852,29 @@ export default function App() {
                   >
                     <Redo2 size={18} />
                   </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    disabled={!home}
+                    aria-label="Center on home person"
+                    aria-describedby={!home ? 'center-home-help' : undefined}
+                    title={
+                      home
+                        ? `Center on ${home.name || 'home person'}`
+                        : 'Set a home person in person details to center on them'
+                    }
+                    onClick={() => {
+                      const id = treeRef.current?.homePersonId;
+                      if (id) centerPerson(id);
+                    }}
+                  >
+                    <Home size={18} aria-hidden="true" />
+                  </button>
+                  {!home && (
+                    <span id="center-home-help" className="sr-only">
+                      Set a home person in person details to center on them.
+                    </span>
+                  )}
                   <button
                     className="button subtle"
                     onClick={() =>
@@ -971,6 +1052,15 @@ export default function App() {
             <X size={16} />
           </button>
         </div>
+      )}
+      {screen === 'editor' && tree && personSearchOpen && (
+        <PersonSearchDialog
+          key={tree.id}
+          people={tree.people}
+          triggerRef={personSearchButtonRef}
+          onJump={jumpToPerson}
+          onClose={() => setPersonSearchOpen(false)}
+        />
       )}
       {driveActionsOpen && (
         <DriveActionsDialog
