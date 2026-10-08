@@ -1622,7 +1622,7 @@ h2 {
 }
 .person-search {
   position: relative;
-  width: clamp(180px, 18vw, 260px);
+  width: clamp(120px, 18vw, 260px);
 }
 .person-search-toggle {
   display: none;
