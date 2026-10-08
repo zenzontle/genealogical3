@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { SexIcon } from './SexIcon';
+import { TreePreview } from './TreePreview';
 import type { Tree } from './model';
 
 const heroPeople = [
@@ -29,6 +30,10 @@ const heroPeople = [
 
 export function HomeScreen({
   library,
+  libraryState,
+  onRetryLibrary,
+  duplicatingTreeId,
+  onDuplicateTree,
   onCreateTree,
   onImportTree,
   onOpenTree,
@@ -36,14 +41,20 @@ export function HomeScreen({
   onRemoveTree,
 }: {
   library: Tree[];
+  libraryState: 'loading' | 'ready' | 'error';
+  onRetryLibrary: () => void;
+  duplicatingTreeId: string | null;
+  onDuplicateTree: (tree: Tree) => void;
   onCreateTree: () => void;
   onImportTree: () => void;
   onOpenTree: (id: string) => void;
   onRenameTree: (tree: Tree) => void;
   onRemoveTree: (tree: Tree) => void;
 }) {
+  const showHero = libraryState === 'ready' && library.length === 0;
+  const LibraryHeading = showHero ? 'h2' : 'h1';
   return (
-    <div className="home">
+    <div className={`home${showHero ? '' : ' home-workspace'}`}>
       <header id="top" className="site-header" tabIndex={-1}>
         <div className="brand">
           <BrandMark />
@@ -54,78 +65,103 @@ export function HomeScreen({
         <nav>
           <a href="#how-it-works">How it works</a>
           <a href="#privacy">Privacy</a>
-          <button className="button light" onClick={onImportTree}>
+          <button className="button light" aria-label="Import a tree" onClick={onImportTree}>
             <Upload size={15} /> Import a tree
           </button>
         </nav>
       </header>
       <main>
-        <div className="hero">
-          <div className="hero-copy">
-            <h1>
-              Every family has
-              <br />
-              a story worth
-              <br />
-              <em>keeping.</em>
-            </h1>
-            <p>
-              Gather the names, faces, and connections that make your family yours. Build at your
-              own pace, right here in your browser.
-            </p>
-            <div className="hero-actions">
-              <button className="button primary large" onClick={onCreateTree}>
-                Start a family tree <ArrowRight size={18} />
-              </button>
-              <span>No account needed.</span>
+        {showHero && (
+          <div className="hero">
+            <div className="hero-copy">
+              <h1>
+                Every family has
+                <br />
+                a story worth
+                <br />
+                <em>keeping.</em>
+              </h1>
+              <p>
+                Gather the names, faces, and connections that make your family yours. Build at your
+                own pace, right here in your browser.
+              </p>
+              <div className="hero-actions">
+                <button className="button primary large" onClick={onCreateTree}>
+                  Start a family tree <ArrowRight size={18} />
+                </button>
+                <span>No account needed.</span>
+              </div>
+            </div>
+            <div className="hero-art" aria-hidden="true">
+              <div className="hero-leaf leaf-one">✻</div>
+              <div className="hero-leaf leaf-two">✻</div>
+              <div className="hero-tree">
+                <svg className="hero-connectors" width="440" height="540" viewBox="0 0 440 540">
+                  <path className="hero-parent-line" d="M220 88V206M220 342V390" />
+                  <path className="hero-partner-line" d="M200 88H240" />
+                  <Heart className="hero-partner-heart" x={211} y={79} size={18} />
+                </svg>
+                {heroPeople.map(({ name, dates, sex, position }) => (
+                  <div className={`person-card art-card ${position}`} key={name}>
+                    <div className="person-avatar">
+                      <span>{name[0]}</span>
+                    </div>
+                    <div className="person-info">
+                      <strong>{name}</strong>
+                      <span>{dates}</span>
+                    </div>
+                    <span className={`person-sex sex-${sex}`}>
+                      <SexIcon sex={sex} size={16} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="art-caption">One connection at a time.</div>
             </div>
           </div>
-          <div className="hero-art" aria-hidden="true">
-            <div className="hero-leaf leaf-one">✻</div>
-            <div className="hero-leaf leaf-two">✻</div>
-            <div className="hero-tree">
-              <svg className="hero-connectors" width="440" height="540" viewBox="0 0 440 540">
-                <path className="hero-parent-line" d="M220 88V206M220 342V390" />
-                <path className="hero-partner-line" d="M200 88H240" />
-                <Heart className="hero-partner-heart" x={211} y={79} size={18} />
-              </svg>
-              {heroPeople.map(({ name, dates, sex, position }) => (
-                <div className={`person-card art-card ${position}`} key={name}>
-                  <div className="person-avatar">
-                    <span>{name[0]}</span>
-                  </div>
-                  <div className="person-info">
-                    <strong>{name}</strong>
-                    <span>{dates}</span>
-                  </div>
-                  <span className={`person-sex sex-${sex}`}>
-                    <SexIcon sex={sex} size={16} />
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="art-caption">One connection at a time.</div>
-          </div>
-        </div>
-        <section className="library-section">
+        )}
+        <section className="library-section" aria-labelledby="library-heading">
           <div className="section-intro">
             <div>
               <p className="eyebrow">YOUR WORKSPACE</p>
-              <h2>Your family trees</h2>
+              <LibraryHeading id="library-heading">Your family trees</LibraryHeading>
             </div>
-            <button className="button outline" onClick={onCreateTree}>
-              <Plus size={17} /> New tree
-            </button>
+            <div className="library-actions">
+              {!showHero && (
+                <button className="button outline" onClick={onImportTree}>
+                  <Upload size={17} /> Import
+                </button>
+              )}
+              <button
+                className={`button ${showHero ? 'outline' : 'primary'}`}
+                onClick={onCreateTree}
+              >
+                <Plus size={17} /> New tree
+              </button>
+            </div>
           </div>
-          {library.length ? (
+          {libraryState === 'loading' ? (
+            <div className="library-status" role="status" aria-busy="true">
+              Loading your family trees…
+            </div>
+          ) : libraryState === 'error' ? (
+            <div className="library-status" role="alert">
+              <p>Your family trees could not be loaded from this browser.</p>
+              <button className="button outline" onClick={onRetryLibrary}>
+                Retry
+              </button>
+            </div>
+          ) : library.length ? (
             <div className="tree-grid">
               {library.map((item) => (
                 <div className="tree-tile" key={item.id}>
-                  <button className="tree-open" onClick={() => onOpenTree(item.id)}>
-                    <div className="tree-tile-icon">
-                      <Users size={27} />
-                    </div>
-                    <strong>{item.name}</strong>
+                  <button
+                    className="tree-open"
+                    aria-label={`Open ${item.name}`}
+                    onClick={() => onOpenTree(item.id)}
+                  >
+                    <TreePreview tree={item} />
+                    <strong title={item.name}>{item.name}</strong>
                     {item.homePersonId !== null && (
                       <span className="library-home">
                         <Home size={13} aria-hidden="true" />
@@ -145,6 +181,14 @@ export function HomeScreen({
                     </span>
                   </button>
                   <div className="tree-tile-tools">
+                    <button
+                      aria-label={`Duplicate ${item.name}`}
+                      title="Duplicate"
+                      disabled={duplicatingTreeId !== null}
+                      onClick={() => onDuplicateTree(item)}
+                    >
+                      {duplicatingTreeId === item.id ? 'Duplicating…' : 'Duplicate'}
+                    </button>
                     <button
                       aria-label={`Rename ${item.name}`}
                       title="Rename"

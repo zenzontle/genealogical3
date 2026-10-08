@@ -1,4 +1,4 @@
-import { assertValidLifeDates, normalizeHomePerson, type Tree } from './model';
+import { assertValidLifeDates, duplicateTree, normalizeHomePerson, type Tree } from './model';
 import { normalizePersonNames } from './personNames';
 const DB = 'genealogical3';
 const STORE = 'trees';
@@ -61,6 +61,14 @@ export const saveTree = (tree: Tree) => {
     store.put({ ...normalized, version: 2 }),
   );
 };
+/** Read the committed document, since a library tile may lag behind an editor save. */
+export async function duplicateSavedTree(id: string): Promise<Tree> {
+  const source = await getTree(id);
+  if (!source) throw Error('This tree was not found.');
+  const copy = duplicateTree(source);
+  await saveTree(copy);
+  return copy;
+}
 export const deleteTree = (id: string) =>
   transaction<undefined>(STORE, 'readwrite', (store) => store.delete(id));
 export const getDriveLink = (treeId: string) =>

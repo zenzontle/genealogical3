@@ -85,6 +85,16 @@ export const makeTree = (name = 'Untitled tree'): Tree => ({
   viewport: { x: 0, y: 0, zoom: 1 },
   updatedAt: Date.now(),
 });
+/** A local copy keeps its internal references but has its own document identity. */
+export function duplicateTree(tree: Tree): Tree {
+  return {
+    ...structuredClone(tree),
+    version: 2,
+    id: uid(),
+    name: `${tree.name} (copy)`,
+    updatedAt: Date.now(),
+  };
+}
 export const dateLabel = (date: DateValue) =>
   date.precision === 'unknown' ? '' : date.precision === 'year' ? String(date.year) : date.value;
 export const dateYearLabel = (date: DateValue) => dateLabel(date).slice(0, 4);
