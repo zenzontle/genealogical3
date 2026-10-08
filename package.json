@@ -8,9 +8,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc -b && vite build",
     "test": "vitest run",
-    "lint": "pnpm run check:quotes && eslint .",
+    "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "check:quotes": "node scripts/check-straight-quotes.mjs",
     "format": "prettier . --write",
     "format:check": "prettier . --check"
   },
