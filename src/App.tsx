@@ -523,7 +523,7 @@ export default function App() {
       if (
         action === 'save' &&
         driveFile &&
-        !window.confirm(`Replace “${driveFile.name}” in Google Drive with the current tree?`)
+        !window.confirm(`Replace "${driveFile.name}" in Google Drive with the current tree?`)
       )
         return;
       const file = await saveDriveTree(
@@ -591,7 +591,7 @@ export default function App() {
   const removeTree = async (item: Tree) => {
     if (
       !window.confirm(
-        `Delete “${item.name}” from this browser? Export a backup first if you want to keep it.`,
+        `Delete "${item.name}" from this browser? Export a backup first if you want to keep it.`,
       )
     )
       return;

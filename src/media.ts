@@ -107,7 +107,7 @@ export async function exportPng(tree: Tree) {
         });
         top += lineHeight;
       };
-      addText(p.nickname ? `“${p.nickname}”` : '', '11px system-ui', 'copper', 12);
+      addText(p.nickname ? `"${p.nickname}"` : '', '11px system-ui', 'copper', 12);
       addText(personLifeLabel(p), '11px system-ui', 'muted', 14, 2);
       const kinship = kinships.get(p.id);
       if (kinship && p.id !== tree.homePersonId && kinship.paths.length) {

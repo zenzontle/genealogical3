@@ -163,7 +163,7 @@ export function HeaderPersonSearch({
                     >
                       <span className="person-search-result-text">
                         <strong>{person.name || 'Unnamed person'}</strong>
-                        {person.nickname && <small>“{person.nickname}”</small>}
+                        {person.nickname && <small>"{person.nickname}"</small>}
                         {(born || died) && (
                           <small>
                             {[born && `Born ${born}`, died && `Died ${died}`]

@@ -91,7 +91,7 @@ export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
         </div>
         <div className="person-info">
           <strong title={p.name || 'Unnamed'}>{p.name || 'Unnamed'}</strong>
-          {p.nickname && <small title={p.nickname}>“{p.nickname}”</small>}
+          {p.nickname && <small title={p.nickname}>"{p.nickname}"</small>}
           {life && <span title={life}>{life}</span>}
           {kinship && !data.isHome && (
             <span className="person-kinship" title={`${kinship.primary.label} of ${data.homeName}`}>
