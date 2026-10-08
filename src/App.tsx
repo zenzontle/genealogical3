@@ -44,6 +44,7 @@ import { movePeopleToPositions, personPositionAtViewCenter } from './canvasPosit
 import { useConnectorProximity } from './useConnectorProximity';
 import {
   addRelation,
+  duplicateTree,
   lifeDatesError,
   makePerson,
   makeTree,
@@ -88,6 +89,9 @@ type SaveState = 'draft' | 'saved' | 'saving' | 'error';
 export default function App() {
   const [screen, setScreen] = useState<'home' | 'editor'>('home');
   const [library, setLibrary] = useState<Tree[]>([]);
+  const [libraryState, setLibraryState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [duplicatingTreeId, setDuplicatingTreeId] = useState<string | null>(null);
+  const duplicateBusy = useRef(false);
   const [tree, setTree] = useState<Tree | null>(null);
   const people = tree?.people;
   const relations = tree?.relations;
@@ -137,8 +141,12 @@ export default function App() {
   const refreshLibrary = useCallback(async () => {
     try {
       setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
+      setLibraryState('ready');
+      return true;
     } catch (error) {
+      setLibraryState((previous) => (previous === 'ready' ? previous : 'error'));
       showError(error);
+      return false;
     }
   }, [showError]);
   useEffect(() => {
@@ -588,6 +596,23 @@ export default function App() {
       showError(error);
     }
   };
+  const duplicate = async (item: Tree) => {
+    if (duplicateBusy.current) return;
+    duplicateBusy.current = true;
+    setDuplicatingTreeId(item.id);
+    try {
+      const copy = duplicateTree(item);
+      await saveTree(copy);
+      // Keep the persisted copy visible even if the subsequent library read fails.
+      setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
+      if (await refreshLibrary()) setNotice(`Created ${copy.name}.`);
+    } catch (error) {
+      showError(error);
+    } finally {
+      duplicateBusy.current = false;
+      setDuplicatingTreeId(null);
+    }
+  };
   const removeTree = async (item: Tree) => {
     if (
       !window.confirm(
@@ -669,6 +694,14 @@ export default function App() {
       {screen === 'home' ? (
         <HomeScreen
           library={library}
+          libraryState={libraryState}
+          onRetryLibrary={() => {
+            setLibraryState('loading');
+            setNotice('');
+            void refreshLibrary();
+          }}
+          duplicatingTreeId={duplicatingTreeId}
+          onDuplicateTree={duplicate}
           onCreateTree={createTree}
           onImportTree={() => fileInput.current?.click()}
           onOpenTree={openTree}

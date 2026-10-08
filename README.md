@@ -2,6 +2,8 @@
 
 A private, browser-first family tree editor built with React, TypeScript, Vite, and XYFlow. The interface and PNG snapshots use a dark theme with sage and copper accents.
 
+Once this browser has a saved tree, the homepage opens with **Your family trees**, including miniature previews, instead of the introductory hero. Trees are ordered by their latest edit. Choose **Duplicate** to save an independent local `(copy)` with the same people, relationships, photos, home person, and canvas layout. The copy stays in the library and has no Google Drive association; open or rename it when ready. An empty library keeps the introductory homepage. If browser storage cannot be read, use **Retry** to load it again.
+
 ## Run locally
 
 ```sh
