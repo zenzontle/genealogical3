@@ -26,6 +26,25 @@ describe('searching people in the current tree', () => {
     expect(searchPeople(people, 'ana carpenter')).toEqual([]);
   });
 
+  it.each([
+    ['Łukasz', 'lukasz'],
+    ['SØREN', 'soren'],
+    ['Đorđe', 'dorde'],
+    ['Lukasz', 'ŁUKASZ'],
+    ['Soren', 'SØREN'],
+    ['Dorde', 'ĐORĐE'],
+  ])('matches non-decomposing letters in %s with query %s', (name, query) => {
+    const person = makePerson(name);
+    expect(searchPeople([person], query)).toEqual([person]);
+    expect(searchPeople([person], query.slice(0, 3))).toEqual([person]);
+    expect(person.name).toBe(name);
+  });
+
+  it('folds non-decomposing letters in nicknames and notes as well as names', () => {
+    const person = { ...makePerson('Anna'), nickname: 'Łucja', notes: 'Ødense, Đorđević' };
+    expect(searchPeople([person], 'lucja odense dordevic')).toEqual([person]);
+  });
+
   it.each(['1950', '1950-06-12', '2005', '1950 2005'])(
     'matches recorded birth and death dates: %s',
     (query) => {
@@ -78,6 +97,17 @@ describe('matching note previews', () => {
   it('omits notes when only other fields match or the query is empty', () => {
     expect(matchedNotePreview('Moved to Paris.', 'jose')).toBe('');
     expect(matchedNotePreview('Moved to Paris.', '')).toBe('');
+  });
+
+  it.each([
+    ['lodz', 'Łódź'],
+    ['soren', 'Søren'],
+    ['dorde', 'Đorđe'],
+  ])('keeps original note spelling and aligned offsets when searching %s', (query, spelling) => {
+    const notes = `${'e\u0301 '.repeat(200)}Visited Łódź with Søren and Đorđe. ${'later '.repeat(100)}`;
+    const preview = matchedNotePreview(notes, query);
+    expect(preview).toContain(spelling);
+    expect(preview.length).toBeLessThanOrEqual(162);
   });
 
   it('includes a match deep in a long note and bounds the excerpt', () => {

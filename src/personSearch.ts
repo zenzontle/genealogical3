@@ -1,6 +1,13 @@
 import { dateLabel, type Person } from './model';
 
-const normalize = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+// NFD leaves these common Latin letters intact even after combining marks are removed.
+const letterFolds: Record<string, string> = { ł: 'l', ø: 'o', đ: 'd' };
+const normalize = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[łøđ]/g, (letter) => letterFolds[letter]);
 const queryWords = (query: string) => normalize(query).trim().split(/\s+/).filter(Boolean);
 
 /** Search committed person data; each word may match a different field. */
