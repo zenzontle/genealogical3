@@ -248,7 +248,7 @@ export function HomeScreen({
                       <div>
                         <strong>Your family details</strong>
                         <p>
-                          Names, dates, relationships, notes, and portraits stay in this browser’s
+                          Names, dates, relationships, notes, and portraits stay in this browser's
                           storage unless you export or save to Drive.
                         </p>
                       </div>
@@ -258,7 +258,7 @@ export function HomeScreen({
                       <div>
                         <strong>Your downloaded backups</strong>
                         <p>
-                          The app doesn’t upload or sync your downloads. Where you keep them and who
+                          The app doesn't upload or sync your downloads. Where you keep them and who
                           you share them with is up to you.
                         </p>
                       </div>
@@ -294,7 +294,7 @@ export function HomeScreen({
                         <strong>Loading the website and fonts</strong>
                         <p>
                           The site host and Google Fonts receive ordinary web requests, including
-                          your IP address. These requests don’t include your family tree.
+                          your IP address. These requests don't include your family tree.
                         </p>
                       </div>
                     </li>
@@ -307,8 +307,8 @@ export function HomeScreen({
               <div>
                 <h3>Our servers deliver the app. Your tree stays with you.</h3>
                 <p>
-                  Family details and Drive transfers aren’t sent to a GENEalogical3 backend. We
-                  can’t look up your tree or recover a lost local copy.
+                  Family details and Drive transfers aren't sent to a GENEalogical3 backend. We
+                  can't look up your tree or recover a lost local copy.
                 </p>
               </div>
             </div>

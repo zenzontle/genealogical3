@@ -166,7 +166,7 @@ describe('shared connectors in PNG exports', () => {
       expect(ctx.roundRect.mock.calls.every(([, , w, h]) => w === width && h === height)).toBe(
         true,
       );
-      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain('“Vilo”');
+      expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain('"Vilo"');
       expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain('1987');
       expect(ctx.fillText.mock.calls.some(([text]) => text.startsWith('Age '))).toBe(false);
       expect(nameRows.every(([, , y]) => y >= card[1] + 44)).toBe(true);

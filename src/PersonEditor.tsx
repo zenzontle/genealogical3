@@ -209,7 +209,7 @@ export function PersonEditor({
       </div>
       {dateError && (
         <p className="date-error" id={dateErrorId} role="alert">
-          {dateError} These date changes haven’t been saved. Adjust either field to continue.
+          {dateError} These date changes haven't been saved. Adjust either field to continue.
         </p>
       )}
       <fieldset className="sex-field">
