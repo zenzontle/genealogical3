@@ -1,16 +1,31 @@
 import {
   ArrowRight,
+  ArrowUp,
   Check,
+  Cloud,
   Download,
+  FileDown,
+  Globe,
+  Heart,
   Home,
   Link2,
+  Monitor,
   Plus,
+  Server,
   ShieldCheck,
   Upload,
   Users,
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { SexIcon } from './SexIcon';
 import type { Tree } from './model';
+
+const heroPeople = [
+  { name: 'Eleanor', dates: '1924 — 2008', sex: 'female', position: 'art-one' },
+  { name: 'James', dates: '1920 — 1996', sex: 'male', position: 'art-two' },
+  { name: 'Margaret', dates: '1952 —', sex: 'female', position: 'art-three' },
+  { name: 'Samuel', dates: '1981 —', sex: 'male', position: 'art-four' },
+] as const;
 
 export function HomeScreen({
   library,
@@ -29,7 +44,7 @@ export function HomeScreen({
 }) {
   return (
     <div className="home">
-      <header className="site-header">
+      <header id="top" className="site-header" tabIndex={-1}>
         <div className="brand">
           <BrandMark />
           <span>
@@ -47,7 +62,6 @@ export function HomeScreen({
       <main>
         <div className="hero">
           <div className="hero-copy">
-            <div className="eyebrow with-line">A PLACE FOR YOUR PEOPLE</div>
             <h1>
               Every family has
               <br />
@@ -63,41 +77,32 @@ export function HomeScreen({
               <button className="button primary large" onClick={onCreateTree}>
                 Start a family tree <ArrowRight size={18} />
               </button>
-              <span>No account needed. Your story stays yours.</span>
+              <span>No account needed.</span>
             </div>
           </div>
           <div className="hero-art" aria-hidden="true">
             <div className="hero-leaf leaf-one">✻</div>
             <div className="hero-leaf leaf-two">✻</div>
-            <div className="art-line line-one" />
-            <div className="art-line line-two" />
-            <div className="art-card art-one">
-              <span className="art-avatar sage">E</span>
-              <div>
-                <b>Eleanor</b>
-                <small>1924 — 2008</small>
-              </div>
-            </div>
-            <div className="art-card art-two">
-              <span className="art-avatar peach">J</span>
-              <div>
-                <b>James</b>
-                <small>1920 — 1996</small>
-              </div>
-            </div>
-            <div className="art-card art-three">
-              <span className="art-avatar cream">M</span>
-              <div>
-                <b>Margaret</b>
-                <small>1952 —</small>
-              </div>
-            </div>
-            <div className="art-card art-four">
-              <span className="art-avatar blue">S</span>
-              <div>
-                <b>Samuel</b>
-                <small>1981 —</small>
-              </div>
+            <div className="hero-tree">
+              <svg className="hero-connectors" width="440" height="540" viewBox="0 0 440 540">
+                <path className="hero-parent-line" d="M220 88V206M220 342V390" />
+                <path className="hero-partner-line" d="M200 88H240" />
+                <Heart className="hero-partner-heart" x={211} y={79} size={18} />
+              </svg>
+              {heroPeople.map(({ name, dates, sex, position }) => (
+                <div className={`person-card art-card ${position}`} key={name}>
+                  <div className="person-avatar">
+                    <span>{name[0]}</span>
+                  </div>
+                  <div className="person-info">
+                    <strong>{name}</strong>
+                    <span>{dates}</span>
+                  </div>
+                  <span className={`person-sex sex-${sex}`}>
+                    <SexIcon sex={sex} size={16} />
+                  </span>
+                </div>
+              ))}
             </div>
             <div className="art-caption">One connection at a time.</div>
           </div>
@@ -174,7 +179,6 @@ export function HomeScreen({
           )}
         </section>
         <section id="how-it-works" className="how-section">
-          <p className="eyebrow">MADE FOR REAL FAMILIES</p>
           <h2>Simple to start. Yours to keep.</h2>
           <div className="how-grid">
             <div>
@@ -209,67 +213,128 @@ export function HomeScreen({
             </div>
           </div>
         </section>
-        <section id="privacy" className="privacy-section">
-          <div className="privacy-intro">
-            <span className="privacy-icon">
-              <ShieldCheck size={27} />
-            </span>
-            <div>
-              <p className="eyebrow">YOUR FAMILY STORY STAYS YOURS</p>
-              <h2>
-                Private by default.
-                <br />
-                <span>Clear about every connection.</span>
-              </h2>
-              <p>
-                Your tree is saved in this browser. GENEalogical3 has no account system or app
-                database, so we can’t view or retrieve your family details.
-              </p>
+        <section id="privacy" className="privacy-section" aria-labelledby="privacy-heading">
+          <div className="privacy-content">
+            <div className="privacy-intro">
+              <span className="privacy-icon" aria-hidden="true">
+                <ShieldCheck size={27} />
+              </span>
+              <div>
+                <h2 id="privacy-heading">
+                  Private by default.
+                  <br />
+                  <span>Your family history on your device.</span>
+                </h2>
+                <p>
+                  Build your tree, add portraits, and connect generations right in your browser.
+                  Your work is saved here, with no GENEalogical3 account and no family tree database
+                  on our servers.
+                </p>
+              </div>
+            </div>
+            <div className="privacy-details">
+              <div className="privacy-details-intro">
+                <h3>Where your data lives.</h3>
+                <p>Local by default, with optional connections you control.</p>
+              </div>
+              <div className="privacy-flow">
+                <div className="privacy-endpoint privacy-detail">
+                  <Monitor size={28} aria-hidden="true" />
+                  <h4>This browser</h4>
+                  <p>Editing, portraits, and autosave all happen on your device.</p>
+                  <ul>
+                    <li>
+                      <Check size={17} aria-hidden="true" />
+                      <div>
+                        <strong>Your family details</strong>
+                        <p>
+                          Names, dates, relationships, notes, and portraits stay in this browser’s
+                          storage unless you export or save to Drive.
+                        </p>
+                      </div>
+                    </li>
+                    <li>
+                      <Check size={17} aria-hidden="true" />
+                      <div>
+                        <strong>Your downloaded backups</strong>
+                        <p>
+                          The app doesn’t upload or sync your downloads. Where you keep them and who
+                          you share them with is up to you.
+                        </p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                <div className="privacy-connection">
+                  <div className="privacy-connection-line" aria-hidden="true">
+                    <ArrowRight size={20} />
+                  </div>
+                  <strong>Only when you choose</strong>
+                  <p>Save or open a tree directly with Google Drive.</p>
+                </div>
+                <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
+                  <Cloud size={28} aria-hidden="true" />
+                  <h4>Outside this browser</h4>
+                  <p>Cloud copies are optional. Nothing uploads automatically.</p>
+                  <ul>
+                    <li>
+                      <Cloud size={17} aria-hidden="true" />
+                      <div>
+                        <strong>Your Google Drive, if you use it</strong>
+                        <p>
+                          Sign in with Google. Access is limited to files used with this app.
+                          Authorization stays in browser memory; Google stores any tree you choose
+                          to save.
+                        </p>
+                      </div>
+                    </li>
+                    <li>
+                      <Globe size={17} aria-hidden="true" />
+                      <div>
+                        <strong>Loading the website and fonts</strong>
+                        <p>
+                          The site host and Google Fonts receive ordinary web requests, including
+                          your IP address. These requests don’t include your family tree.
+                        </p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div className="privacy-server-note">
+              <Server size={22} aria-hidden="true" />
+              <div>
+                <h3>Our servers deliver the app. Your tree stays with you.</h3>
+                <p>
+                  Family details and Drive transfers aren’t sent to a GENEalogical3 backend. We
+                  can’t look up your tree or recover a lost local copy.
+                </p>
+              </div>
+            </div>
+            <div className="privacy-backup">
+              <div className="privacy-backup-copy">
+                <FileDown size={27} aria-hidden="true" />
+                <div>
+                  <h3>A backup you can hold on to.</h3>
+                  <p>
+                    Clearing browser data can remove your local tree. Download a JSON backup before
+                    clearing data or moving to another browser or device.
+                  </p>
+                </div>
+              </div>
+              <dl className="privacy-export-types">
+                <div>
+                  <dt>JSON backup</dt>
+                  <dd>Your editable tree, notes, and portraits.</dd>
+                </div>
+                <div>
+                  <dt>PNG snapshot</dt>
+                  <dd>A picture to share, not an editable backup.</dd>
+                </div>
+              </dl>
             </div>
           </div>
-          <div className="privacy-steps">
-            <div className="privacy-card">
-              <div className="privacy-card-heading">
-                <span>01</span>
-                <h3>Your device</h3>
-              </div>
-              <p>Edit people and photos. Autosave keeps the tree in this browser’s storage.</p>
-              <small>
-                <Check size={17} /> GENEalogical3 can’t see it
-              </small>
-            </div>
-            <div className="privacy-card">
-              <div className="privacy-card-heading">
-                <span>02</span>
-                <h3>Your choice</h3>
-              </div>
-              <p>
-                Export an editable JSON backup or a PNG image, or connect Google Drive when you want
-                a cloud copy.
-              </p>
-              <small>
-                <Check size={17} /> Nothing uploads by default
-              </small>
-            </div>
-            <div className="privacy-card">
-              <div className="privacy-card-heading">
-                <span>03</span>
-                <h3>Google Drive, if connected</h3>
-              </div>
-              <p>
-                GENEalogical3 sends the tree only when you choose Drive save. Google stores that
-                copy under your account.
-              </p>
-              <small>
-                <ShieldCheck size={17} /> App-created files only
-              </small>
-            </div>
-          </div>
-          <p className="privacy-note">
-            <ShieldCheck size={20} /> GENEalogical3 does not store family trees, portraits, or
-            profile data on its own servers. Browser storage stays on this device; clearing browser
-            data removes that local copy.
-          </p>
         </section>
       </main>
       <footer>
@@ -277,7 +342,10 @@ export function HomeScreen({
           <BrandMark small />
           <span>GENEalogical3</span>
         </div>
-        <span>Made for the stories that connect us.</span>
+        <span>&copy; 2026 Jorge Hernandez</span>
+        <a className="back-to-top" href="#top">
+          Back to top <ArrowUp size={14} aria-hidden="true" />
+        </a>
       </footer>
     </div>
   );

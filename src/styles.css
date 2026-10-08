@@ -245,18 +245,6 @@ h2 {
   position: relative;
   z-index: 1;
 }
-.with-line {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-.with-line:before {
-  content: '';
-  display: block;
-  width: 28px;
-  height: 1px;
-  background: var(--copper);
-}
 .hero h1 {
   margin: 0.75rem 0 1.35rem;
   color: var(--text);
@@ -283,7 +271,7 @@ h2 {
   color: var(--text-muted);
 }
 .hero-art {
-  height: 490px;
+  height: 540px;
   position: relative;
   background: radial-gradient(
     circle at 50% 51%,
@@ -308,96 +296,52 @@ h2 {
   bottom: -100px;
   left: 30px;
 }
-.art-card {
+.hero-tree {
   position: absolute;
-  z-index: 2;
-  width: 174px;
-  height: 70px;
-  background: var(--surface);
-  box-shadow: 0 7px 28px var(--shadow);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0.8rem;
-  transform: rotate(-2deg);
+  width: 440px;
+  height: 540px;
+  top: 1rem;
+  left: 50%;
+  margin-left: -220px;
+  transform: scale(0.85);
+  transform-origin: top center;
 }
-.art-card b {
-  display: block;
-  font-family: 'DM Serif Display', Georgia, serif;
-  font-size: 1.1rem;
-  font-weight: 400;
+.hero-connectors {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke-width: 2;
 }
-.art-card small {
-  display: block;
-  color: var(--text-muted);
-  font-size: 0.67rem;
-  margin-top: 0.15rem;
+.hero-parent-line {
+  stroke: var(--copper);
 }
-.art-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--accent);
-  font-family: 'DM Serif Display', Georgia, serif;
-  font-size: 1.45rem;
+.hero-partner-line {
+  stroke: var(--partner);
 }
-.art-avatar.sage {
-  background: var(--accent-surface);
+.hero-partner-heart {
+  color: var(--partner);
+  fill: var(--partner);
+  stroke: var(--bg);
 }
-.art-avatar.peach {
-  background: var(--copper-surface);
-  color: var(--copper);
-}
-.art-avatar.cream {
-  background: var(--gold-surface);
-}
-.art-avatar.blue {
-  background: var(--blue-surface);
-  color: var(--blue);
+.hero-tree .art-card {
+  position: absolute;
+  cursor: default;
 }
 .art-one {
-  top: 60px;
-  left: 17%;
+  top: 20px;
+  left: 20px;
 }
 .art-two {
-  top: 72px;
-  right: 12%;
-  transform: rotate(3deg);
+  top: 20px;
+  left: 240px;
 }
 .art-three {
-  top: 225px;
-  left: 36%;
-  transform: rotate(1deg);
+  top: 206px;
+  left: 130px;
 }
 .art-four {
-  bottom: 59px;
-  left: 36%;
-  transform: rotate(-3deg);
-}
-.art-line {
-  position: absolute;
-  border: 2px solid var(--line);
-  border-top: 0;
-  z-index: 1;
-}
-.line-one {
-  top: 116px;
-  left: 32%;
-  width: 39%;
-  height: 136px;
-  border-radius: 0 0 80px 80px;
-}
-.line-two {
-  top: 274px;
-  left: 53%;
-  height: 110px;
-  border-left: 2px solid var(--line);
-  border-right: 0;
-  border-bottom: 0;
+  top: 390px;
+  left: 130px;
 }
 .art-caption {
   position: absolute;
@@ -572,111 +516,188 @@ h2 {
 }
 .privacy-section {
   background: var(--surface);
-  padding: 5.3rem max(5.3%, calc((100% - 1395px) / 2)) 3.2rem;
+  padding: 5rem max(5.3%, calc((100% - 1395px) / 2));
+}
+.privacy-content {
+  max-width: 1080px;
+  margin: auto;
 }
 .privacy-intro {
   display: flex;
   align-items: flex-start;
-  gap: 2.7rem;
-  max-width: 1080px;
-  margin: 0 auto 3.3rem;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
 }
 .privacy-icon {
   flex: none;
   width: 56px;
   height: 56px;
-  border-radius: 18px;
+  border-radius: 8px;
   background: var(--lilac-surface);
   color: var(--lilac);
   display: grid;
   place-items: center;
 }
-.privacy-intro .eyebrow {
-  color: var(--text-muted) !important;
-}
 .privacy-intro h2 {
   font-size: clamp(2.3rem, 3.5vw, 3.25rem);
   line-height: 1.17;
-  margin: 1.15rem 0 1.2rem;
-  color: var(--text);
+  margin: 0 0 1.25rem;
 }
 .privacy-intro h2 span {
-  color: var(--accent);
+  color: var(--lilac);
 }
 .privacy-intro > div > p:last-child {
   color: var(--text-muted);
   line-height: 1.8;
-  font-size: 1rem;
-  max-width: 1020px;
+  max-width: 680px;
+  margin-bottom: 0;
 }
-.privacy-steps {
+.privacy-flow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3.3rem;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.65fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 1.5rem;
 }
-.privacy-card {
-  position: relative;
+.privacy-endpoint {
   border: 1px solid var(--border);
-  border-radius: 17px;
+  border-radius: 8px;
   background: var(--surface-muted);
-  min-height: 235px;
-  padding: 1.7rem 1.5rem;
+  padding: 1.75rem 1.5rem;
+  text-align: center;
 }
-.privacy-card:not(:last-child)::after {
-  content: '→';
-  position: absolute;
-  right: -2.2rem;
-  top: 45%;
-  color: var(--line);
-  font-family: 'DM Sans', system-ui, sans-serif;
-  font-size: 1.8rem;
+.privacy-endpoint > svg {
+  color: var(--accent);
+  margin-bottom: 1rem;
 }
-.privacy-card-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 1.15rem;
-}
-.privacy-card-heading span {
-  color: var(--copper);
-  font-size: 0.87rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-.privacy-card h3 {
+.privacy-section h3,
+.privacy-endpoint h4 {
   font-family: 'DM Sans', system-ui, sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+}
+.privacy-endpoint p,
+.privacy-connection p,
+.privacy-server-note p,
+.privacy-backup p,
+.privacy-details p,
+.privacy-export-types dd {
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  line-height: 1.75;
   margin: 0;
 }
-.privacy-card p {
-  color: var(--text-muted);
-  font-size: 0.91rem;
-  line-height: 1.7;
-  margin: 1.1rem 0 1.25rem 2.25rem;
+.privacy-endpoint-optional {
+  border-style: dashed;
 }
-.privacy-card small {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--accent);
-  margin-left: 2.25rem;
-  font-size: 0.8rem;
-}
-.privacy-card:last-child small {
+.privacy-endpoint-optional > svg {
   color: var(--copper);
 }
-.privacy-note {
+.privacy-connection {
+  align-self: center;
+  text-align: center;
+}
+.privacy-connection-line {
+  display: flex;
+  align-items: center;
+  color: var(--copper);
+  margin-bottom: 0.75rem;
+}
+.privacy-connection-line::before {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border-control);
+}
+.privacy-connection strong {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+.privacy-connection p {
+  font-size: 0.8rem;
+}
+.privacy-server-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.5rem 0 2.5rem;
+}
+.privacy-server-note > svg,
+.privacy-backup-copy > svg {
+  flex: none;
+  color: var(--accent);
+  margin-top: 0.25rem;
+}
+.privacy-server-note h3 {
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+.privacy-backup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2rem;
+}
+.privacy-backup-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.privacy-export-types {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding-left: 2rem;
+  border-left: 1px solid var(--border);
+}
+.privacy-export-types dt {
+  color: var(--copper);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.privacy-details-intro {
+  margin-bottom: 1.75rem;
+}
+.privacy-details-intro h3 {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: clamp(1.65rem, 2.5vw, 2rem);
+  font-weight: 400;
+  line-height: 1.25;
+}
+.privacy-detail svg {
+  flex: none;
+  color: var(--accent);
+}
+.privacy-detail-connections svg {
+  color: var(--copper);
+}
+.privacy-detail ul {
+  display: grid;
+  gap: 1.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  text-align: left;
+}
+.privacy-detail li {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  line-height: 1.6;
-  margin: 1.65rem 0 0;
 }
-.privacy-note svg {
-  flex: none;
-  color: var(--accent);
+.privacy-detail li > svg {
+  margin-top: 0.25rem;
+}
+.privacy-detail strong {
+  display: block;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 0.35rem;
 }
 .home footer {
   max-width: 1360px;
@@ -696,6 +717,18 @@ h2 {
   gap: 0.65rem;
   font-weight: 700;
   color: var(--accent);
+}
+.back-to-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.back-to-top:hover {
+  text-decoration: underline;
 }
 .app-shell {
   height: 100vh;
@@ -1608,6 +1641,13 @@ h2 {
   text-align: center;
 }
 @media (max-width: 900px) {
+  .privacy-flow {
+    grid-template-columns: 1fr;
+  }
+  .privacy-connection-line {
+    display: none;
+  }
+
   .editor-layout {
     grid-template-columns: minmax(0, 1fr) 305px;
   }
@@ -1621,20 +1661,10 @@ h2 {
     font-size: 4.4rem;
   }
   .hero-art {
-    height: 410px;
+    height: 440px;
   }
-  .art-card {
-    transform: scale(0.85);
-  }
-  .art-one {
-    left: 5%;
-  }
-  .art-two {
-    right: 0;
-  }
-  .art-three,
-  .art-four {
-    left: 29%;
+  .hero-tree {
+    transform: scale(0.65);
   }
 }
 @media (max-width: 700px) {
@@ -1664,33 +1694,8 @@ h2 {
     font-size: 0.95rem;
   }
   .hero-art {
-    height: 360px;
+    height: 400px;
     margin-top: 1rem;
-  }
-  .art-card {
-    transform: scale(0.75);
-  }
-  .art-one {
-    top: 28px;
-    left: 8%;
-  }
-  .art-two {
-    top: 33px;
-    right: 2%;
-  }
-  .art-three {
-    top: 150px;
-    left: 34%;
-  }
-  .art-four {
-    bottom: 35px;
-    left: 35%;
-  }
-  .line-one {
-    top: 80px;
-  }
-  .line-two {
-    top: 192px;
   }
   .library-section {
     padding: 2rem 6% 4rem;
@@ -1721,18 +1726,21 @@ h2 {
   .privacy-icon {
     margin-bottom: 1.5rem;
   }
-  .privacy-steps {
+  .privacy-flow,
+  .privacy-backup {
     grid-template-columns: 1fr;
-    gap: 0.9rem;
+    gap: 1.5rem;
   }
-  .privacy-card {
-    min-height: 0;
-  }
-  .privacy-card:not(:last-child)::after {
+  .privacy-connection-line {
     display: none;
   }
-  .privacy-note {
-    margin-top: 1.5rem;
+  .privacy-backup {
+    padding: 1.5rem;
+  }
+  .privacy-export-types {
+    padding: 1.25rem 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
   .empty-library {
     flex-wrap: wrap;
@@ -1823,8 +1831,8 @@ h2 {
     margin-left: -7%;
     margin-right: -7%;
   }
-  .art-card {
-    transform: scale(0.68);
+  .hero-tree {
+    transform: scale(0.6);
   }
   .section-intro h2 {
     font-size: 1.7rem;
