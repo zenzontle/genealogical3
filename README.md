@@ -61,6 +61,10 @@ Use the sidebar toggle at the top right of the editor to collapse or expand the 
 
 ## Home person and kinship
 
+Use **Find person** in the editor's top menu to search the open tree by full, first, or last name, nickname, birth or death year/ISO date (`YYYY-MM-DD`), or notes. Search ignores case and accents; every query word must match somewhere in the person's recorded information. Results include dates and matching note excerpts to distinguish people with the same name. Choose **Jump to person** to center and select their card and open details. **Show more** reveals additional results in batches of 50. On mobile, search appears as a magnifying-glass button, and closing details reveals the centered card.
+
+Choose the house button beside **Fit tree** to **Center on home person** at a readable zoom while keeping the current selection and details panel. Set a home person in person details to enable it. Both navigation actions save the viewport through the usual local-save behavior without adding an undo step; they do not save an untouched temporary tree.
+
 Select a person and choose **Set as home person** to mark whom the tree is about. Each tree can have one home person or none. Setting someone else replaces the designation; **Clear home person** removes it. These actions support undo/redo. Deleting home clears the designation along with their relationships, and undo restores both. Setting home leaves the canvas position and selection unchanged; opening a tree keeps the existing viewport behavior.
 
 Cards, person details, and PNG snapshots show each person's relationship to home, including ancestors, descendants, siblings, aunts/uncles, nieces/nephews, and cousins with removals. Terms use recorded sex when known and neutral terms otherwise. Labels are calculated from current links rather than stored, so editing connections, sex, or home refreshes them automatically.
