@@ -36,6 +36,10 @@ import { HomeScreen } from './HomeScreen';
 import { DriveActionsDialog } from './DriveActionsDialog';
 import { DriveTreeDialog } from './DriveTreeDialog';
 import { HeaderPersonSearch } from './HeaderPersonSearch';
+import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
+import { OperationFeedback } from './OperationFeedback';
+import { useTreeImport } from './useTreeImport';
+import { useTreeExport } from './useTreeExport';
 import { RelationshipEdge } from './RelationshipEdge';
 import { FamilyEdge } from './FamilyEdge';
 import { relationshipEdges } from './relationshipEdges';
@@ -54,7 +58,6 @@ import {
   relationFromConnection,
   updateRelation,
   uid,
-  validateTree,
   type HandleSide,
   type LifeDates,
   type Relation,
@@ -70,7 +73,6 @@ import {
   saveDriveLink,
   saveTree,
 } from './storage';
-import { exportJson, exportPng } from './media';
 import {
   authorizeDrive,
   disconnectDrive,
@@ -109,6 +111,7 @@ export default function App() {
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [notice, setNotice] = useState('');
+  const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
   const [driveSavedAt, setDriveSavedAt] = useState('');
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
@@ -135,6 +138,26 @@ export default function App() {
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
   useConnectorProximity(canvasRef, screen === 'editor');
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      ++saveCounter.current;
+    },
+    [],
+  );
+  const exports = useTreeExport(screen === 'editor' ? tree?.id : undefined, () => treeRef.current);
+  const imports = useTreeImport(
+    (copy) =>
+      setLibrary((previous) =>
+        [copy, ...previous.filter((item) => item.id !== copy.id)].sort(
+          (a, b) => b.updatedAt - a.updatedAt,
+        ),
+      ),
+    async () => {
+      setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
+      setLibraryState('ready');
+    },
+  );
   const showError = useCallback((error: unknown) => {
     setNotice(error instanceof Error ? error.message : 'Something went wrong.');
   }, []);
@@ -158,7 +181,7 @@ export default function App() {
     return queued;
   }, []);
   const commit = useCallback(
-    (next: Tree, record = true) => {
+    (next: Tree, record = true, persist = true) => {
       const previous = treeRef.current;
       if (next === previous) return;
       if (record && previous) {
@@ -166,12 +189,20 @@ export default function App() {
         if (history.current.length > 50) history.current.shift();
         future.current = [];
       }
-      const updated = { ...next, version: 2 as const, updatedAt: Date.now() };
+      const updated = {
+        ...next,
+        version: 2 as const,
+        updatedAt: persist ? Date.now() : next.updatedAt,
+      };
       treeRef.current = updated;
       setTree(updated);
       // Viewport updates do not turn an untouched new tree into a saved tree.
       if (record) draftTree.current = false;
       if (draftTree.current) return;
+      if (!persist) {
+        setSaveState('saved');
+        return;
+      }
       setSaveState('saving');
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const count = ++saveCounter.current;
@@ -313,28 +344,18 @@ export default function App() {
         ),
       );
   };
-  const deletePerson = useCallback(
-    (id: string) => {
-      const current = treeRef.current;
-      const person = current?.people.find((p) => p.id === id);
-      if (!current || !person) return;
-      if (
-        !window.confirm(
-          `Delete ${person.name || 'this person'} and their relationships?${current.homePersonId === id ? ' This also clears the home person designation.' : ''}`,
-        )
-      )
-        return;
-      apply((t) => removePerson(t, id));
-      setDateDrafts((previous) => {
-        const next = { ...previous };
-        delete next[id];
-        return next;
-      });
-      setSelectedId(null);
-      setSelectedRelationId(null);
-    },
-    [apply],
-  );
+  const deletePerson = useCallback((id: string) => {
+    const current = treeRef.current;
+    const person = current?.people.find((p) => p.id === id);
+    if (!current || !person) return;
+    setTreeAction({
+      kind: 'delete-person',
+      treeId: current.id,
+      personId: id,
+      name: person.name,
+      isHome: current.homePersonId === id,
+    });
+  }, []);
   const connect = (connection: Connection) => {
     const a = connection.source,
       b = connection.target;
@@ -382,6 +403,7 @@ export default function App() {
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (document.querySelector('.local-dialog[open]')) return;
       if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
       if (e.target instanceof Element && e.target.closest('.person-search')) return;
@@ -502,23 +524,6 @@ export default function App() {
       showError(error);
     }
   };
-  const importFile = async (file: File) => {
-    try {
-      if (file.size > 30_000_000) throw Error('Choose a JSON file smaller than 30 MB.');
-      const imported = validateTree(JSON.parse(await file.text()));
-      const copy = {
-        ...imported,
-        id: uid(),
-        name: `${imported.name} (imported)`,
-        updatedAt: Date.now(),
-      };
-      await saveTree(copy);
-      await refreshLibrary();
-      await openTree(copy.id);
-    } catch (error) {
-      showError(error);
-    }
-  };
   const doDrive = async (action: 'save' | 'copy' | 'open') => {
     if (!treeRef.current && action !== 'open') return;
     setDriveBusy(true);
@@ -584,18 +589,8 @@ export default function App() {
       setDriveBusy(false);
     }
   };
-  const rename = async (item: Tree) => {
-    const name = window.prompt('Tree name', item.name)?.trim();
-    if (!name || name === item.name) return;
-    try {
-      const updated = { ...item, name, updatedAt: Date.now() };
-      if (treeRef.current?.id === item.id) commit(updated);
-      else await saveTree(updated);
-      await refreshLibrary();
-    } catch (error) {
-      showError(error);
-    }
-  };
+  const rename = (item: Tree) =>
+    setTreeAction({ kind: 'rename', treeId: item.id, name: item.name });
   const duplicate = async (item: Tree) => {
     if (duplicateBusy.current) return;
     duplicateBusy.current = true;
@@ -612,25 +607,80 @@ export default function App() {
       setDuplicatingTreeId(null);
     }
   };
-  const removeTree = async (item: Tree) => {
-    if (
-      !window.confirm(
-        `Delete "${item.name}" from this browser? Export a backup first if you want to keep it.`,
+  const removeTree = (item: Tree) =>
+    setTreeAction({ kind: 'delete-tree', treeId: item.id, name: item.name });
+  const submitTreeAction = async (name: string) => {
+    const action = treeAction;
+    if (!action) return;
+    if (action.kind === 'delete-person') {
+      const current = treeRef.current;
+      if (
+        !current ||
+        current.id !== action.treeId ||
+        !current.people.some((person) => person.id === action.personId)
       )
-    )
+        throw Error('This person was not found in the current tree.');
+      commit(removePerson(current, action.personId));
+      setDateDrafts((previous) => {
+        const next = { ...previous };
+        delete next[action.personId];
+        return next;
+      });
+      setSelectedId(null);
+      setSelectedRelationId(null);
       return;
-    try {
-      await deleteTree(item.id);
-      await deleteDriveLink(item.id);
-      if (treeRef.current?.id === item.id) {
-        treeRef.current = null;
-        setTree(null);
-        setScreen('home');
-      }
-      await refreshLibrary();
-    } catch (error) {
-      showError(error);
     }
+    const active = treeRef.current?.id === action.treeId;
+    if (active) {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+      ++saveCounter.current;
+    }
+    // A queued autosave must finish before a rename or deletion can replace its result.
+    await saveQueue.current.catch(() => undefined);
+    if (action.kind === 'rename') {
+      const current =
+        treeRef.current?.id === action.treeId ? treeRef.current : await getTree(action.treeId);
+      if (!current) throw Error('This tree was not found.');
+      if (name !== current.name) {
+        let updated = { ...current, name, updatedAt: Date.now() };
+        try {
+          await queueSave(updated);
+        } catch (error) {
+          if (treeRef.current?.id === action.treeId) setSaveState('error');
+          throw error;
+        }
+        const latest = treeRef.current;
+        if (latest?.id === action.treeId) {
+          // Preserve edits that finished during the write and replace their stale autosave.
+          const changedWhileSaving = latest !== current;
+          if (changedWhileSaving) updated = { ...latest, name, updatedAt: Date.now() };
+          commit(updated, true, changedWhileSaving);
+        }
+        setLibrary((previous) =>
+          [updated, ...previous.filter((item) => item.id !== updated.id)].sort(
+            (a, b) => b.updatedAt - a.updatedAt,
+          ),
+        );
+      } else if (treeRef.current?.id === action.treeId && !draftTree.current) {
+        try {
+          await queueSave(current);
+        } catch (error) {
+          setSaveState('error');
+          throw error;
+        }
+        setSaveState('saved');
+      }
+      return;
+    }
+    await deleteTree(action.treeId);
+    setLibrary((previous) => previous.filter((item) => item.id !== action.treeId));
+    if (treeRef.current?.id === action.treeId) {
+      treeRef.current = null;
+      setTree(null);
+      setScreen('home');
+    }
+    await deleteDriveLink(action.treeId);
   };
   const leaveEditor = async () => {
     await saveNow();
@@ -660,13 +710,7 @@ export default function App() {
     commit({ ...current, viewport }, false);
   };
   const hasInvalidDateDraft = tree?.people.some((p) => !!lifeDatesError(dateDrafts[p.id] || p));
-  const downloadJson = () => {
-    try {
-      if (tree) exportJson(tree);
-    } catch (error) {
-      showError(error);
-    }
-  };
+  const downloadJson = () => exports.run('JSON');
   const localStatus =
     hasInvalidDateDraft && saveState !== 'error'
       ? 'Date edits not saved'
@@ -683,10 +727,11 @@ export default function App() {
         ref={fileInput}
         className="sr-only"
         type="file"
+        aria-label="Import JSON file"
         accept="application/json,.json"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) importFile(f);
+          if (f) void imports.run(f);
           e.currentTarget.value = '';
         }}
       />
@@ -694,6 +739,30 @@ export default function App() {
         <HomeScreen
           library={library}
           libraryState={libraryState}
+          importBusy={imports.feedback.status === 'pending'}
+          importFeedback={
+            <OperationFeedback
+              state={imports.feedback}
+              onDismiss={imports.dismiss}
+              action={
+                imports.feedback.status === 'success' && imports.importedId
+                  ? {
+                      label: 'Open tree',
+                      onClick: () => {
+                        void openTree(imports.importedId!);
+                        imports.dismiss();
+                      },
+                    }
+                  : imports.feedback.status === 'error'
+                    ? {
+                        label: imports.canRetry ? 'Retry' : 'Choose another file',
+                        onClick: () =>
+                          imports.canRetry ? void imports.run() : fileInput.current?.click(),
+                      }
+                    : undefined
+              }
+            />
+          }
           onRetryLibrary={() => {
             setLibraryState('loading');
             setNotice('');
@@ -746,6 +815,8 @@ export default function App() {
               )}
               <button
                 className="button header-button"
+                disabled={exports.feedback.status === 'pending'}
+                aria-label="Export JSON"
                 onClick={downloadJson}
                 title="Download editable backup"
               >
@@ -754,7 +825,9 @@ export default function App() {
               </button>
               <button
                 className="button header-button"
-                onClick={() => tree && exportPng(tree).catch(showError)}
+                disabled={exports.feedback.status === 'pending'}
+                aria-label="Export PNG"
+                onClick={() => exports.run('PNG')}
                 title="Download image"
               >
                 <FileImage size={16} />
@@ -839,6 +912,19 @@ export default function App() {
               </button>
             </div>
           </header>
+          {exports.feedback.status !== 'idle' && (
+            <div className="export-feedback">
+              <OperationFeedback
+                state={exports.feedback}
+                onDismiss={exports.dismiss}
+                action={
+                  exports.feedback.status === 'error'
+                    ? { label: 'Retry', onClick: exports.retry }
+                    : undefined
+                }
+              />
+            </div>
+          )}
           <div className={`editor-layout ${sidebarIsCollapsed ? 'sidebar-collapsed' : ''}`}>
             <div className="canvas-wrap" ref={canvasRef}>
               <div className="canvas-topbar">
@@ -974,7 +1060,7 @@ export default function App() {
                   </button>
                 </div>
               )}
-              <button className="floating-add" onClick={() => addPerson()}>
+              <button className="floating-add" data-dialog-fallback onClick={() => addPerson()}>
                 <Plus size={19} /> Add person
               </button>
               <div className="canvas-tip">
@@ -988,6 +1074,7 @@ export default function App() {
             >
               {selected ? (
                 <PersonEditor
+                  key={`${tree!.id}-${selected.id}`}
                   person={selected}
                   home={home}
                   kinship={kinships.get(selected.id)}
@@ -1002,6 +1089,16 @@ export default function App() {
                       people: t.people.map((old) => (old.id === p.id ? p : old)),
                     }))
                   }
+                  onPortraitChange={(portrait) => {
+                    const current = treeRef.current;
+                    if (current?.id !== tree!.id || selectedId !== selected.id) return;
+                    apply((t) => ({
+                      ...t,
+                      people: t.people.map((person) =>
+                        person.id === selected.id ? { ...person, portrait } : person,
+                      ),
+                    }));
+                  }}
                   onDelete={() => deletePerson(selected.id)}
                   onAddRelative={addPerson}
                   connectMode={connectMode}
@@ -1055,13 +1152,22 @@ export default function App() {
           <div className="editor-footer">
             <span>
               {saveState === 'draft' ? 'Temporary tree' : 'Stored in this browser'} ·{' '}
-              <button onClick={downloadJson}>Download a backup</button>
+              <button disabled={exports.feedback.status === 'pending'} onClick={downloadJson}>
+                Download a backup
+              </button>
             </span>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
             </span>
           </div>
         </div>
+      )}
+      {treeAction && (
+        <TreeActionDialog
+          action={treeAction}
+          onSubmit={submitTreeAction}
+          onClose={() => setTreeAction(null)}
+        />
       )}
       {notice && (
         <div className="toast" role="alert">

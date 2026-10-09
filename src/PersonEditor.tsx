@@ -1,11 +1,10 @@
-import { useRef } from 'react';
-import { ChevronDown, ImagePlus, Trash2, X } from 'lucide-react';
+import { ChevronDown, Trash2, X } from 'lucide-react';
 import { DateInput } from './DateInput';
 import { HomePersonDetails } from './HomePersonDetails';
 import { RelationshipFields } from './RelationshipFields';
 import { SexIcon } from './SexIcon';
 import { partnerKinshipLabel, type KinshipResult } from './kinship';
-import { portraitData } from './media';
+import { PortraitUpload } from './PortraitUpload';
 import {
   lifeDatesError,
   personLifeStatus,
@@ -28,6 +27,7 @@ export function PersonEditor({
   relations,
   people,
   onChange,
+  onPortraitChange,
   onDelete,
   onAddRelative,
   connectMode,
@@ -46,6 +46,7 @@ export function PersonEditor({
   relations: Relation[];
   people: Person[];
   onChange: (p: Person) => void;
+  onPortraitChange: (portrait: string | null) => void;
   onDelete: () => void;
   onAddRelative: (type: Exclude<ConnectMode, null>) => void;
   connectMode: ConnectMode;
@@ -55,7 +56,6 @@ export function PersonEditor({
   onUpdateRelation: (relation: Relation) => void;
   onClose: () => void;
 }) {
-  const portraitInput = useRef<HTMLInputElement>(null);
   const dateError = lifeDatesError(dates);
   const dateErrorId = `date-error-${person.id}`;
   const attached = relations.filter((r) =>
@@ -94,49 +94,7 @@ export function PersonEditor({
         kinship={kinship}
         onSetHome={onSetHome}
       />
-      <div className="portrait-upload">
-        <button
-          type="button"
-          className="portrait-preview"
-          aria-label={person.portrait ? 'Change photo' : 'Add photo'}
-          title={person.portrait ? 'Change photo' : 'Add photo'}
-          onClick={() => portraitInput.current?.click()}
-        >
-          {person.portrait ? (
-            <img src={person.portrait} alt="Portrait" />
-          ) : (
-            <span>{(person.name[0] || '?').toUpperCase()}</span>
-          )}
-          <span className="portrait-upload-icon">
-            <ImagePlus size={16} />
-          </span>
-        </button>
-        <div>
-          <input
-            ref={portraitInput}
-            className="sr-only"
-            tabIndex={-1}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (!f) return;
-              e.currentTarget.value = '';
-              try {
-                onChange({ ...person, portrait: await portraitData(f) });
-              } catch (error) {
-                alert((error as Error).message);
-              }
-            }}
-          />
-          <p className="tiny">JPEG, PNG or WebP · processed locally</p>
-          {person.portrait && (
-            <button className="text-button" onClick={() => onChange({ ...person, portrait: null })}>
-              Remove photo
-            </button>
-          )}
-        </div>
-      </div>
+      <PortraitUpload person={person} onChange={onPortraitChange} />
       <div className="field-grid">
         <label>
           First name
