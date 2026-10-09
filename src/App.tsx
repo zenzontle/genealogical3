@@ -643,14 +643,20 @@ export default function App() {
         treeRef.current?.id === action.treeId ? treeRef.current : await getTree(action.treeId);
       if (!current) throw Error('This tree was not found.');
       if (name !== current.name) {
-        const updated = { ...current, name, updatedAt: Date.now() };
+        let updated = { ...current, name, updatedAt: Date.now() };
         try {
           await queueSave(updated);
         } catch (error) {
           if (treeRef.current?.id === action.treeId) setSaveState('error');
           throw error;
         }
-        if (treeRef.current?.id === action.treeId) commit(updated, true, false);
+        const latest = treeRef.current;
+        if (latest?.id === action.treeId) {
+          // Preserve edits that finished during the write and replace their stale autosave.
+          const changedWhileSaving = latest !== current;
+          if (changedWhileSaving) updated = { ...latest, name, updatedAt: Date.now() };
+          commit(updated, true, changedWhileSaving);
+        }
         setLibrary((previous) =>
           [updated, ...previous.filter((item) => item.id !== updated.id)].sort(
             (a, b) => b.updatedAt - a.updatedAt,

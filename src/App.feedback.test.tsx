@@ -94,6 +94,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 const openOriginal = async () => {
@@ -151,6 +152,63 @@ describe('local feedback integration', () => {
     expect(screen.getByTitle('Rename tree').textContent).toContain('Family');
     expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
   });
+
+  it.each([false, true])(
+    'preserves a portrait that finishes during rename persistence (autosave queued: %s)',
+    async (autosaveQueued) => {
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+      let finishPortrait!: (portrait: string) => void;
+      vi.mocked(portraitData).mockImplementationOnce(
+        () =>
+          new Promise<string>((resolve) => {
+            finishPortrait = resolve;
+          }),
+      );
+      fireEvent.change(screen.getByLabelText('Choose portrait'), {
+        target: { files: [new File(['photo'], 'photo.png', { type: 'image/png' })] },
+      });
+      await waitFor(() => expect(portraitData).toHaveBeenCalledOnce());
+
+      let finishRename!: () => void;
+      vi.mocked(saveTree).mockImplementationOnce(
+        (tree) =>
+          new Promise<string>((resolve) => {
+            finishRename = () => {
+              records.set(tree.id, tree);
+              resolve(tree.id);
+            };
+          }),
+      );
+      fireEvent.click(screen.getByTitle('Rename tree'));
+      fireEvent.change(screen.getByLabelText('Tree name'), { target: { value: 'Renamed family' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await waitFor(() => expect(saveTree).toHaveBeenCalledOnce());
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const portrait = 'data:image/jpeg;base64,new-photo';
+      await act(async () => finishPortrait(portrait));
+      if (autosaveQueued) await act(() => vi.advanceTimersByTimeAsync(450));
+      await act(async () => finishRename());
+
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.getByTitle('Rename tree').textContent).toContain('Renamed family');
+      expect(screen.getByAltText('Portrait')).toHaveProperty('src', portrait);
+      expect(screen.getByText('Saving locally…')).toBeTruthy();
+      await act(() => vi.advanceTimersByTimeAsync(450));
+      expect(records.get(original.id)?.name).toBe('Renamed family');
+      expect(records.get(original.id)?.people[0].portrait).toBe(portrait);
+      expect(screen.getByText('Saved locally')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      expect(screen.getByTitle('Rename tree').textContent).toContain('Family');
+      expect(screen.getByAltText('Portrait')).toHaveProperty('src', portrait);
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      expect(screen.queryByAltText('Portrait')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    },
+  );
 
   it('deletes a home person and relationships, then restores both with Undo', async () => {
     render(<App />);
