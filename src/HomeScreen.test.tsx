@@ -67,7 +67,7 @@ describe('homepage library hierarchy', () => {
     const tree = { ...makeTree('Family history'), people: [a], homePersonId: a.id };
     const html = render('ready', [tree]);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('<h1 id="library-heading">Your family trees</h1>');
+    expect(html).toMatch(/<h1[^>]*id="library-heading"[^>]*>Your family trees<\/h1>/);
     expect(html).toContain('YOUR WORKSPACE');
     expect(html).not.toContain('class="hero"');
     expect(html.match(/> Import(?: a tree)?<\/button>/g)).toHaveLength(1);

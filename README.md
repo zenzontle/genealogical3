@@ -4,6 +4,8 @@ A private, browser-first family tree editor built with React, TypeScript, Vite, 
 
 Once this browser has a saved tree, the homepage opens with **Your family trees**, including miniature previews, instead of the introductory hero. Trees are ordered by their latest edit. Choose **Duplicate** to save an independent local `(copy)` with the same people, relationships, photos, home person, and canvas layout. The copy stays in the library and has no Google Drive association; open or rename it when ready. An empty library keeps the introductory homepage. If browser storage cannot be read, use **Retry** to load it again.
 
+Local rename and delete actions use keyboard-accessible dialogs. Rename failures retain the entered name for retry; deleting a person and their relationships can be undone. JSON imports show reading, validation, saving, and library-refresh progress, then stay in the library with an **Open tree** action. Retrying a partially completed import reuses its saved copy. Portrait processing and JSON/PNG exports show inline progress, success, and recovery actions beside their controls. Invalid files offer a new file selection; processing and storage failures offer **Retry**. Export success means the browser download has started. Feedback remains until dismissed or replaced by another attempt.
+
 ## Run locally
 
 ```sh

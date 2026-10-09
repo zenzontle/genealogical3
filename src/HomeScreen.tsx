@@ -21,6 +21,7 @@ import { BrandMark } from './BrandMark';
 import { SexIcon } from './SexIcon';
 import { TreePreview } from './TreePreview';
 import type { Tree } from './model';
+import type { ReactNode } from 'react';
 
 const heroPeople = [
   { name: 'Eleanor', dates: '1924 — 2008', sex: 'female', position: 'art-one' },
@@ -40,6 +41,8 @@ export function HomeScreen({
   onOpenTree,
   onRenameTree,
   onRemoveTree,
+  importBusy = false,
+  importFeedback,
 }: {
   library: Tree[];
   libraryState: 'loading' | 'ready' | 'error';
@@ -51,6 +54,8 @@ export function HomeScreen({
   onOpenTree: (id: string) => void;
   onRenameTree: (tree: Tree) => void;
   onRemoveTree: (tree: Tree) => void;
+  importBusy?: boolean;
+  importFeedback?: ReactNode;
 }) {
   const showHero = libraryState === 'ready' && library.length === 0;
   return (
@@ -84,14 +89,24 @@ export function HomeScreen({
               </p>
               <div className="hero-actions">
                 <div className="hero-buttons">
-                  <button className="button primary large" onClick={onCreateTree}>
+                  <button
+                    className="button primary large"
+                    data-dialog-fallback
+                    disabled={importBusy}
+                    onClick={onCreateTree}
+                  >
                     Start a family tree <ArrowRight size={18} />
                   </button>
-                  <button className="button outline large" onClick={onImportTree}>
+                  <button
+                    className="button outline large"
+                    disabled={importBusy}
+                    onClick={onImportTree}
+                  >
                     <Upload size={18} aria-hidden="true" /> Import a tree
                   </button>
                 </div>
                 <span>No account needed.</span>
+                {importFeedback}
               </div>
             </div>
             <div className="hero-art" aria-hidden="true">
@@ -127,17 +142,20 @@ export function HomeScreen({
             <div className="section-intro">
               <div>
                 {library.length > 0 && <p className="eyebrow">YOUR WORKSPACE</p>}
-                <h1 id="library-heading">Your family trees</h1>
+                <h1 id="library-heading" tabIndex={-1} data-dialog-fallback>
+                  Your family trees
+                </h1>
               </div>
               <div className="library-actions">
-                <button className="button outline" onClick={onImportTree}>
+                <button className="button outline" disabled={importBusy} onClick={onImportTree}>
                   <Upload size={17} /> Import
                 </button>
-                <button className="button primary" onClick={onCreateTree}>
+                <button className="button primary" disabled={importBusy} onClick={onCreateTree}>
                   <Plus size={17} /> New tree
                 </button>
               </div>
             </div>
+            {importFeedback}
             {libraryState === 'loading' ? (
               <div className="library-status" role="status" aria-busy="true">
                 Loading your family trees…
@@ -155,6 +173,7 @@ export function HomeScreen({
                   <div className="tree-tile" key={item.id}>
                     <button
                       className="tree-open"
+                      disabled={importBusy}
                       aria-label={`Open ${item.name}`}
                       onClick={() => onOpenTree(item.id)}
                     >
@@ -182,7 +201,7 @@ export function HomeScreen({
                       <button
                         aria-label={`Duplicate ${item.name}`}
                         title="Duplicate"
-                        disabled={duplicatingTreeId !== null}
+                        disabled={importBusy || duplicatingTreeId !== null}
                         onClick={() => onDuplicateTree(item)}
                       >
                         {duplicatingTreeId === item.id ? 'Duplicating…' : 'Duplicate'}
@@ -190,6 +209,7 @@ export function HomeScreen({
                       <button
                         aria-label={`Rename ${item.name}`}
                         title="Rename"
+                        disabled={importBusy}
                         onClick={() => onRenameTree(item)}
                       >
                         Rename
@@ -197,6 +217,7 @@ export function HomeScreen({
                       <button
                         aria-label={`Delete ${item.name}`}
                         title="Delete"
+                        disabled={importBusy}
                         onClick={() => onRemoveTree(item)}
                       >
                         Delete

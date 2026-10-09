@@ -1655,6 +1655,108 @@ h2 {
   line-height: 1.6;
   margin: 1rem 0;
 }
+.local-dialog {
+  color: var(--text);
+  border: 1px solid var(--border);
+  max-height: calc(100dvh - 2rem);
+}
+.local-dialog::backdrop {
+  background: var(--overlay);
+}
+.local-dialog label {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.local-dialog input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.local-dialog input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.local-dialog input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.operation-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem;
+  margin-top: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-size: 0.8rem;
+}
+.operation-feedback.error {
+  color: var(--danger);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+}
+.operation-feedback.success {
+  color: var(--accent);
+}
+.library-section > .operation-feedback {
+  margin-bottom: 1rem;
+}
+.operation-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.operation-message svg {
+  flex: none;
+}
+.operation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.operation-actions .text-button {
+  color: inherit;
+}
+.export-feedback {
+  flex: none;
+  padding: 0 0.75rem 0.75rem;
+  max-height: 25dvh;
+  overflow: auto;
+}
+.portrait-upload-details {
+  flex: 1;
+  min-width: 0;
+}
+.busy-icon {
+  animation: feedback-spin 1s linear infinite;
+}
+@keyframes feedback-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-icon {
+    animation: none;
+  }
+}
 .person-search {
   position: relative;
   width: clamp(120px, 18vw, 260px);
