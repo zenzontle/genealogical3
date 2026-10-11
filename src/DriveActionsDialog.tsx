@@ -42,36 +42,43 @@ export function DriveActionsDialog({
           .
         </p>
         {configured ? (
-          <div className="drive-action-list">
-            <button
-              disabled={busy}
-              onClick={() => {
-                onClose();
-                onAction('save');
-              }}
-            >
-              Save to Drive
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                onClose();
-                onAction('copy');
-              }}
-            >
-              Save a copy
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                onClose();
-                onAction('open');
-              }}
-            >
-              Open from Drive
-            </button>
-            <button onClick={onDisconnect}>Disconnect Drive</button>
-          </div>
+          <>
+            <p>
+              New trees and copies are saved in a genealogical3 folder in My Drive. Existing files
+              stay in their current folders when updated. Open from Drive searches only the
+              genealogical3 folder.
+            </p>
+            <div className="drive-action-list">
+              <button
+                disabled={busy}
+                onClick={() => {
+                  onClose();
+                  onAction('save');
+                }}
+              >
+                Save to Drive
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  onClose();
+                  onAction('copy');
+                }}
+              >
+                Save a copy
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  onClose();
+                  onAction('open');
+                }}
+              >
+                Open from Drive
+              </button>
+              <button onClick={onDisconnect}>Disconnect Drive</button>
+            </div>
+          </>
         ) : (
           <p>
             Google Drive is not configured for this deployment. Add a Google OAuth client ID to

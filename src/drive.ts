@@ -2,6 +2,8 @@ import type { Tree } from './model';
 import { assertValidLifeDates, normalizeHomePerson, validateTree } from './model';
 const scope = 'https://www.googleapis.com/auth/drive.file';
 const marker = { app: 'GENEalogical3', format: 'tree-v1' };
+const folderName = 'genealogical3';
+const folderMimeType = 'application/vnd.google-apps.folder';
 type TokenResponse = {
   access_token?: string;
   expires_in?: number;
@@ -101,12 +103,52 @@ async function request(url: string, options: RequestInit = {}) {
   return response;
 }
 export type DriveFile = { id: string; name: string; modifiedTime: string };
+async function findDriveFolderId(): Promise<string | undefined> {
+  const query = new URLSearchParams({
+    q: `trashed = false and name = '${folderName}' and mimeType = '${folderMimeType}' and 'root' in parents`,
+    fields: 'nextPageToken,files(id)',
+    pageSize: '1',
+    orderBy: 'createdTime',
+  });
+  let pageToken: string | undefined;
+  do {
+    if (pageToken) query.set('pageToken', pageToken);
+    const response = await request(`https://www.googleapis.com/drive/v3/files?${query}`);
+    const data = (await response.json()) as { files?: { id: string }[]; nextPageToken?: string };
+    const id = data.files?.[0]?.id;
+    if (typeof id === 'string' && id) return id;
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+}
+
+async function getUploadFolderId(): Promise<string> {
+  const existingId = await findDriveFolderId();
+  if (existingId) return existingId;
+  const response = await request('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: folderMimeType,
+      parents: ['root'],
+      appProperties: { app: marker.app },
+    }),
+  });
+  const folder = (await response.json()) as { id?: string };
+  if (typeof folder.id !== 'string' || !folder.id) {
+    throw Error('Google Drive did not return a folder identifier. Your local tree is unchanged.');
+  }
+  return folder.id;
+}
 export async function listDriveTrees(): Promise<DriveFile[]> {
+  const folderId = await findDriveFolderId();
+  if (!folderId) return [];
+  const escapedFolderId = folderId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const q = encodeURIComponent(
-    "trashed = false and appProperties has { key='app' and value='GENEalogical3' }",
+    `trashed = false and '${escapedFolderId}' in parents and mimeType != '${folderMimeType}' and appProperties has { key='app' and value='GENEalogical3' }`,
   );
   const response = await request(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,modifiedTime)&page_size=100&orderBy=modifiedTime%20desc`,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100&orderBy=modifiedTime%20desc`,
   );
   const data = (await response.json()) as { files?: DriveFile[] };
   return data.files || [];
@@ -124,6 +166,7 @@ export async function saveDriveTree(tree: Tree, existingId?: string): Promise<Dr
     name: `${tree.name.trim() || 'Family tree'}.genealogical3.json`,
     mimeType: 'application/json',
     appProperties: marker,
+    ...(existingId ? {} : { parents: [await getUploadFolderId()] }),
   };
   const boundary = `genealogical3-${crypto.randomUUID()}`;
   const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ ...normalized, version: 2 })}\r\n--${boundary}--`;
