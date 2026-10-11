@@ -79,3 +79,24 @@ export function renderPrivacyPolicy(html: string, identity: PublicIdentity): str
     .replace(/<p id="privacy-introduction">[\s\S]*?<\/p>/, () => introduction)
     .replace(/<p id="privacy-contact">[\s\S]*?<\/p>/, () => contact);
 }
+
+export function renderTermsOfService(html: string, identity: PublicIdentity): string {
+  const developerName = escapeHtml(identity.developerName);
+  const introduction = `<p id="terms-introduction">
+    These Terms of Service govern your use of GENEalogical3, a browser-based family tree editor
+    provided by ${developerName} at
+    <a href="${escapeHtml(identity.appUrl)}/">${escapeHtml(new URL(identity.appUrl).host)}</a>.
+    By using the app, you agree to these terms. If you do not agree, please stop using the app.
+  </p>`;
+  const contact = identity.privacyContactEmail
+    ? `<p id="terms-contact">For questions about these terms or the app, contact ${developerName} at
+        <a href="mailto:${encodeURIComponent(identity.privacyContactEmail)}">${escapeHtml(identity.privacyContactEmail)}</a>.
+        Please do not send passwords, access tokens, or private family tree files.</p>`
+    : `<p id="terms-contact">For questions about these terms or the app, contact ${developerName} through the
+        <a href="${escapeHtml(identity.repositoryUrl)}/issues">GENEalogical3 issue tracker</a>.
+        GitHub issues are public: do not include private family details, tree files, passwords,
+        or access tokens.</p>`;
+  return html
+    .replace(/<p id="terms-introduction">[\s\S]*?<\/p>/, () => introduction)
+    .replace(/<p id="terms-contact">[\s\S]*?<\/p>/, () => contact);
+}

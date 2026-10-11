@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#141b18" />
+    <meta
+      name="description"
+      content="Terms for using GENEalogical3, including family data ownership, backups, and optional Google Drive access."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Terms of Service · GENEalogical3</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #141b18;
+        --text: #edf2e9;
+        --text-muted: #b0baac;
+        --accent: #a4c5a5;
+        --border: #3b4b40;
+        font-family: system-ui, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        line-height: 1.7;
+      }
+      header,
+      main,
+      footer {
+        max-width: 48rem;
+        margin: auto;
+        padding: 1.5rem;
+      }
+      header,
+      footer {
+        border-bottom: 1px solid var(--border);
+      }
+      header a,
+      footer a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+      }
+      main {
+        padding-bottom: 3rem;
+      }
+      h1,
+      h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        line-height: 1.2;
+      }
+      h1 {
+        font-size: clamp(2.25rem, 7vw, 3.5rem);
+        margin-bottom: 1rem;
+      }
+      h2 {
+        font-size: 1.5rem;
+        margin-top: 2.5rem;
+      }
+      p,
+      li {
+        overflow-wrap: anywhere;
+      }
+      li + li {
+        margin-top: 0.75rem;
+      }
+      ul {
+        padding-left: 1.5rem;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 0.2em;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 4px;
+      }
+      .muted {
+        color: var(--text-muted);
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        border-bottom: 0;
+      }
+      @media print {
+        :root {
+          color-scheme: light;
+          color: #141b18;
+          background: white;
+        }
+        a,
+        .muted {
+          color: inherit;
+        }
+        header,
+        main,
+        footer {
+          max-width: none;
+          padding: 0;
+        }
+        h2 {
+          break-after: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/" aria-label="GENEalogical3 home">← GENEalogical3</a>
+    </header>
+    <main>
+      <h1>Terms of Service</h1>
+      <p class="muted">
+        Effective and last updated: <time datetime="2026-10-11">October 11, 2026</time>
+      </p>
+      <p id="terms-introduction">
+        These Terms of Service govern your use of GENEalogical3, a browser-based family tree editor
+        provided by Jorge Hernandez at
+        <a href="https://genealogical3.vercel.app/">genealogical3.vercel.app</a>. By using the app,
+        you agree to these terms. If you do not agree, please stop using the app.
+      </p>
+
+      <h2>Using the service</h2>
+      <p>
+        GENEalogical3 lets you create and edit family trees, record people and relationships, import
+        and export backups, and optionally save or open tree files in Google Drive. You can use the
+        editor without creating a GENEalogical3 account. The app is currently provided without a
+        charge from the developer; your internet provider or third-party services may charge their
+        own fees.
+      </p>
+      <p>
+        You must have the legal capacity to agree to these terms under the laws that apply to you.
+        If you need a parent or guardian's permission, use the app only with that permission and
+        supervision. Use the app in accordance with applicable laws and these terms.
+      </p>
+
+      <h2>Your family tree data</h2>
+      <p>
+        You retain any ownership and other rights you have in the names, dates, relationships,
+        notes, portraits, and other content you enter or import. These terms do not transfer
+        ownership of your content to the developer. You authorize the app to process your content
+        only as needed to provide the features you use, including local storage, displays, exports,
+        and Drive transfers you request.
+      </p>
+      <p>
+        You are responsible for having the rights and permissions needed to enter, import, store,
+        and share that content. Respect other people's privacy, especially living relatives and
+        children, and obtain consent where required. Check your exports before sharing them: JSON
+        backups include notes and portraits as well as the editable tree.
+      </p>
+
+      <h2>Acceptable use</h2>
+      <ul>
+        <li>
+          Do not use the app to violate anyone's privacy, intellectual property, or other rights.
+        </li>
+        <li>
+          Do not use the app for unlawful activity, harassment, or sharing content unlawfully.
+        </li>
+        <li>
+          Do not attempt to access other people's files or accounts without authorization, bypass
+          access controls, or interfere with the website or its connected services.
+        </li>
+        <li>Do not introduce malicious code or misuse Google authorization or API access.</li>
+      </ul>
+
+      <h2>Local storage and backups</h2>
+      <p>
+        Edited trees are saved in this browser on your device. Clearing site data, changing browsers
+        or devices, browser storage removal, or a device failure can make local trees unavailable.
+        The developer does not hold a server-side copy of your family tree and cannot recover lost
+        local data. You are responsible for keeping backups of information you want to retain.
+      </p>
+      <p>
+        Export JSON regularly for an editable backup. A PNG export is a picture of the tree, not an
+        editable backup. Protect your device, Google account, and downloaded files; the app does not
+        add password protection or encryption to local trees or exports.
+      </p>
+
+      <h2>Optional Google Drive and third-party services</h2>
+      <p>
+        Google Drive access is optional. When you choose a Drive action, the app asks Google for the
+        <code>https://www.googleapis.com/auth/drive.file</code> permission, limiting access to files
+        created by or authorized for this app. Transfers occur directly between your browser and
+        Google. Opening a Drive tree creates a local working copy. Local edits do not automatically
+        sync to Drive; saving to an associated Drive file requires your confirmation.
+      </p>
+      <p>
+        Choose Disconnect Drive to clear the current session's access token. To revoke Google's
+        permission grant, remove GENEalogical3 in your
+        <a href="https://myaccount.google.com/connections">Google account connections</a>. Deleting
+        a local tree does not delete Drive files, and revoking access does not delete local trees,
+        Drive files, or downloaded backups. Manage those copies separately.
+      </p>
+      <p>
+        Your use of Google services is also governed by
+        <a href="https://policies.google.com/terms">Google's Terms of Service</a> and any applicable
+        service-specific terms. GENEalogical3 is an independent app and is not sponsored or endorsed
+        by Google. Third-party availability, account restrictions, quotas, and policy changes may
+        affect connected features.
+      </p>
+
+      <h2>Privacy</h2>
+      <p>
+        Our <a href="/privacy-policy">Privacy Policy</a> describes how the app handles information,
+        browser storage, website hosting, and optional Google access, including the Google API
+        Services User Data Policy's Limited Use requirements. Review it before entering personal
+        information or connecting Drive.
+      </p>
+
+      <h2>App rights and accuracy</h2>
+      <p>
+        You may use the hosted app for its intended family tree features in accordance with these
+        terms. Rights in the app's software and branding remain with their respective owners.
+        Separate licenses, where provided, govern use of source code and third-party components.
+      </p>
+      <p>
+        Family relationships and labels are calculated from the information you record. The app does
+        not verify historical records, biological ancestry, legal relationships, or the accuracy of
+        imported data. Review results before relying on or sharing them.
+      </p>
+
+      <h2>Availability, warranties, and liability</h2>
+      <p>
+        To the extent permitted by applicable law, the app is provided "as is" and "as available",
+        without warranties of merchantability, fitness for a particular purpose, or
+        non-infringement. The developer does not guarantee uninterrupted service, error-free
+        operation, accuracy, or that data will never be lost.
+      </p>
+      <p>
+        To the extent permitted by applicable law, the developer is not liable for indirect,
+        incidental, special, consequential, or punitive damages arising from your use of the app,
+        including loss of data or profits. Nothing in these terms excludes or limits liability that
+        cannot legally be excluded or limited, or removes consumer rights that applicable law gives
+        you.
+      </p>
+
+      <h2>Changes and ending use</h2>
+      <p>
+        The developer may change or discontinue the hosted app or particular features, or restrict
+        access where reasonably necessary to address misuse, security issues, or legal requirements.
+        Keep your own backups. You can stop using the app at any time, export data you wish to keep,
+        delete local trees, and revoke Google access. Stopping use does not automatically delete
+        copies you control.
+      </p>
+      <p>
+        Updated terms will be published here with a revised date. Material changes will be announced
+        on the website before they take effect, except where an urgent legal or security change is
+        necessary. Changes apply to use after their effective date. If you do not agree to updated
+        terms, stop using the app. Any mandatory notice or consent requirements under applicable law
+        still apply.
+      </p>
+
+      <h2>Contact</h2>
+      <p id="terms-contact">
+        For questions about these terms or the app, contact Jorge Hernandez through the
+        <a href="https://github.com/zenzontle/genealogical3/issues">GENEalogical3 issue tracker</a>.
+        GitHub issues are public: do not include private family details, tree files, passwords, or
+        access tokens.
+      </p>
+    </main>
+    <footer>
+      <a href="/">Return to GENEalogical3</a> ·
+      <a href="/privacy-policy">Privacy Policy</a>
+    </footer>
+  </body>
+</html>
