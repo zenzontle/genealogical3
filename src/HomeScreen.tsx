@@ -397,6 +397,9 @@ export function HomeScreen({
         <a className="repository-link" href="/privacy-policy">
           Privacy policy
         </a>
+        <a className="repository-link" href="/terms-of-service">
+          Terms of service
+        </a>
         <a
           className="repository-link"
           href={import.meta.env.PUBLIC_REPOSITORY_URL}

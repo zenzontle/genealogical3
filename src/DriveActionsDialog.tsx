@@ -35,6 +35,10 @@ export function DriveActionsDialog({
           <a href="/privacy-policy" target="_blank" rel="noopener noreferrer">
             privacy policy (opens in a new tab)
           </a>
+          {' and '}
+          <a href="/terms-of-service" target="_blank" rel="noopener noreferrer">
+            terms of service (opens in a new tab)
+          </a>
           .
         </p>
         {configured ? (

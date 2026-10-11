@@ -49,6 +49,14 @@ The app requests only `https://www.googleapis.com/auth/drive.file`. It uses Goog
 
 Google's OAuth project and consent screen cannot be provisioned by this codebase. A live Drive round trip requires that project configuration and credentials.
 
+### Public terms of service
+
+The Terms of Service are a standalone HTML page at `/terms-of-service`, available without sign-in or JavaScript. Vite builds `terms-of-service/index.html` as a separate entry, and `vercel.json` serves it at the public path. The page is also available through local development and production preview. Links appear in the homepage footer, Drive options dialog, and privacy policy; the terms link back to the privacy policy.
+
+After deploying, open `https://genealogical3.vercel.app/terms-of-service` and confirm it displays the terms, then use that URL in **Google Auth Platform → Branding → App domain → Application terms of service link**. For a fork, use `${PUBLIC_APP_URL}/terms-of-service`. Google also requires your homepage and privacy policy links and authorized/verified domains; see [Google's OAuth branding guidance](https://support.google.com/cloud/answer/15549049?hl=en). Adding this page does not deploy it or submit the app to Google.
+
+The terms use the same configured developer, app URL, and contact method as the privacy policy below. `PRIVACY_CONTACT_EMAIL`, when set, is the public contact email on both pages; otherwise both use your repository's public issue tracker. Review the terms for your service and applicable laws before publishing, and update their date when revising them. Material changes require the website notice described in the terms.
+
 ### Public privacy policy
 
 The public policy is a standalone HTML page at `/privacy-policy`, served without sign-in or JavaScript. Vite builds `privacy-policy/index.html` as a separate HTML entry, and `vercel.json` maps the requested path to that page. The same path works in local development and production preview. Links appear in the homepage footer and Drive options dialog.
