@@ -30,6 +30,13 @@ export function DriveActionsDialog({
             <X size={19} />
           </button>
         </div>
+        <p>
+          Drive access is optional and limited to files used with this app. Read our{' '}
+          <a href="/privacy-policy" target="_blank" rel="noopener noreferrer">
+            privacy policy (opens in a new tab)
+          </a>
+          .
+        </p>
         {configured ? (
           <div className="drive-action-list">
             <button
