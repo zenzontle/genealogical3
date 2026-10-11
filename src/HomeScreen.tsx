@@ -393,10 +393,13 @@ export function HomeScreen({
           <BrandMark small />
           <span>GENEalogical3</span>
         </div>
-        <span>&copy; 2026 Jorge Hernandez</span>
+        <span>&copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}</span>
+        <a className="repository-link" href="/privacy-policy">
+          Privacy policy
+        </a>
         <a
           className="repository-link"
-          href="https://github.com/zenzontle/genealogical3"
+          href={import.meta.env.PUBLIC_REPOSITORY_URL}
           aria-label="GitHub repository"
         >
           <Github size={17} aria-hidden="true" /> GitHub

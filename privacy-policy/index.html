@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#141b18" />
+    <meta
+      name="description"
+      content="How GENEalogical3 handles family tree data, local storage, and optional Google Drive access."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Privacy Policy · GENEalogical3</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #141b18;
+        --text: #edf2e9;
+        --text-muted: #b0baac;
+        --accent: #a4c5a5;
+        --border: #3b4b40;
+        font-family: system-ui, sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        line-height: 1.7;
+      }
+      header,
+      main,
+      footer {
+        max-width: 48rem;
+        margin: auto;
+        padding: 1.5rem;
+      }
+      header,
+      footer {
+        border-bottom: 1px solid var(--border);
+      }
+      header a,
+      footer a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+      }
+      main {
+        padding-bottom: 3rem;
+      }
+      h1,
+      h2 {
+        font-family: Georgia, serif;
+        font-weight: 400;
+        line-height: 1.2;
+      }
+      h1 {
+        font-size: clamp(2.25rem, 7vw, 3.5rem);
+        margin-bottom: 1rem;
+      }
+      h2 {
+        font-size: 1.5rem;
+        margin-top: 2.5rem;
+      }
+      p,
+      li {
+        overflow-wrap: anywhere;
+      }
+      li + li {
+        margin-top: 0.75rem;
+      }
+      ul {
+        padding-left: 1.5rem;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 0.2em;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 4px;
+      }
+      .muted {
+        color: var(--text-muted);
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        border-bottom: 0;
+      }
+      @media print {
+        :root {
+          color-scheme: light;
+          color: #141b18;
+          background: white;
+        }
+        a,
+        .muted {
+          color: inherit;
+        }
+        header,
+        main,
+        footer {
+          max-width: none;
+          padding: 0;
+        }
+        h2 {
+          break-after: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="/" aria-label="GENEalogical3 home">← GENEalogical3</a>
+    </header>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="muted">
+        Effective and last updated: <time datetime="2026-10-11">October 11, 2026</time>
+      </p>
+      <p id="privacy-introduction">
+        GENEalogical3 is a browser-based family tree editor maintained by Jorge Hernandez. This
+        policy explains how the app handles your information at
+        <a href="https://genealogical3.vercel.app/">genealogical3.vercel.app</a>. You can use the
+        editor without creating a GENEalogical3 account or connecting Google Drive.
+      </p>
+
+      <h2>Information you choose to enter</h2>
+      <p>
+        The app processes family tree names, people's names and nicknames, birth and death dates,
+        living or deceased status, sex, relationships, notes, and portraits you enter or import. It
+        also stores tree identifiers, edit dates, the home person, and canvas positions and zoom.
+        This information is used to edit, display, search, and calculate relationships in your tree,
+        and to create backups and snapshots you request. Portraits are resized in your browser.
+      </p>
+
+      <h2>Local storage and exports</h2>
+      <p>
+        Edited trees are saved in this browser's IndexedDB storage on your device. Family tree
+        information and portraits are not sent to a GENEalogical3 backend. The developer cannot look
+        up or recover your local trees. The app does not include advertising, analytics, or tracking
+        cookies. Browser storage is used for trees and their optional Drive file links.
+      </p>
+      <p>
+        JSON exports contain your editable tree, notes, and portraits. PNG exports contain a picture
+        of the tree. Downloads are created on your device; the app does not upload them. You control
+        where you keep exports and who receives them. Consider the privacy of living relatives
+        before recording or sharing their information.
+      </p>
+
+      <h2>Optional Google Drive access</h2>
+      <p>
+        Google authorization is requested only when you choose a Drive action. The app requests the
+        <code>https://www.googleapis.com/auth/drive.file</code> permission, which limits access to
+        files created by or authorized for this app rather than your entire Drive. GENEalogical3
+        lists its tree files using file identifiers, names, and modification times, reads a tree
+        file you choose to open, and creates or updates a tree file when you choose to save. Saved
+        files contain the tree data described above, including notes and portraits.
+      </p>
+      <p>
+        Transfers occur directly between your browser and Google over HTTPS. Opening a Drive tree
+        creates a local working copy; local edits do not automatically sync to Drive. Updating an
+        associated Drive file requires confirmation. Its identifier, name, and modification time are
+        stored locally to associate it with your tree.
+      </p>
+      <p>
+        Google access tokens are held only in browser memory, are not saved to browser storage, and
+        are not sent to a GENEalogical3 backend. The app does not request your Google password,
+        contacts, Gmail messages, or account profile or email permissions.
+      </p>
+      <p>
+        GENEalogical3 follows the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy"
+          >Google API Services User Data Policy</a
+        >, including its Limited Use requirements. Google user data is used only for the Drive
+        features described here. It is not sold, used for advertising, transferred to data brokers,
+        or used to train AI models. The developer does not receive or read your Drive files through
+        the app. Files are transferred to Google only as part of the Drive actions you request.
+      </p>
+
+      <h2>Website hosting and third-party requests</h2>
+      <p>
+        Vercel hosts the website. Loading the site sends ordinary request information to the host,
+        such as your IP address, browser information, requested URL, and request time. The editor
+        loads fonts from Google Fonts, and Drive actions load Google Identity Services and use
+        Google's APIs. These services receive network requests and may process technical information
+        under their own policies. Font and website requests do not contain your family tree. This
+        policy page uses system fonts and does not load Google scripts.
+      </p>
+      <p>
+        See the <a href="https://vercel.com/legal/privacy-policy">Vercel Privacy Policy</a> and
+        <a href="https://policies.google.com/privacy">Google Privacy Policy</a> for their handling
+        and retention of service data, including any cookies used by Google's services.
+      </p>
+
+      <h2>Retention, deletion, and your choices</h2>
+      <ul>
+        <li>
+          <strong>Local trees:</strong> Data remains in this browser until you delete a tree from
+          the library, clear the site's browser data, or the browser removes its storage. Deleting a
+          local tree also deletes its local Drive association. Clearing all site data removes all
+          locally stored trees and associations. Back up anything you want to keep first.
+        </li>
+        <li>
+          <strong>Google Drive copies:</strong> Delete these separately in Google Drive and empty
+          its trash to request permanent deletion under Google's retention rules. Deleting a local
+          tree does not delete a Drive file, and deleting a Drive file does not delete local copies.
+        </li>
+        <li>
+          <strong>Google access:</strong> Choose Disconnect Drive to clear the token for the current
+          session. Reloading or closing the page also clears it. Disconnecting does not revoke
+          Google's permission grant or delete files. To revoke permission, remove GENEalogical3 in
+          your <a href="https://myaccount.google.com/connections">Google account connections</a>.
+        </li>
+        <li>
+          <strong>Downloads and shared copies:</strong> Delete exports from devices, backups, and
+          services where you saved them. Recipients control copies you have shared with them.
+        </li>
+      </ul>
+      <p>
+        You can inspect and correct information in the editor and export a JSON backup at any time.
+        GENEalogical3 has no separate user account to delete. The developer does not maintain a
+        server-side family tree database or copies of your Google access tokens.
+      </p>
+
+      <h2>Security</h2>
+      <p>
+        The public website and Google transfers use HTTPS. Local storage and downloaded files rely
+        on your device and browser security; the app does not add password protection or encryption
+        to those copies. Protect your device, Google account, and backups. No storage or transfer
+        method can guarantee absolute security.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        Updates will be published on this page with a revised date. If the app introduces a new use
+        of Google user data, this policy and the app's disclosures will be updated, and any required
+        consent will be requested before that use begins.
+      </p>
+
+      <h2>Contact</h2>
+      <p id="privacy-contact">
+        For privacy questions, contact Jorge Hernandez through the
+        <a href="https://github.com/zenzontle/genealogical3/issues">GENEalogical3 issue tracker</a>.
+        GitHub issues are public: do not include private family details, tree files, passwords, or
+        access tokens. Information you voluntarily submit there is handled by GitHub under its
+        <a
+          href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+          >privacy statement</a
+        >.
+      </p>
+    </main>
+    <footer><a href="/">Return to GENEalogical3</a></footer>
+  </body>
+</html>

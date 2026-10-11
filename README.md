@@ -49,6 +49,27 @@ The app requests only `https://www.googleapis.com/auth/drive.file`. It uses Goog
 
 Google's OAuth project and consent screen cannot be provisioned by this codebase. A live Drive round trip requires that project configuration and credentials.
 
+### Public privacy policy
+
+The public policy is a standalone HTML page at `/privacy-policy`, served without sign-in or JavaScript. Vite builds `privacy-policy/index.html` as a separate HTML entry, and `vercel.json` maps the requested path to that page. The same path works in local development and production preview. Links appear in the homepage footer and Drive options dialog.
+
+After deploying, use `https://genealogical3.vercel.app/privacy-policy` as the Privacy Policy URL in Google Auth Platform's Branding settings. Use the same URL as the homepage link, and complete Google's domain ownership requirements for the deployment. Verify that the deployed URL displays the policy before submitting it to Google.
+
+Set your public deployment identity in `.env` or `.env.local`. For an independently published fork, replace the original developer, website, and GitHub repository:
+
+```dotenv
+PUBLIC_APP_URL=https://your-app.example
+PUBLIC_DEVELOPER_NAME=Your Name
+PUBLIC_REPOSITORY_URL=https://github.com/your-account/your-repo
+PRIVACY_CONTACT_EMAIL=you@example.com
+```
+
+The homepage footer uses the developer name and repository link. The policy uses the same developer name, your app URL, and either your contact email or your repository's issue tracker. `PUBLIC_APP_URL` must be an HTTPS site origin without a path, query, or fragment. `PUBLIC_REPOSITORY_URL` must identify a GitHub repository; trailing slashes and `.git` suffixes are normalized. Empty identity settings retain the original project's defaults, so configure all three before publishing a fork. Invalid URLs or email addresses stop startup/build with a configuration error.
+
+Restart the development server after changing these settings. The build inserts the public identity and contact link into the policy, so the published page works without JavaScript. An empty email keeps the configured repository's issue tracker as the contact method. Only the three identity settings are explicitly exposed to browser code; the contact email is inserted into the public policy. Opening the source HTML directly from disk shows the original defaults; preview it through Vite to see your settings.
+
+For Vercel, set these values in the project's environment variables for the deployment environment, then redeploy. Use `${PUBLIC_APP_URL}/privacy-policy` in your own Google OAuth configuration and use your own `VITE_GOOGLE_CLIENT_ID`. All configuration changes require a new build and deployment. These identity settings do not rebrand GENEalogical3 or alter the policy's hosting/data-practice disclosures; update those disclosures if your fork changes hosting, tracking, or storage.
+
 ## Data and backups
 
 New trees remain temporary until their first edit, such as adding a person or changing the tree name. Panning, zooming, or returning to the library leaves an untouched draft unsaved. After the first edit, trees autosave to IndexedDB on the current browser and origin. Clearing browser data can remove them. Download JSON backups regularly, especially before changing browsers or devices. JSON carries all editable data and processed portraits. PNG is a visual snapshot and does not include notes or editability.
