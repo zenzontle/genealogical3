@@ -144,14 +144,22 @@ export async function listDriveTrees(): Promise<DriveFile[]> {
   const folderId = await findDriveFolderId();
   if (!folderId) return [];
   const escapedFolderId = folderId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const q = encodeURIComponent(
-    `trashed = false and '${escapedFolderId}' in parents and mimeType != '${folderMimeType}' and appProperties has { key='app' and value='GENEalogical3' }`,
-  );
-  const response = await request(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=nextPageToken,files(id,name,modifiedTime)&pageSize=100&orderBy=modifiedTime%20desc`,
-  );
-  const data = (await response.json()) as { files?: DriveFile[] };
-  return data.files || [];
+  const query = new URLSearchParams({
+    q: `trashed = false and '${escapedFolderId}' in parents and mimeType != '${folderMimeType}' and appProperties has { key='app' and value='GENEalogical3' }`,
+    fields: 'nextPageToken,files(id,name,modifiedTime)',
+    pageSize: '100',
+    orderBy: 'modifiedTime desc',
+  });
+  const files: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    if (pageToken) query.set('pageToken', pageToken);
+    const response = await request(`https://www.googleapis.com/drive/v3/files?${query}`);
+    const data = (await response.json()) as { files?: DriveFile[]; nextPageToken?: string };
+    files.push(...(data.files || []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return files;
 }
 export async function openDriveTree(id: string): Promise<Tree> {
   const response = await request(

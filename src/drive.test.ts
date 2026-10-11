@@ -235,6 +235,88 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
   });
+  it.each([100, 2, 0, undefined])(
+    'fetches every tree page when the first page contains %s files',
+    async (firstPageSize) => {
+      installGoogle({ access_token: 'token', expires_in: 3600 });
+      const firstPage = Array.from({ length: firstPageSize ?? 0 }, (_, index) => ({
+        id: `file-${index}`,
+        name: `Family ${index}.genealogical3.json`,
+        modifiedTime: '2026-10-11T00:00:00Z',
+      }));
+      const older = {
+        id: 'older',
+        name: 'Older.genealogical3.json',
+        modifiedTime: '2026-10-10T00:00:00Z',
+      };
+      const oldest = {
+        id: 'oldest',
+        name: 'Oldest.genealogical3.json',
+        modifiedTime: '2026-10-09T00:00:00Z',
+      };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              ...(firstPageSize === undefined ? {} : { files: firstPage }),
+              nextPageToken: 'page 2 +/&?',
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ files: [older], nextPageToken: 'page-3' })),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify({ files: [oldest] })));
+      vi.stubGlobal('fetch', fetchMock);
+      const drive = await import('./drive');
+      await drive.authorizeDrive();
+      expect(await drive.listDriveTrees()).toEqual([...firstPage, older, oldest]);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const queries = fetchMock.mock.calls
+        .slice(1)
+        .map(([url]) => new URL(String(url)).searchParams);
+      expect(queries.map((query) => query.get('pageToken'))).toEqual([
+        null,
+        'page 2 +/&?',
+        'page-3',
+      ]);
+      for (const query of queries) {
+        expect(query.get('q')).toBe(queries[0].get('q'));
+        expect(query.get('q')).toContain("'folder-1' in parents");
+        expect(query.get('pageSize')).toBe('100');
+        expect(query.get('orderBy')).toBe('modifiedTime desc');
+        expect(query.get('fields')).toBe('nextPageToken,files(id,name,modifiedTime)');
+      }
+    },
+  );
+  it('reports a later tree page failure instead of returning an incomplete list', async () => {
+    installGoogle({ access_token: 'token', expires_in: 3600 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: [
+              {
+                id: 'file-1',
+                name: 'Family.genealogical3.json',
+                modifiedTime: '2026-10-11T00:00:00Z',
+              },
+            ],
+            nextPageToken: 'page-2',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(new Response('', { status: 403 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const drive = await import('./drive');
+    await drive.authorizeDrive();
+    await expect(drive.listDriveTrees()).rejects.toThrow(/Google Drive request failed \(403\)/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
   it('reports folder lookup failure without falling back to searching all of Drive', async () => {
     installGoogle({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 403 }));
