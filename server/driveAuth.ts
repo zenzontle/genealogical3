@@ -230,7 +230,11 @@ export async function handleDriveAuth(
       return;
     }
     if (action === 'start') {
-      const binding = randomBytes(32).toString('base64url');
+      // Keep existing sessions usable if another tab abandons this authorization.
+      // Disconnect clears this binding, so earlier callbacks cannot restore access.
+      const binding = /^[A-Za-z0-9_-]{43}$/.test(jar[bindingCookie] || '')
+        ? jar[bindingCookie]
+        : randomBytes(32).toString('base64url');
       const state = randomBytes(32).toString('base64url');
       const sessionExpiresAt = Date.now() + sessionLifetime * 1000;
       setCookie(response, bindingCookie, binding, sessionLifetime, config);

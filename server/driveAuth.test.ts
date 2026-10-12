@@ -156,6 +156,79 @@ describe('remembered Drive authentication HTTP endpoints', () => {
     expect(google).not.toHaveBeenCalled();
   });
 
+  it.each(['closed', 'denied', 'expired', 'exchange-failed'])(
+    'preserves remembered access when another authorization is %s',
+    async (failure) => {
+      await connect();
+      const originalSession = jar.get('drive_session');
+      const originalBinding = jar.get('drive_binding');
+      vi.spyOn(Date, 'now').mockReturnValue(startTime + 20 * 24 * 60 * 60 * 1000);
+      const url = await begin();
+      expect(jar.get('drive_binding')).toBe(originalBinding);
+      expect(jar.get('drive_session')).toBe(originalSession);
+
+      if (failure !== 'closed') {
+        if (failure === 'expired') vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 600_000);
+        if (failure === 'exchange-failed') google.mockRejectedValueOnce(Error('offline'));
+        const tail = failure === 'denied' ? '&error=access_denied' : '&code=code';
+        const callback = await request(
+          `callback?state=${url.searchParams.get('state')}${tail}`,
+          'GET',
+        );
+        expect(callback.status).toBe(failure === 'exchange-failed' ? 502 : 400);
+      }
+      const token = await request('token');
+      expect(token.status).toBe(200);
+      expect((await token.json()).accessToken).toBe('short-lived-token');
+      expect(jar.get('drive_session')).toBe(originalSession);
+      vi.spyOn(Date, 'now').mockReturnValue(startTime + thirtyDays);
+      expect((await request('token')).status).toBe(401);
+    },
+  );
+
+  it('uses fresh state for another authorization and replaces the session only on success', async () => {
+    const original = await connect();
+    const originalSession = jar.get('drive_session');
+    const originalBinding = jar.get('drive_binding');
+    const url = await begin();
+    expect(url.searchParams.get('state')).not.toBe(original.searchParams.get('state'));
+    expect(jar.get('drive_binding')).toBe(originalBinding);
+    google.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: 'new-token',
+          refresh_token: 'new-refresh',
+          expires_in: 3600,
+        }),
+      ),
+    );
+    expect(
+      (await request(`callback?state=${url.searchParams.get('state')}&code=code`, 'GET')).status,
+    ).toBe(200);
+    expect(jar.get('drive_session')).not.toBe(originalSession);
+    expect((await request('token')).status).toBe(200);
+    const parameters = new URLSearchParams(google.mock.calls.at(-1)![1].body);
+    expect(parameters.get('refresh_token')).toBe('new-refresh');
+  });
+
+  it('creates a new browser binding after disconnect and rejects the old authorization state', async () => {
+    await connect();
+    const originalBinding = jar.get('drive_binding');
+    const oldAttempt = await begin();
+    const oldState = jar.get('drive_oauth_state')!;
+    await request('disconnect');
+    await connect();
+    expect(jar.get('drive_binding')).not.toBe(originalBinding);
+    jar.set('drive_oauth_state', oldState);
+    google.mockClear();
+    expect(
+      (await request(`callback?state=${oldAttempt.searchParams.get('state')}&code=code`, 'GET'))
+        .status,
+    ).toBe(400);
+    expect(google).not.toHaveBeenCalled();
+    expect((await request('token')).status).toBe(200);
+  });
+
   it('rejects a late callback cookie after disconnect clears its separate binding', async () => {
     const url = await begin();
     let finishExchange!: (response: Response) => void;
@@ -204,8 +277,10 @@ describe('remembered Drive authentication HTTP endpoints', () => {
     async (failure) => {
       await connect();
       google.mockClear();
-      if (failure === 'tampered')
-        jar.set('drive_session', `Z${jar.get('drive_session')!.slice(1)}`);
+      if (failure === 'tampered') {
+        const session = jar.get('drive_session')!;
+        jar.set('drive_session', `${session[0] === 'Z' ? 'Y' : 'Z'}${session.slice(1)}`);
+      }
       if (failure === 'malformed') jar.set('drive_session', '%invalid');
       if (failure === 'changed-key') env.DRIVE_SESSION_KEY = 'b2'.repeat(32);
       if (failure === 'changed-client') env.VITE_GOOGLE_CLIENT_ID = 'other-client';
