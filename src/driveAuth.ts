@@ -101,11 +101,7 @@ export async function restoreDrive(): Promise<void> {
 
 function connectPopup(): Promise<void> {
   // Called synchronously from a click once startup restoration has finished.
-  const popup = window.open(
-    `${endpoint}/start`,
-    'genealogical3-drive-auth',
-    'popup,width=520,height=680',
-  );
+  const popup = window.open(`${endpoint}/start`, '_blank', 'popup,width=520,height=680');
   if (!popup)
     return Promise.reject(
       Error('Google sign-in was blocked. Allow popups for this site and retry.'),
@@ -176,7 +172,7 @@ export function disconnectDrive(): Promise<void> {
   clearAccess('unknown');
   const pendingToken = tokenPromise;
   disconnectPromise = (async () => {
-    // Clear cookies after any token response, so a late 401 cannot clear a newer connection.
+    // Let this tab's pending renewal settle before completing disconnection.
     await pendingToken?.catch(() => undefined);
     const response = await authRequest('disconnect');
     if (!response.ok) throw await responseError(response);

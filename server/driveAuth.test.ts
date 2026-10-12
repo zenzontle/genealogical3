@@ -335,7 +335,7 @@ describe('remembered Drive authentication HTTP endpoints', () => {
     },
   );
 
-  it('clears revoked access but preserves the connection after transient Google failures', async () => {
+  it('requires reconnection for revoked access without clearing shared cookies', async () => {
     await connect();
     google.mockRejectedValueOnce(Error('offline'));
     expect((await request('token')).status).toBe(502);
@@ -348,8 +348,33 @@ describe('remembered Drive authentication HTTP endpoints', () => {
     google.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }),
     );
-    expect((await request('token')).status).toBe(401);
-    expect(jar.has('drive_session')).toBe(false);
+    const revoked = await request('token');
+    expect(revoked.status).toBe(401);
+    expect(revoked.headers.getSetCookie()).toEqual([]);
+    expect(jar.has('drive_session')).toBe(true);
+  });
+
+  it('preserves a reconnected session and pending authorization after a stale refresh returns 401', async () => {
+    await connect();
+    let finishRefresh!: (response: Response) => void;
+    google.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finishRefresh = resolve;
+        }),
+    );
+    const pending = request('token');
+    await vi.waitFor(() => expect(finishRefresh).toBeTypeOf('function'));
+    await request('disconnect');
+    await connect();
+    await begin();
+    const reconnected = new Map(jar);
+    finishRefresh(new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 }));
+    const stale = await pending;
+    expect(stale.status).toBe(401);
+    expect(stale.headers.getSetCookie()).toEqual([]);
+    expect(jar).toEqual(reconnected);
+    expect((await request('token')).status).toBe(200);
   });
 
   it.each([

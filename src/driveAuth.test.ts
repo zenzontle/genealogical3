@@ -211,6 +211,47 @@ describe('Drive authorization lifecycle', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("opens separate popups for concurrent tabs and accepts only each tab's own callback", async () => {
+    const namedPopups = new Map<string, Window>();
+    const opened: Window[] = [];
+    open.mockImplementation((_url, target = '') => {
+      const existing = target === '_blank' ? undefined : namedPopups.get(target);
+      const next = existing ?? ({ closed: false, close: vi.fn() } as unknown as Window);
+      if (target !== '_blank') namedPopups.set(target, next);
+      opened.push(next);
+      return next;
+    });
+    fetchMock.mockResolvedValueOnce(disconnected());
+    const firstTab = await import('./driveAuth');
+    await firstTab.restoreDrive();
+    vi.resetModules();
+    fetchMock.mockResolvedValueOnce(disconnected());
+    const secondTab = await import('./driveAuth');
+    await secondTab.restoreDrive();
+    const first = firstTab.authorizeDrive();
+    const firstResult = first.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const second = secondTab.authorizeDrive();
+    expect(secondTab.authorizeDrive()).toBe(second);
+    expect(open).toHaveBeenCalledTimes(2);
+    const [firstPopup, secondPopup] = opened;
+    message({ type: 'drive-auth' }, window.location.origin, secondPopup);
+    await second;
+    expect(firstPopup.close).not.toHaveBeenCalled();
+    expect(secondPopup.close).toHaveBeenCalledOnce();
+    expect(await secondTab.driveAccessToken()).toBe('token');
+    message(
+      { type: 'drive-auth', error: 'Authorization denied' },
+      window.location.origin,
+      firstPopup,
+    );
+    expect(await firstResult).toMatchObject({ message: 'Authorization denied' });
+    expect(firstPopup).not.toBe(secondPopup);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('renews near expiry and shares concurrent restoration and renewal', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(100_000);
     const auth = await import('./driveAuth');

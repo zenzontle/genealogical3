@@ -349,7 +349,7 @@ export async function handleDriveAuth(
         ? error
         : new AuthError(500, 'Google Drive authentication failed. Please retry.');
     response.statusCode = failure.status;
-    if (config && action === 'token' && failure.status === 401) clearConnection(response, config);
+    // Token requests never clear shared cookies: a newer connection may already exist.
     if (action === 'start' || action === 'callback')
       popupResponse(response, config, failure.message);
     else json(response, failure.status, { error: failure.message });
