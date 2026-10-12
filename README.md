@@ -49,6 +49,10 @@ The app requests only `https://www.googleapis.com/auth/drive.file`. It uses Goog
 
 Google's OAuth project and consent screen cannot be provisioned by this codebase. A live Drive round trip requires that project configuration and credentials.
 
+New tree files and **Save a copy** uploads go into a folder named exactly `genealogical3` directly under My Drive. Before each new upload, the app looks for an accessible, non-trashed matching folder and reuses the oldest one; if none is accessible, it creates the folder. The limited `drive.file` permission might not expose a manually created folder, so the app may create another folder with the same name. Folder lookup or creation failures stop the upload and leave your local tree unchanged.
+
+Updating an associated Drive file keeps its existing location and identifier. **Open from Drive** lists only app tree files directly inside the same `genealogical3` folder used for uploads, and excludes folders. If no accessible matching folder exists, it shows an empty list without creating a folder.
+
 ### Public terms of service
 
 The Terms of Service are a standalone HTML page at `/terms-of-service`, available without sign-in or JavaScript. Vite builds `terms-of-service/index.html` as a separate entry, and `vercel.json` serves it at the public path. The page is also available through local development and production preview. Links appear in the homepage footer, Drive options dialog, and privacy policy; the terms link back to the privacy policy.

@@ -29,7 +29,10 @@ export function DriveTreeDialog({
             <X size={19} />
           </button>
         </div>
-        <p>Choose an app-created tree. It opens as a local working copy.</p>
+        <p>
+          Choose an app-created tree from the genealogical3 folder. It opens as a local working
+          copy.
+        </p>
         {files.length ? (
           <div className="drive-file-list">
             {files.map((f) => (
@@ -44,7 +47,9 @@ export function DriveTreeDialog({
             ))}
           </div>
         ) : (
-          <div className="empty-drive">No GENEalogical3 trees found in this Drive.</div>
+          <div className="empty-drive">
+            No GENEalogical3 trees found in the genealogical3 folder.
+          </div>
         )}
       </div>
     </div>
