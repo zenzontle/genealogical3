@@ -36,6 +36,12 @@ For editor formatting, enable the Prettier integration in your editor and use th
 
 The October 1, 2026 npm audit reported no high or critical findings. Vitest and its mocker have a moderate [path traversal advisory](https://github.com/advisories/GHSA-82fw-gwwq-j7x9). These are development dependencies; the test command runs in batch mode and does not expose a test server, and they are excluded from the production bundle. A major test-runner upgrade is deferred pending compatibility testing. Review this deferral by November 1, 2026, and do not expose a Vitest server to untrusted networks.
 
+## Vercel Web Analytics
+
+The React entry point mounts `@vercel/analytics/react` once alongside the app to track page views. Vite development uses analytics development mode; production builds use production mode. No custom events or family tree data are sent by the app's analytics integration. The standalone privacy policy and terms pages do not load the analytics component.
+
+In the Vercel project dashboard, open **Analytics** and enable Web Analytics, then deploy the updated app. No analytics API key or environment variable is required. Visit the deployed editor and confirm that page views appear in the dashboard; local development does not send production analytics. See [Vercel's setup guide](https://vercel.com/docs/analytics/quickstart).
+
 ## Google Drive setup
 
 The editor works without Google configuration. To enable explicit Drive save/open:
