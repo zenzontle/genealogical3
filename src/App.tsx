@@ -80,6 +80,7 @@ import {
   listDriveTrees,
   openDriveTree,
   saveDriveTree,
+  restoreDrive,
   type DriveFile,
 } from './drive';
 
@@ -116,6 +117,7 @@ export default function App() {
   const [driveSavedAt, setDriveSavedAt] = useState('');
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
+  const [driveReady, setDriveReady] = useState(!driveConfigured);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
   const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
     null,
@@ -138,6 +140,23 @@ export default function App() {
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
   useConnectorProximity(canvasRef, screen === 'editor');
+  useEffect(() => {
+    if (!driveConfigured) return;
+    let active = true;
+    void restoreDrive()
+      .catch((error: unknown) => {
+        if (active)
+          setNotice(
+            error instanceof Error ? error.message : 'Could not restore Google Drive access.',
+          );
+      })
+      .finally(() => {
+        if (active) setDriveReady(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -525,13 +544,20 @@ export default function App() {
     }
   };
   const doDrive = async (action: 'save' | 'copy' | 'open') => {
+    if (!driveReady || driveBusy) return;
     if (!treeRef.current && action !== 'open') return;
+    const actionTreeId = treeRef.current?.id;
     setDriveBusy(true);
     try {
       await authorizeDrive();
       if (action === 'open') {
         setDriveFiles(await listDriveTrees());
         return;
+      }
+      if (treeRef.current?.id !== actionTreeId) {
+        throw Error(
+          'The selected tree changed during Google authorization. Choose Save to Drive again.',
+        );
       }
       if (
         action === 'save' &&
@@ -836,7 +862,7 @@ export default function App() {
               <div className="drive-menu">
                 <button
                   className="button header-button"
-                  disabled={driveBusy || !driveConfigured}
+                  disabled={driveBusy || !driveReady || !driveConfigured}
                   title={
                     driveConfigured
                       ? 'Google Drive options'
@@ -848,7 +874,7 @@ export default function App() {
                 </button>
                 <button
                   className="icon-button"
-                  disabled={driveBusy || !driveConfigured}
+                  disabled={driveBusy || !driveReady || !driveConfigured}
                   aria-label="Save a copy to Google Drive"
                   title="Save a copy to Drive"
                   onClick={() => doDrive('copy')}
@@ -857,7 +883,7 @@ export default function App() {
                 </button>
                 <button
                   className="icon-button"
-                  disabled={driveBusy || !driveConfigured}
+                  disabled={driveBusy || !driveReady || !driveConfigured}
                   aria-label="Open from Google Drive"
                   title="Open from Drive"
                   onClick={() => doDrive('open')}
@@ -1180,16 +1206,24 @@ export default function App() {
       {driveActionsOpen && (
         <DriveActionsDialog
           configured={driveConfigured}
-          busy={driveBusy}
+          busy={driveBusy || !driveReady}
           onAction={doDrive}
-          onDisconnect={() => {
-            disconnectDrive();
-            setDriveFile(null);
-            setDriveSavedAt('');
-            setDriveActionsOpen(false);
-            setNotice(
-              'Disconnected Google Drive for this session. Your local tree is still saved.',
-            );
+          onDisconnect={async () => {
+            setDriveBusy(true);
+            try {
+              await disconnectDrive();
+              setDriveFile(null);
+              setDriveSavedAt('');
+              setDriveFiles(null);
+              setDriveActionsOpen(false);
+              setNotice(
+                'Forgot Google Drive access in this browser. Your local tree is still saved.',
+              );
+            } catch (error) {
+              showError(error);
+            } finally {
+              setDriveBusy(false);
+            }
           }}
           onClose={() => setDriveActionsOpen(false)}
         />

@@ -76,7 +76,9 @@ export function DriveActionsDialog({
               >
                 Open from Drive
               </button>
-              <button onClick={onDisconnect}>Disconnect Drive</button>
+              <button disabled={busy} onClick={onDisconnect}>
+                Disconnect Drive
+              </button>
             </div>
           </>
         ) : (

@@ -1,101 +1,31 @@
 import type { Tree } from './model';
 import { assertValidLifeDates, normalizeHomePerson, validateTree } from './model';
-const scope = 'https://www.googleapis.com/auth/drive.file';
+import { driveAccessToken } from './driveAuth';
+export { authorizeDrive, disconnectDrive, driveConfigured, restoreDrive } from './driveAuth';
 const marker = { app: 'GENEalogical3', format: 'tree-v1' };
 const folderName = 'genealogical3';
 const folderMimeType = 'application/vnd.google-apps.folder';
-type TokenResponse = {
-  access_token?: string;
-  expires_in?: number;
-  error?: string;
-};
-type TokenClient = {
-  requestAccessToken: (config?: { prompt?: string }) => void;
-};
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        oauth2: {
-          initTokenClient: (config: {
-            client_id: string;
-            scope: string;
-            callback: (response: TokenResponse) => void;
-          }) => TokenClient;
-        };
-      };
-    };
-  }
-}
-let accessToken = '',
-  expiresAt = 0,
-  scriptPromise: Promise<void> | null = null;
-export const driveConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
-function loadScript(): Promise<void> {
-  if (window.google) return Promise.resolve();
-  if (!scriptPromise)
-    scriptPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () =>
-        reject(Error('Could not load Google authorization. Check your connection.'));
-      document.head.appendChild(script);
-    });
-  return scriptPromise;
-}
-export async function authorizeDrive(): Promise<void> {
-  if (!driveConfigured) throw Error('Google Drive is not configured for this deployment.');
-  if (accessToken && Date.now() < expiresAt - 60_000) return;
-  await loadScript();
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        reject(Error('Google authorization was canceled or timed out.'));
-      }
-    }, 90_000);
-    const client = window.google!.accounts.oauth2.initTokenClient({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      scope,
-      callback: (response) => {
-        settled = true;
-        clearTimeout(timeout);
-        if (response.error || !response.access_token)
-          reject(Error('Google Drive authorization was canceled or denied.'));
-        else {
-          accessToken = response.access_token;
-          expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
-          resolve();
-        }
-      },
-    });
-    client.requestAccessToken({ prompt: '' });
-  });
-}
-export function disconnectDrive() {
-  accessToken = '';
-  expiresAt = 0;
-}
 async function request(url: string, options: RequestInit = {}) {
-  if (!accessToken || Date.now() >= expiresAt)
-    throw Error('Google Drive access expired. Choose a Drive action to reconnect.');
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        ...(options.headers || {}),
-      },
-    });
-  } catch {
-    throw Error('Could not reach Google Drive. Your local tree is unchanged.');
+  let token = await driveAccessToken();
+  const send = async () => {
+    try {
+      return await fetch(url, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(options.headers || {}),
+        },
+      });
+    } catch {
+      throw Error('Could not reach Google Drive. Your local tree is unchanged.');
+    }
+  };
+  let response = await send();
+  if (response.status === 401) {
+    token = await driveAccessToken(true);
+    response = await send();
   }
   if (response.status === 401) {
-    disconnectDrive();
     throw Error('Google Drive access expired. Choose a Drive action to reconnect.');
   }
   if (!response.ok)

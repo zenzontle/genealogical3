@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
+import { driveAuthDev } from './server/driveAuthDev';
 import {
   renderPrivacyPolicy,
   renderTermsOfService,
@@ -41,7 +42,14 @@ function publicLegalPages(identity: PublicIdentity): Plugin {
 export default defineConfig(({ mode }) => {
   const identity = resolvePublicIdentity(loadEnv(mode, root, ['PUBLIC_', 'PRIVACY_CONTACT_EMAIL']));
   return {
-    plugins: [react(), publicLegalPages(identity)],
+    plugins: [
+      react(),
+      publicLegalPages(identity),
+      driveAuthDev({
+        ...process.env,
+        ...loadEnv(mode, root, ['VITE_GOOGLE_CLIENT_ID', 'GOOGLE_', 'DRIVE_']),
+      }),
+    ],
     define: {
       'import.meta.env.PUBLIC_APP_URL': JSON.stringify(identity.appUrl),
       'import.meta.env.PUBLIC_DEVELOPER_NAME': JSON.stringify(identity.developerName),
