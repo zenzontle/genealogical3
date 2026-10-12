@@ -70,6 +70,22 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe('home designation in browser storage', () => {
+  it('persists incomplete Drive restore status alongside its association without altering the local tree', async () => {
+    const tree = { ...makeTree('Incomplete'), people: [makePerson('Missing portrait')] };
+    browserStorage([tree]);
+    const link = {
+      treeId: tree.id,
+      id: 'drive-backup',
+      name: 'Incomplete.json',
+      modifiedTime: '',
+      restoreWarnings: [{ personId: tree.people[0].id, name: tree.people[0].name }],
+    };
+    await saveDriveLink(link);
+    expect(await getDriveLink(tree.id)).toEqual(link);
+    expect(await getTree(tree.id)).toEqual(tree);
+    const copy = await duplicateSavedTree(tree.id);
+    expect(await getDriveLink(copy.id)).toBeUndefined();
+  });
   it('persists a separate copy without the original Drive link and supports independent edits and deletion', async () => {
     const tree = { ...makeTree('Original'), people: [makePerson('A')] };
     const original = structuredClone(tree);

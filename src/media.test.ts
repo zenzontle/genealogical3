@@ -1,11 +1,60 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { exportPng } from './media';
+import { exportPng, exportJson, portraitData } from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
 import { makePerson, makeTree, personCardSize, type Relation } from './model';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+describe('portable portrait processing', () => {
+  it.each([
+    [2048, 1024, 512, 256],
+    [600, 1200, 256, 512],
+    [80, 160, 80, 160],
+    [512, 512, 512, 512],
+  ])(
+    'processes %s × %s once to %s × %s JPEG at quality 0.82',
+    async (width, height, expectedWidth, expectedHeight) => {
+      const bitmap = { width, height, close: vi.fn() };
+      vi.stubGlobal(
+        'createImageBitmap',
+        vi.fn(async () => bitmap),
+      );
+      const drawImage = vi.fn(),
+        toDataURL = vi.fn(() => 'data:image/jpeg;base64,processed');
+      const canvas = { width: 0, height: 0, getContext: () => ({ drawImage }), toDataURL };
+      vi.stubGlobal('document', { createElement: () => canvas });
+      expect(await portraitData(new File(['photo'], 'photo.png', { type: 'image/png' }))).toBe(
+        'data:image/jpeg;base64,processed',
+      );
+      expect(canvas.width).toBe(expectedWidth);
+      expect(canvas.height).toBe(expectedHeight);
+      expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0, expectedWidth, expectedHeight);
+      expect(toDataURL).toHaveBeenCalledWith('image/jpeg', 0.82);
+      expect(bitmap.close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('exports local portraits embedded in a self-contained portable JSON document', async () => {
+    let output!: Blob;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      output = blob as Blob;
+      return 'blob:export';
+    });
+    vi.stubGlobal('document', { createElement: () => ({ click: vi.fn() }) });
+    vi.useFakeTimers();
+    const tree = {
+      ...makeTree('Portable'),
+      people: [{ ...makePerson('Alex'), portrait: 'data:image/jpeg;base64,processed' }],
+    };
+    exportJson(tree);
+    expect(JSON.parse(await output.text())).toEqual(tree);
+    expect(JSON.parse(await output.text())).not.toHaveProperty('photoFolderId');
+    vi.clearAllTimers();
+  });
 });
 
 describe('shared connectors in PNG exports', () => {

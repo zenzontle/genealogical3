@@ -1,424 +1,564 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makePerson, makeTree } from './model';
+import { makePerson, makeTree, validateTree, type Tree } from './model';
+import { photoDigest, type DriveDocument } from './driveDocument';
 
+vi.mock('./driveAuth', () => ({
+  driveAccessToken: vi.fn(async () => 'token'),
+  authorizeDrive: vi.fn(),
+  disconnectDrive: vi.fn(),
+  restoreDrive: vi.fn(),
+  driveConfigured: true,
+}));
+import { driveAccessToken } from './driveAuth';
+import { listDriveTrees, openDriveTree, saveDriveTree, type PhotoProgress } from './drive';
+
+const jpeg = (value = 1) => Uint8Array.from([0xff, 0xd8, value, 0xff, 0xd9]);
+const portrait = (value = 1) =>
+  `data:image/jpeg;base64,${Buffer.from(jpeg(value)).toString('base64')}`;
+function family(values: (number | null)[] = [1, 2]): Tree {
+  return {
+    ...makeTree('Family'),
+    people: values.map((value, index) => ({
+      ...makePerson(`Person ${index}`),
+      portrait: value === null ? null : portrait(value),
+    })),
+  };
+}
+type RemoteFile = {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  mimeType: string;
+  parents: string[];
+  appProperties: Record<string, string>;
+  trashed?: boolean;
+  content: Uint8Array;
+};
+type Call = { url: URL; options: RequestInit; meta?: Partial<RemoteFile> };
+function fakeDrive() {
+  const files = new Map<string, RemoteFile>();
+  const calls: Call[] = [];
+  const hooks: {
+    before?: (call: Call) => Promise<Response | void>;
+    after?: (call: Call) => Promise<Response | void>;
+  } = {};
+  let counter = 0;
+  const json = (value: unknown, status = 200) =>
+    new Response(JSON.stringify(value), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  const fetchMock = vi.fn(async (input: string, options: RequestInit = {}) => {
+    const url = new URL(input),
+      call: Call = { url, options };
+    calls.push(call);
+    let content = new Uint8Array();
+    if (options.body instanceof Blob) {
+      const boundary = String((options.headers as Record<string, string>)['Content-Type']).split(
+        'boundary=',
+      )[1];
+      const raw = Buffer.from(await options.body.arrayBuffer()).toString('latin1');
+      const parts = raw.split(`--${boundary}`);
+      call.meta = JSON.parse(
+        Buffer.from(parts[1].split('\r\n\r\n')[1].trim(), 'latin1').toString('utf8'),
+      );
+      content = new Uint8Array(Buffer.from(parts[2].split('\r\n\r\n')[1].slice(0, -2), 'latin1'));
+    } else if (options.body) call.meta = JSON.parse(String(options.body));
+    const intercepted = await hooks.before?.(call);
+    if (intercepted) return intercepted;
+    if (url.pathname.endsWith('/generateIds')) return json({ ids: [`remote-${++counter}`] });
+    if (!options.method && url.pathname === '/drive/v3/files') {
+      const query = url.searchParams.get('q') || '';
+      const listed = [...files.values()].filter((file) => {
+        if (file.trashed) return false;
+        const parent = /'([^']+)' in parents/.exec(query)?.[1];
+        if (parent && !file.parents.includes(parent)) return false;
+        if (query.includes("name = 'genealogical3'") && file.name !== 'genealogical3') return false;
+        if (query.includes("mimeType = 'application/json'") && file.mimeType !== 'application/json')
+          return false;
+        return true;
+      });
+      return json({ files: listed });
+    }
+    const id = url.pathname.split('/').at(-1)!;
+    if (options.method === 'POST') {
+      const meta = call.meta as RemoteFile;
+      if (files.has(meta.id)) return json({}, 409);
+      const file = { ...meta, modifiedTime: '2026-10-12T12:00:00Z', content };
+      files.set(file.id, file);
+      return (await hooks.after?.(call)) || json(file);
+    }
+    const file = files.get(id);
+    if (!file || file.trashed) return json({}, 404);
+    if (options.method === 'PATCH') {
+      Object.assign(file, call.meta);
+      if (options.body instanceof Blob) file.content = content;
+      return (await hooks.after?.(call)) || json(file);
+    }
+    if (url.searchParams.get('alt') === 'media')
+      return new Response(new Uint8Array(file.content), {
+        headers: { 'Content-Type': file.mimeType },
+      });
+    return json(file);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return {
+    files,
+    calls,
+    hooks,
+    fetchMock,
+    document: (id: string) =>
+      JSON.parse(Buffer.from(files.get(id)!.content).toString('utf8')) as DriveDocument,
+    setDocument: (id: string, doc: DriveDocument) => {
+      files.get(id)!.content = new TextEncoder().encode(JSON.stringify(doc));
+    },
+    photoUploads: () =>
+      calls.filter(
+        (call) => call.options.method === 'POST' && call.meta?.mimeType === 'image/jpeg',
+      ),
+    trashCalls: () => calls.filter((call) => call.meta?.trashed),
+  };
+}
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+};
 beforeEach(() => {
-  vi.resetModules();
-  vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'test-client');
+  vi.mocked(driveAccessToken).mockReset().mockResolvedValue('token');
+  vi.stubGlobal(
+    'createImageBitmap',
+    vi.fn(async () => ({ width: 128, height: 256, close: vi.fn() })),
+  );
 });
 afterEach(() => {
-  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-function installAuthorization(response: {
-  access_token?: string;
-  expires_in?: number;
-  error?: string;
-}) {
-  const authorizeDrive = vi.fn(async () => {
-    if (response.error || !response.access_token)
-      throw Error('Google Drive authorization was canceled or denied.');
+describe('separate-photo Drive backups', () => {
+  it.each([[1, 2], [1, 1], [], [null]])(
+    'round trips processed portraits %j, without recompression',
+    async (...values) => {
+      const remote = fakeDrive(),
+        tree = family(values as (number | null)[]),
+        progress: PhotoProgress[] = [];
+      const original = structuredClone(tree);
+      const file = await saveDriveTree(tree, undefined, (p) => progress.push(p));
+      const doc = remote.document(file.id);
+      expect(doc).toMatchObject({ format: 'genealogical3-drive', version: 1, backupId: file.id });
+      expect(doc.tree.people.every((person) => person.portrait === null)).toBe(true);
+      const folder = remote.files.get(doc.photoFolderId)!;
+      expect(folder.name).toBe(`${file.id}.photos`);
+      expect(folder.parents).toEqual(remote.files.get(file.id)!.parents);
+      const unique = new Set(values.filter((value) => value !== null));
+      expect(remote.photoUploads()).toHaveLength(unique.size);
+      for (const ref of doc.portraits) {
+        const image = remote.files.get(ref.imageFileId)!;
+        expect(ref.digest).toBe(await photoDigest(image.content as Uint8Array<ArrayBuffer>));
+        expect(image.content).toEqual(
+          jpeg(
+            values[Number(tree.people.findIndex((person) => person.id === ref.personId))] as number,
+          ),
+        );
+        expect(image.appProperties.backupId).toBe(file.id);
+      }
+      const result = await openDriveTree(file.id, (p) => progress.push(p));
+      expect(result).toEqual({ tree, restoreWarnings: [] });
+      expect(tree).toEqual(original);
+      expect(progress).toContainEqual({
+        direction: 'upload',
+        completed: unique.size,
+        total: unique.size,
+      });
+      expect(progress).toContainEqual({
+        direction: 'download',
+        completed: unique.size,
+        total: unique.size,
+      });
+      // Saving only decodes bytes. The decoder is used exclusively during restore.
+      expect(createImageBitmap).toHaveBeenCalledTimes(unique.size);
+    },
+  );
+
+  it('uploads no photos for ordinary edits and only one replacement, with safe cleanup', async () => {
+    const remote = fakeDrive(),
+      tree = family();
+    const file = await saveDriveTree(tree),
+      first = remote.document(file.id);
+    const edited = {
+      ...tree,
+      name: 'Edited',
+      people: tree.people.map((p) => ({ ...p, notes: 'A note' })),
+    };
+    await saveDriveTree(edited, file.id);
+    expect(remote.photoUploads()).toHaveLength(2);
+    const second = remote.document(file.id);
+    expect(second.portraits).toEqual(first.portraits);
+    edited.people[0].portrait = portrait(3);
+    const saved = await saveDriveTree(edited, file.id);
+    expect(saved.cleanupWarnings).toEqual([]);
+    expect(remote.photoUploads()).toHaveLength(3);
+    const third = remote.document(file.id);
+    expect(third.portraits[0].imageFileId).not.toBe(first.portraits[0].imageFileId);
+    expect(third.portraits[1]).toEqual(first.portraits[1]);
+    expect(remote.files.get(first.portraits[0].imageFileId)!.trashed).toBe(true);
+    expect(remote.files.get(first.portraits[1].imageFileId)!.trashed).toBeUndefined();
+    expect(createImageBitmap).not.toHaveBeenCalled();
+    const copy = await saveDriveTree(edited),
+      copied = remote.document(copy.id);
+    expect(copied.photoFolderId).not.toBe(third.photoFolderId);
+    expect(
+      copied.portraits.every(
+        (ref) => !third.portraits.some((old) => old.imageFileId === ref.imageFileId),
+      ),
+    ).toBe(true);
   });
-  vi.doMock('./driveAuth', () => ({
-    driveConfigured: true,
-    authorizeDrive,
-    restoreDrive: vi.fn(),
-    disconnectDrive: vi.fn(),
-    driveAccessToken: vi.fn(async () => response.access_token || ''),
-  }));
-  return authorizeDrive;
-}
-describe('explicit Drive operations', () => {
-  it('renews access and retries a rejected Drive request once', async () => {
-    installAuthorization({ access_token: 'token' });
-    const { driveAccessToken } = await import('./driveAuth');
-    vi.mocked(driveAccessToken)
-      .mockResolvedValueOnce('old-token')
-      .mockResolvedValueOnce('renewed-token');
-    const tree = makeTree('Family');
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response('', { status: 401 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(tree)));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    expect(await drive.openDriveTree('file')).toEqual(tree);
-    expect(driveAccessToken).toHaveBeenLastCalledWith(true);
-    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer old-token');
-    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer renewed-token');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+  it('retains a shared image until its last reference is removed', async () => {
+    const remote = fakeDrive(),
+      tree = family([1, 1]);
+    const file = await saveDriveTree(tree),
+      imageId = remote.document(file.id).portraits[0].imageFileId;
+    tree.people[0].portrait = null;
+    await saveDriveTree(tree, file.id);
+    expect(remote.trashCalls()).toHaveLength(0);
+    tree.people[1].portrait = null;
+    await saveDriveTree(tree, file.id);
+    expect(remote.files.get(imageId)!.trashed).toBe(true);
   });
-  it('stops after a second Drive 401 and preserves renewal errors', async () => {
-    installAuthorization({ access_token: 'token' });
-    const fetchMock = vi.fn().mockImplementation(async () => new Response('', { status: 401 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await expect(drive.openDriveTree('file')).rejects.toThrow(/access expired/);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const { driveAccessToken } = await import('./driveAuth');
-    vi.mocked(driveAccessToken)
-      .mockResolvedValueOnce('token')
-      .mockRejectedValueOnce(Error('Google Drive authentication is not configured.'));
-    await expect(drive.openDriveTree('file')).rejects.toThrow(/not configured/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+  it('leaves the previous document usable if a photo upload or document commit is interrupted', async () => {
+    const remote = fakeDrive(),
+      tree = family();
+    const file = await saveDriveTree(tree),
+      previous = remote.document(file.id);
+    const changed = { ...tree, people: tree.people.map((p) => ({ ...p, portrait: portrait(3) })) };
+    remote.hooks.before = async (call) => {
+      if (call.meta?.mimeType === 'image/jpeg') return new Response('', { status: 503 });
+    };
+    await expect(saveDriveTree(changed, file.id)).rejects.toThrow(/503/);
+    expect(remote.document(file.id)).toEqual(previous);
+    expect(remote.trashCalls()).toHaveLength(0);
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'PATCH' && call.meta?.mimeType === 'application/json')
+        throw Error('connection lost');
+    };
+    await expect(saveDriveTree(changed, file.id)).rejects.toThrow(/reach Google Drive/);
+    expect(remote.document(file.id)).toEqual(previous);
+    expect((await openDriveTree(file.id)).tree).toEqual(tree);
+    // A later operation reuses the app-owned photo left by the interrupted commit.
+    remote.hooks.before = undefined;
+    const uploads = remote.photoUploads().length;
+    await saveDriveTree(changed, file.id);
+    expect(remote.photoUploads()).toHaveLength(uploads);
   });
-  it('rejects an invalid home reference before upload and normalizes legacy Drive files', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const { homePersonId: _home, ...legacy } = makeTree('Legacy');
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ ...legacy, version: 1 }), {
-        status: 200,
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await expect(drive.saveDriveTree({ ...makeTree(), homePersonId: 'missing' })).rejects.toThrow(
+
+  it.each(['photos', 'portrait', 'tree', 'library'])(
+    'retries a lost %s create response with the same pre-generated ID',
+    async (kind) => {
+      const remote = fakeDrive();
+      let lost = false;
+      remote.hooks.after = async (call) => {
+        if (!lost && call.options.method === 'POST' && call.meta?.appProperties?.kind === kind) {
+          lost = true;
+          if (kind === 'library') remote.files.get(call.meta.id!)!.parents = ['actual-root-id'];
+          throw Error('lost response');
+        }
+      };
+      const file = await saveDriveTree(family([1]));
+      expect(lost).toBe(true);
+      expect((await openDriveTree(file.id)).restoreWarnings).toEqual([]);
+      const creates = remote.calls.filter(
+        (call) => call.options.method === 'POST' && call.meta?.appProperties?.kind === kind,
+      );
+      expect(creates).toHaveLength(2);
+      expect(creates[0].meta?.id).toBe(creates[1].meta?.id);
+      expect([...remote.files.values()].filter((f) => f.appProperties.kind === kind)).toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it('reports cleanup failure independently from a committed save', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    tree.people[0].portrait = null;
+    remote.hooks.before = async (call) => {
+      if (call.meta?.trashed) return new Response('', { status: 403 });
+    };
+    const result = await saveDriveTree(tree, file.id);
+    expect(result.id).toBe(file.id);
+    expect(result.cleanupWarnings).toHaveLength(1);
+    expect(remote.document(file.id).portraits).toEqual([]);
+    expect((await openDriveTree(file.id)).tree.people[0].portrait).toBeNull();
+  });
+
+  it('skips cleanup when the committed document is changed by another save', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'PATCH' && call.meta?.mimeType === 'application/json') {
+        const doc = remote.document(file.id);
+        doc.revision = 'other-save';
+        remote.setDocument(file.id, doc);
+      }
+    };
+    tree.people[0].portrait = null;
+    const result = await saveDriveTree(tree, file.id);
+    expect(result.cleanupWarnings[0]).toMatch(/another save/);
+    expect(remote.trashCalls()).toHaveLength(0);
+  });
+
+  it('never cleans another backup or an unowned image even if the previous document references it', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const first = await saveDriveTree(tree),
+      second = await saveDriveTree(tree);
+    const doc = remote.document(first.id),
+      other = remote.document(second.id).portraits[0];
+    doc.portraits[0].imageFileId = other.imageFileId;
+    remote.setDocument(first.id, doc);
+    const ownPhoto = [...remote.files.values()].find(
+      (f) => f.mimeType === 'image/jpeg' && f.appProperties.backupId === first.id,
+    )!;
+    ownPhoto.appProperties.app = 'another-app';
+    // A cross-backup image in the folder is also excluded by ownership checks.
+    remote.files.get(other.imageFileId)!.parents.push(doc.photoFolderId);
+    tree.people[0].portrait = null;
+    await saveDriveTree(tree, first.id);
+    expect(remote.trashCalls()).toHaveLength(0);
+    expect(remote.files.get(other.imageFileId)!.trashed).toBeUndefined();
+    expect(ownPhoto.trashed).toBeUndefined();
+  });
+
+  it('rechecks image ownership before trashing and rejects a foreign photo folder', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree),
+      doc = remote.document(file.id);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'PATCH' && call.meta?.mimeType === 'application/json')
+        remote.files.get(doc.portraits[0].imageFileId)!.appProperties.backupId = 'another-backup';
+    };
+    tree.people[0].portrait = null;
+    await saveDriveTree(tree, file.id);
+    expect(remote.trashCalls()).toHaveLength(0);
+    remote.files.get(doc.photoFolderId)!.appProperties.backupId = 'another-backup';
+    await expect(saveDriveTree(tree, file.id)).rejects.toThrow(/does not belong/);
+  });
+
+  it.each([404, 403, 'digest', 'mime', 'decode', 'dimensions'])(
+    'restores an incomplete copy for individual photo failure %s',
+    async (failure) => {
+      const remote = fakeDrive(),
+        tree = family([1, 1, 2]);
+      const file = await saveDriveTree(tree),
+        doc = remote.document(file.id),
+        image = remote.files.get(doc.portraits[0].imageFileId)!;
+      if (typeof failure === 'number')
+        remote.hooks.before = async (call) => {
+          if (call.url.pathname.endsWith(image.id) && call.url.searchParams.get('alt') === 'media')
+            return new Response('', { status: failure });
+        };
+      else if (failure === 'digest') image.content = jpeg(9);
+      else if (failure === 'mime') image.mimeType = 'image/png';
+      else if (failure === 'decode')
+        vi.mocked(createImageBitmap).mockRejectedValueOnce(Error('bad JPEG'));
+      else
+        vi.mocked(createImageBitmap).mockResolvedValueOnce({
+          width: 513,
+          height: 200,
+          close: vi.fn(),
+        } as unknown as ImageBitmap);
+      const result = await openDriveTree(file.id);
+      expect(result.restoreWarnings.map((w) => w.personId)).toEqual(
+        tree.people.slice(0, 2).map((p) => p.id),
+      );
+      expect(result.tree.people.map((p) => p.portrait)).toEqual([null, null, portrait(2)]);
+    },
+  );
+
+  it.each([401, 500, 'network', 'body'])(
+    'stops restore for authentication/network failure %s',
+    async (failure) => {
+      const remote = fakeDrive(),
+        tree = family([1]);
+      const file = await saveDriveTree(tree),
+        imageId = remote.document(file.id).portraits[0].imageFileId;
+      remote.hooks.before = async (call) => {
+        if (!call.url.pathname.endsWith(imageId) || call.url.searchParams.get('alt') !== 'media')
+          return;
+        if (failure === 'network') throw Error('offline');
+        if (failure === 'body') {
+          const response = new Response('');
+          vi.spyOn(response, 'arrayBuffer').mockRejectedValue(Error('stream failed'));
+          return response;
+        }
+        return new Response('', { status: failure as number });
+      };
+      await expect(openDriveTree(file.id)).rejects.toThrow();
+    },
+  );
+
+  it('renews authentication once during a photo download', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    let rejected = false;
+    remote.hooks.before = async (call) => {
+      if (
+        !rejected &&
+        call.url.searchParams.get('alt') === 'media' &&
+        call.url.pathname.endsWith(remote.document(file.id).portraits[0].imageFileId)
+      ) {
+        rejected = true;
+        return new Response('', { status: 401 });
+      }
+    };
+    expect((await openDriveTree(file.id)).restoreWarnings).toEqual([]);
+    expect(driveAccessToken).toHaveBeenCalledWith(true);
+    vi.mocked(driveAccessToken).mockRejectedValueOnce(Error('renewal failed'));
+    await expect(openDriveTree(file.id)).rejects.toThrow(/renewal failed/);
+  });
+
+  it.each(['version', 'backupId', 'photoFolderId', 'personId', 'duplicate', 'digest', 'embedded'])(
+    'rejects invalid document %s before photo requests',
+    async (field) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1])),
+        doc = remote.document(file.id);
+      if (field === 'version') doc.version = 9 as 1;
+      if (field === 'backupId') doc.backupId = 'other-backup';
+      if (field === 'photoFolderId') doc.photoFolderId = '../foreign';
+      if (field === 'personId') doc.portraits[0].personId = 'unknown';
+      if (field === 'duplicate') doc.portraits.push(doc.portraits[0]);
+      if (field === 'digest') doc.portraits[0].digest = 'bad';
+      if (field === 'embedded') doc.tree.people[0].portrait = portrait();
+      remote.setDocument(file.id, doc);
+      const start = remote.calls.length;
+      await expect(openDriveTree(file.id)).rejects.toThrow(/Invalid/);
+      expect(remote.calls.slice(start)).toHaveLength(1);
+    },
+  );
+
+  it('rejects invalid local data before any Drive requests and explains portable import', async () => {
+    const remote = fakeDrive();
+    await expect(saveDriveTree({ ...family(), homePersonId: 'missing' })).rejects.toThrow(
       /home person/,
     );
-    expect(fetchMock).not.toHaveBeenCalled();
-    await drive.authorizeDrive();
-    expect(await drive.openDriveTree('legacy-file')).toEqual({
-      ...legacy,
-      version: 2,
-      homePersonId: null,
-    });
+    const tree = family();
+    tree.people[0].died = { precision: 'year', year: 1800 };
+    tree.people[0].born = { precision: 'year', year: 1900 };
+    await expect(saveDriveTree(tree)).rejects.toThrow(/before birth/);
+    tree.people[0].born = { precision: 'unknown' };
+    tree.people[0].portrait = 'data:image/png;base64,AAAA';
+    await expect(saveDriveTree(tree)).rejects.toThrow(/processed JPEG/);
+    expect(remote.calls).toHaveLength(0);
+    const file = await saveDriveTree(family([]));
+    expect(() => validateTree(remote.document(file.id))).toThrow(/Open from Drive/);
   });
-  it('rejects invalid life dates before a Drive upload', async () => {
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    const person = {
-      ...makePerson(),
-      born: { precision: 'year' as const, year: 1987 },
-      died: { precision: 'year' as const, year: 1980 },
+
+  it('limits transfers to three and serializes saves while capturing each snapshot', async () => {
+    const remote = fakeDrive(),
+      gate = deferred(),
+      reached = deferred();
+    let active = 0,
+      maximum = 0;
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'POST' && call.meta?.mimeType === 'image/jpeg') {
+        maximum = Math.max(maximum, ++active);
+        if (active === 3) reached.resolve();
+        await gate.promise;
+        --active;
+      }
     };
-    await expect(drive.saveDriveTree({ ...makeTree(), people: [person] })).rejects.toThrow(
-      /before birth/,
+    const tree = family([1, 2, 3, 4, 5]);
+    const first = saveDriveTree(tree);
+    await reached.promise;
+    const second = saveDriveTree(tree);
+    tree.name = 'Edited during transfer';
+    tree.people[0].portrait = null;
+    const generatedBeforeRelease = remote.calls.filter((c) =>
+      c.url.pathname.endsWith('/generateIds'),
+    ).length;
+    gate.resolve();
+    const [a, b] = await Promise.all([first, second]);
+    expect(generatedBeforeRelease).toBe(6);
+    expect(maximum).toBe(3);
+    expect(remote.document(a.id).tree.name).toBe('Family');
+    expect(remote.document(b.id).tree.name).toBe('Family');
+    expect(remote.document(b.id).portraits).toHaveLength(5);
+    const firstCommit = remote.calls.findIndex(
+      (c) => c.meta?.id === a.id && c.meta?.mimeType === 'application/json',
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    const secondCreate = remote.calls.findIndex((c) => c.meta?.appProperties?.backupId === b.id);
+    expect(secondCreate).toBeGreaterThan(firstCommit);
   });
-  it('requests drive.file and creates, lists, opens, and replaces a tree', async () => {
-    const consent = installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const person = makePerson('Home');
-    const tree = {
-      ...makeTree('Test family'),
-      people: [person],
-      homePersonId: person.id,
+});
+
+describe('Drive picker', () => {
+  it('lists only tree documents in genealogical3 with explicit app/type tags', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family());
+    expect((await listDriveTrees()).map((f) => f.id)).toEqual([file.id]);
+    const query = remote.calls.at(-1)!.url.searchParams.get('q')!;
+    expect(query).toContain("mimeType = 'application/json'");
+    expect(query).toContain("key='kind' and value='tree'");
+    expect(query).toContain("key='app' and value='GENEalogical3'");
+  });
+  it('does not create a folder for an empty picker', async () => {
+    const remote = fakeDrive();
+    expect(await listDriveTrees()).toEqual([]);
+    expect(remote.calls).toHaveLength(1);
+    expect(remote.files.size).toBe(0);
+  });
+  it('paginates folder lookup and tree inventory, and propagates later page failures', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    let folderPages = 0,
+      treePages = 0;
+    remote.hooks.before = async (call) => {
+      if (call.url.pathname !== '/drive/v3/files') return;
+      if (call.url.searchParams.get('orderBy') === 'createdTime' && folderPages++ === 0)
+        return new Response(JSON.stringify({ files: [], nextPageToken: 'folder-next' }));
+      if (call.url.searchParams.get('orderBy') === 'modifiedTime desc') {
+        if (treePages++ === 0)
+          return new Response(
+            JSON.stringify({ files: [remote.files.get(file.id)], nextPageToken: 'page 2 +/&?' }),
+          );
+        expect(call.url.searchParams.get('pageToken')).toBe('page 2 +/&?');
+        return new Response(JSON.stringify({ files: [] }));
+      }
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'folder-1' }), { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: 'file-1',
-            name: 'Test family.genealogical3.json',
-            modifiedTime: '2026-01-01T00:00:00Z',
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            files: [
-              {
-                id: 'file-1',
-                name: 'Test family.genealogical3.json',
-                modifiedTime: '2026-01-01T00:00:00Z',
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify(tree), { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            id: 'file-1',
-            name: 'Test family.genealogical3.json',
-          }),
-          { status: 200 },
-        ),
-      );
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    expect(consent).toHaveBeenCalled();
-    expect(await drive.saveDriveTree(tree)).toMatchObject({ id: 'file-1' });
-    const folderQuery = new URL(String(fetchMock.mock.calls[0][0])).searchParams;
-    expect(folderQuery.get('q')).toContain("name = 'genealogical3'");
-    expect(folderQuery.get('q')).toContain("mimeType = 'application/vnd.google-apps.folder'");
-    expect(folderQuery.get('q')).toContain("'root' in parents");
-    expect(folderQuery.get('q')).toContain('trashed = false');
-    expect(folderQuery.get('orderBy')).toBe('createdTime');
-    expect(folderQuery.get('pageSize')).toBe('1');
-    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('POST');
-    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toMatchObject({
-      name: 'genealogical3',
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: ['root'],
+    expect(await listDriveTrees()).toHaveLength(1);
+    expect(folderPages).toBe(2);
+    expect(treePages).toBe(2);
+    treePages = 0;
+    remote.hooks.before = async (call) => {
+      if (call.url.searchParams.get('orderBy') === 'modifiedTime desc')
+        return treePages++ === 0
+          ? new Response(JSON.stringify({ nextPageToken: 'next' }))
+          : new Response('', { status: 403 });
+    };
+    await expect(listDriveTrees()).rejects.toThrow(/403/);
+  });
+  it('preserves legacy portable reads without migrating a legacy backup on save', async () => {
+    const tree = makeTree();
+    const remote = fakeDrive();
+    remote.files.set('legacy', {
+      id: 'legacy',
+      name: 'Legacy',
+      modifiedTime: '',
+      mimeType: 'application/json',
+      parents: [],
+      appProperties: { app: 'GENEalogical3', format: 'tree-v1' },
+      content: new TextEncoder().encode(JSON.stringify(tree)),
     });
-    expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe('POST');
-    expect(String((fetchMock.mock.calls[2][1] as RequestInit).body)).toContain('GENEalogical3');
-    expect(String((fetchMock.mock.calls[2][1] as RequestInit).body)).toContain(
-      '"parents":["folder-1"]',
-    );
-    expect(String((fetchMock.mock.calls[2][1] as RequestInit).body)).toContain(
-      `"homePersonId":"${person.id}"`,
-    );
-    expect(await drive.listDriveTrees()).toHaveLength(1);
-    expect(await drive.openDriveTree('file-1')).toEqual(tree);
-    await drive.saveDriveTree(tree, 'file-1');
-    expect((fetchMock.mock.calls[6][1] as RequestInit).method).toBe('PATCH');
-    expect(String((fetchMock.mock.calls[6][1] as RequestInit).body)).not.toContain('"parents"');
-    expect(fetchMock).toHaveBeenCalledTimes(7);
-  });
-  it('looks up the folder again for each new tree or copy and reuses the oldest match', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
-      if (new URL(url).pathname === '/drive/v3/files') {
-        expect(options?.method).toBeUndefined();
-        expect(new URL(url).searchParams.get('orderBy')).toBe('createdTime');
-        return Promise.resolve(new Response(JSON.stringify({ files: [{ id: 'oldest-folder' }] })));
-      }
-      expect(options?.method).toBe('POST');
-      expect(String(options?.body)).toContain('"parents":["oldest-folder"]');
-      return Promise.resolve(
-        new Response(JSON.stringify({ id: `file-${fetchMock.mock.calls.length}` })),
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    const tree = makeTree('Original');
-    const first = await drive.saveDriveTree(tree);
-    const copy = await drive.saveDriveTree(tree);
-    expect(first.id).not.toBe(copy.id);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-  });
-  it('updates an existing file directly without changing its location', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ id: 'legacy-file' })));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    await drive.saveDriveTree(makeTree(), 'legacy-file');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(new URL(url).pathname).toBe('/upload/drive/v3/files/legacy-file');
-    expect(options.method).toBe('PATCH');
-    expect(String(options.body)).not.toContain('"parents"');
-    expect(new URL(url).searchParams.has('addParents')).toBe(false);
-    expect(new URL(url).searchParams.has('removeParents')).toBe(false);
-  });
-  it('lists only app trees directly in the upload folder while excluding folders', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const files = [
-      {
-        id: 'folder-tree',
-        name: 'Family.genealogical3.json',
-        modifiedTime: '2026-01-01T00:00:00Z',
-      },
-      { id: 'new-file', name: 'New.genealogical3.json', modifiedTime: '2026-10-11T00:00:00Z' },
-    ];
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'oldest-folder' }] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files })));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    expect(await drive.listDriveTrees()).toEqual(files);
-    const folderQuery = new URL(String(fetchMock.mock.calls[0][0])).searchParams;
-    expect(folderQuery.get('q')).toContain("name = 'genealogical3'");
-    expect(folderQuery.get('q')).toContain("'root' in parents");
-    expect(folderQuery.get('orderBy')).toBe('createdTime');
-    const query = new URL(String(fetchMock.mock.calls[1][0])).searchParams.get('q');
-    expect(query).toContain("mimeType != 'application/vnd.google-apps.folder'");
-    expect(query).toContain("appProperties has { key='app' and value='GENEalogical3' }");
-    expect(query).toContain("'oldest-folder' in parents");
-    expect(query).toContain('trashed = false');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.every(([, options]) => !options?.method)).toBe(true);
-  });
-  it('returns an empty tree list without creating a missing folder', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ files: [] })));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    expect(await drive.listDriveTrees()).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
-  });
-  it.each([100, 2, 0, undefined])(
-    'fetches every tree page when the first page contains %s files',
-    async (firstPageSize) => {
-      installAuthorization({ access_token: 'token', expires_in: 3600 });
-      const firstPage = Array.from({ length: firstPageSize ?? 0 }, (_, index) => ({
-        id: `file-${index}`,
-        name: `Family ${index}.genealogical3.json`,
-        modifiedTime: '2026-10-11T00:00:00Z',
-      }));
-      const older = {
-        id: 'older',
-        name: 'Older.genealogical3.json',
-        modifiedTime: '2026-10-10T00:00:00Z',
-      };
-      const oldest = {
-        id: 'oldest',
-        name: 'Oldest.genealogical3.json',
-        modifiedTime: '2026-10-09T00:00:00Z',
-      };
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              ...(firstPageSize === undefined ? {} : { files: firstPage }),
-              nextPageToken: 'page 2 +/&?',
-            }),
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(JSON.stringify({ files: [older], nextPageToken: 'page-3' })),
-        )
-        .mockResolvedValueOnce(new Response(JSON.stringify({ files: [oldest] })));
-      vi.stubGlobal('fetch', fetchMock);
-      const drive = await import('./drive');
-      await drive.authorizeDrive();
-      expect(await drive.listDriveTrees()).toEqual([...firstPage, older, oldest]);
-      expect(fetchMock).toHaveBeenCalledTimes(4);
-      const queries = fetchMock.mock.calls
-        .slice(1)
-        .map(([url]) => new URL(String(url)).searchParams);
-      expect(queries.map((query) => query.get('pageToken'))).toEqual([
-        null,
-        'page 2 +/&?',
-        'page-3',
-      ]);
-      for (const query of queries) {
-        expect(query.get('q')).toBe(queries[0].get('q'));
-        expect(query.get('q')).toContain("'folder-1' in parents");
-        expect(query.get('pageSize')).toBe('100');
-        expect(query.get('orderBy')).toBe('modifiedTime desc');
-        expect(query.get('fields')).toBe('nextPageToken,files(id,name,modifiedTime)');
-      }
-    },
-  );
-  it('reports a later tree page failure instead of returning an incomplete list', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            files: [
-              {
-                id: 'file-1',
-                name: 'Family.genealogical3.json',
-                modifiedTime: '2026-10-11T00:00:00Z',
-              },
-            ],
-            nextPageToken: 'page-2',
-          }),
-        ),
-      )
-      .mockResolvedValueOnce(new Response('', { status: 403 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    await expect(drive.listDriveTrees()).rejects.toThrow(/Google Drive request failed \(403\)/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-  it('reports folder lookup failure without falling back to searching all of Drive', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 403 }));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    await expect(drive.listDriveTrees()).rejects.toThrow(/Google Drive request failed \(403\)/);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-  it('continues an empty folder search page before deciding to create a folder', async () => {
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ files: [], nextPageToken: 'next page' })),
-      )
-      .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'file-1' })));
-    vi.stubGlobal('fetch', fetchMock);
-    const drive = await import('./drive');
-    await drive.authorizeDrive();
-    await drive.saveDriveTree(makeTree());
-    expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.get('pageToken')).toBe(
-      'next page',
-    );
-    expect(String((fetchMock.mock.calls[2][1] as RequestInit).body)).toContain(
-      '"parents":["folder-1"]',
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-  it.each(['lookup', 'creation'] as const)(
-    'stops the upload when folder %s fails',
-    async (stage) => {
-      installAuthorization({ access_token: 'token', expires_in: 3600 });
-      const fetchMock = vi.fn();
-      if (stage === 'creation') {
-        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ files: [] })));
-      }
-      fetchMock.mockResolvedValueOnce(new Response('', { status: 403 }));
-      vi.stubGlobal('fetch', fetchMock);
-      const drive = await import('./drive');
-      await drive.authorizeDrive();
-      const tree = makeTree();
-      const original = structuredClone(tree);
-      await expect(drive.saveDriveTree(tree)).rejects.toThrow(
-        /Google Drive request failed \(403\).*local tree is unchanged/,
-      );
-      expect(tree).toEqual(original);
-      expect(fetchMock).toHaveBeenCalledTimes(stage === 'creation' ? 2 : 1);
-      expect(fetchMock.mock.calls.every(([url]) => !String(url).includes('/upload/'))).toBe(true);
-    },
-  );
-  it.each([undefined, '', 42])(
-    'stops the upload when folder creation returns an invalid ID (%s)',
-    async (id) => {
-      installAuthorization({ access_token: 'token', expires_in: 3600 });
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] })))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ id })));
-      vi.stubGlobal('fetch', fetchMock);
-      const drive = await import('./drive');
-      await drive.authorizeDrive();
-      await expect(drive.saveDriveTree(makeTree())).rejects.toThrow(
-        /folder identifier.*local tree is unchanged/,
-      );
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    },
-  );
-  it('keeps local work independent of denied consent and network failures', async () => {
-    installAuthorization({ error: 'access_denied' });
-    const drive = await import('./drive');
-    await expect(drive.authorizeDrive()).rejects.toThrow(/canceled or denied/);
-    drive.disconnectDrive();
-    vi.resetModules();
-    installAuthorization({ access_token: 'token', expires_in: 3600 });
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Error('offline')));
-    const onlineDrive = await import('./drive');
-    await onlineDrive.authorizeDrive();
-    await expect(onlineDrive.saveDriveTree(makeTree())).rejects.toThrow(/local tree is unchanged/);
+    expect((await openDriveTree('legacy')).tree).toEqual(tree);
+    await expect(saveDriveTree(tree, 'legacy')).rejects.toThrow(/Save a copy/);
   });
 });

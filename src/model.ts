@@ -355,6 +355,10 @@ const isDate = (v: unknown): v is DateValue =>
       !Number.isNaN(Date.parse(v.value)) &&
       new Date(`${v.value}T00:00:00Z`).toISOString().slice(0, 10) === v.value));
 export function validateTree(input: unknown): Tree {
+  if (isObj(input) && input.format === 'genealogical3-drive')
+    throw Error(
+      'This Drive document stores photos separately. Use Open from Drive to retrieve its photos, then export a portable JSON backup.',
+    );
   if (!isObj(input) || (input.version !== 1 && input.version !== 2))
     throw Error('Unsupported tree file version.');
   if (
