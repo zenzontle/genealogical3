@@ -266,7 +266,6 @@ export async function handleDriveAuth(
     }
     if (action === 'callback') {
       const state = unseal(jar[stateCookie], stateCookie, config) as OAuthState | null;
-      setCookie(response, stateCookie, '', 0, config);
       if (
         !state ||
         !Number.isFinite(state.expiresAt) ||
@@ -279,6 +278,8 @@ export async function handleDriveAuth(
           'Google authorization expired or could not be verified. Please reconnect.',
         );
       }
+      // A stale popup must not consume a newer popup's pending authorization.
+      setCookie(response, stateCookie, '', 0, config);
       if (url.searchParams.has('error'))
         throw new AuthError(400, 'Google Drive authorization was canceled or denied.');
       const code = url.searchParams.get('code');

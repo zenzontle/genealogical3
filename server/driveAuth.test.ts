@@ -211,6 +211,39 @@ describe('remembered Drive authentication HTTP endpoints', () => {
     expect(parameters.get('refresh_token')).toBe('new-refresh');
   });
 
+  it.each(['code=old-code', 'error=access_denied'])(
+    'preserves the newer popup state when the earlier popup returns %s',
+    async (result) => {
+      const earlier = await begin();
+      const newer = await begin();
+      const pendingState = jar.get('drive_oauth_state');
+      const staleCallback = await request(
+        `callback?state=${earlier.searchParams.get('state')}&${result}`,
+        'GET',
+      );
+      expect(staleCallback.status).toBe(400);
+      expect(staleCallback.headers.getSetCookie()).toEqual([]);
+      expect(jar.get('drive_oauth_state')).toBe(pendingState);
+      expect(google).not.toHaveBeenCalled();
+      expect(
+        (await request(`callback?state=${newer.searchParams.get('state')}&code=new-code`, 'GET'))
+          .status,
+      ).toBe(200);
+      expect(jar.has('drive_oauth_state')).toBe(false);
+      expect(google).toHaveBeenCalledOnce();
+      expect((await request('token')).status).toBe(200);
+    },
+  );
+
+  it('consumes matching popup state even when authorization is denied', async () => {
+    const url = await begin();
+    const state = url.searchParams.get('state');
+    expect((await request(`callback?state=${state}&error=access_denied`, 'GET')).status).toBe(400);
+    expect(jar.has('drive_oauth_state')).toBe(false);
+    expect((await request(`callback?state=${state}&code=code`, 'GET')).status).toBe(400);
+    expect(google).not.toHaveBeenCalled();
+  });
+
   it('creates a new browser binding after disconnect and rejects the old authorization state', async () => {
     await connect();
     const originalBinding = jar.get('drive_binding');
