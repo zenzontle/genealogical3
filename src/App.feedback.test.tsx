@@ -4,11 +4,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { makePerson, makeTree, type Tree } from './model';
-import { deleteTree, getTree, listTrees, saveTree } from './storage';
+import { deleteTree, getTree, listTrees, saveTree, getDriveLink, saveDriveLink } from './storage';
 import { exportPng, portraitData } from './media';
 import type { PersonNode } from './PersonCard';
 import { mockDialogs } from './dialogTestSetup';
-import { authorizeDrive, disconnectDrive, restoreDrive, saveDriveTree } from './drive';
+import {
+  authorizeDrive,
+  disconnectDrive,
+  restoreDrive,
+  saveDriveTree,
+  openDriveTree,
+  listDriveTrees,
+  type DriveSaveResult,
+} from './drive';
 
 const driveState = vi.hoisted(() => ({ configured: false }));
 
@@ -72,6 +80,8 @@ beforeEach(() => {
   vi.mocked(restoreDrive).mockResolvedValue(undefined);
   vi.mocked(authorizeDrive).mockResolvedValue(undefined);
   vi.mocked(disconnectDrive).mockResolvedValue(undefined);
+  vi.mocked(getDriveLink).mockReset().mockResolvedValue(undefined);
+  vi.mocked(saveDriveLink).mockReset().mockResolvedValue('link');
   mockDialogs();
   const alex = makePerson('Alex'),
     taylor = makePerson('Taylor');
@@ -138,13 +148,14 @@ describe('local feedback integration', () => {
       id: 'file',
       name: 'Family.json',
       modifiedTime: '2026-10-11',
+      cleanupWarnings: [],
     });
     fireEvent.click(save);
     expect(saveDriveTree).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
     await act(async () => authorize());
     await screen.findByText('Saved to Google Drive as Family.json.');
-    expect(saveDriveTree).toHaveBeenCalledWith(original, undefined);
+    expect(saveDriveTree).toHaveBeenCalledWith(original, undefined, expect.any(Function));
   });
 
   it('reports disconnect only after server success and keeps failures retryable', async () => {
@@ -368,5 +379,128 @@ describe('local feedback integration', () => {
     expect(vi.mocked(exportPng).mock.calls[1][0].people[0].portrait).toBe(
       'data:image/jpeg;base64,photo',
     );
+  });
+});
+
+// Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
+describe('Drive portrait feedback and associations', () => {
+  it('associates a pending save with its captured tree after switching during authorization and transfer', async () => {
+    driveState.configured = true;
+    const other = { ...makeTree('Other family'), people: [makePerson('Morgan')] };
+    records.set(other.id, other);
+    let authorize!: () => void;
+    let finish!: (result: DriveSaveResult) => void;
+    vi.mocked(authorizeDrive).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          authorize = resolve;
+        }),
+    );
+    vi.mocked(saveDriveTree).mockImplementationOnce((_tree, _id, progress) => {
+      progress?.({ direction: 'upload', completed: 1, total: 2 });
+      return new Promise<DriveSaveResult>((resolve) => {
+        finish = resolve;
+      });
+    });
+    vi.mocked(getDriveLink).mockImplementation(async (id) => ({
+      treeId: id,
+      id: id === original.id ? 'original-drive' : 'other-drive',
+      name: `${id}.json`,
+      modifiedTime: '',
+    }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Other family' }));
+    await screen.findByRole('button', { name: 'Select Morgan' });
+    await act(async () => authorize());
+    await screen.findByText('Uploading photos: 1 of 2');
+    expect(saveDriveTree).toHaveBeenCalledWith(original, 'original-drive', expect.any(Function));
+    // Edits to the active tree do not change the already captured snapshot.
+    await act(async () =>
+      finish({
+        id: 'original-drive',
+        name: 'Original.json',
+        modifiedTime: '',
+        cleanupWarnings: ['Photo cleanup could not be completed.'],
+      }),
+    );
+    await screen.findByText(/Saved to Google Drive as Original.json.*Photo cleanup/);
+    expect(saveDriveLink).toHaveBeenCalledWith(
+      expect.objectContaining({ treeId: original.id, id: 'original-drive' }),
+    );
+    expect(screen.getByText('Drive not saved')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Select Morgan' })).toBeTruthy();
+  });
+
+  it('persists incomplete restore warnings through reload, blocks overwrite, and confirms an independent copy', async () => {
+    driveState.configured = true;
+    const file = { id: 'source-drive', name: 'Family.json', modifiedTime: '' };
+    const warnings = [{ personId: original.people[0].id, name: 'Alex' }];
+    const links = new Map<string, Awaited<ReturnType<typeof getDriveLink>>>();
+    vi.mocked(getDriveLink).mockImplementation(async (id) => links.get(id));
+    vi.mocked(saveDriveLink).mockImplementation(async (link) => {
+      links.set(link.treeId, link);
+      return link.treeId;
+    });
+    vi.mocked(listDriveTrees).mockResolvedValueOnce([file]);
+    vi.mocked(openDriveTree).mockResolvedValueOnce({ tree: original, restoreWarnings: warnings });
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Open from Google Drive' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Family.json/ }));
+    await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
+    const copyId = [...links.keys()][0];
+    expect(copyId).not.toBe(original.id);
+    expect(links.get(copyId)?.restoreWarnings).toEqual(warnings);
+    cleanup();
+    render(<App />);
+    const opens = await screen.findAllByRole('button', { name: 'Open Family' });
+    fireEvent.click(opens[0]);
+    await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
+    const before = vi.mocked(saveDriveTree).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+    await screen.findByText(/This local copy has missing portraits/);
+    expect(saveDriveTree).toHaveBeenCalledTimes(before);
+    const confirm = vi
+      .spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('Missing portraits will be omitted'),
+    );
+    expect(saveDriveTree).toHaveBeenCalledTimes(before);
+    vi.mocked(saveDriveTree).mockResolvedValueOnce({
+      ...file,
+      id: 'independent-drive',
+      cleanupWarnings: [],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
+    await screen.findByText('Saved to Google Drive as Family.json.');
+    expect(vi.mocked(saveDriveTree).mock.calls.at(-1)?.[1]).toBeUndefined();
+    expect(links.get(copyId)?.id).toBe('independent-drive');
+    expect(links.get(copyId)?.restoreWarnings).toEqual([]);
+    expect(screen.queryByText(/Incomplete Drive copy:/)).toBeNull();
+  });
+
+  it('does not persist an unprotected local copy when its incomplete association cannot be stored', async () => {
+    driveState.configured = true;
+    const file = { id: 'source-drive', name: 'Family.json', modifiedTime: '' };
+    vi.mocked(listDriveTrees).mockResolvedValueOnce([file]);
+    vi.mocked(openDriveTree).mockResolvedValueOnce({
+      tree: original,
+      restoreWarnings: [{ personId: original.people[0].id, name: 'Alex' }],
+    });
+    vi.mocked(saveDriveLink).mockRejectedValueOnce(Error('Storage unavailable'));
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Open from Google Drive' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Family.json/ }));
+    await screen.findByText('Storage unavailable');
+    expect(records.size).toBe(1);
+    expect(saveTree).not.toHaveBeenCalled();
   });
 });

@@ -44,9 +44,17 @@ export function DriveActionsDialog({
         {configured ? (
           <>
             <p>
-              New trees and copies are saved in a genealogical3 folder in My Drive. Existing files
-              stay in their current folders when updated. Open from Drive searches only the
-              genealogical3 folder.
+              Tree documents are saved in genealogical3 in My Drive, each with its own sibling photo
+              folder. Portraits are processed once as JPEG (quality 0.82), at most 512 pixels on the
+              longest side, without upscaling. Later saves upload only new or changed photos.
+            </p>
+            <p>
+              Use Open from Drive to retrieve the document and its private photos. Download JSON
+              from the editor for a portable backup with embedded portraits. Save a copy creates
+              independent photo files. After a successful save, replaced or removed photos go to
+              Drive Trash; older Drive revisions may then have missing photos. Keep each backup's
+              photo folder with its document. Editing across devices at the same time is
+              unsupported.
             </p>
             <div className="drive-action-list">
               <button

@@ -82,6 +82,8 @@ import {
   saveDriveTree,
   restoreDrive,
   type DriveFile,
+  type RestoreWarning,
+  type PhotoProgress,
 } from './drive';
 
 const nodeTypes = { person: PersonCard };
@@ -114,6 +116,9 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
+  const [restoreWarnings, setRestoreWarnings] = useState<RestoreWarning[]>([]);
+  const [photoProgress, setPhotoProgress] = useState<PhotoProgress | null>(null);
+  const driveOperationBusy = useRef(false);
   const [driveSavedAt, setDriveSavedAt] = useState('');
   const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
@@ -268,6 +273,7 @@ export default function App() {
       setPendingCenter(null);
       const link = draft ? undefined : await getDriveLink(id);
       setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
+      setRestoreWarnings(link?.restoreWarnings || []);
       setDriveSavedAt('');
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
@@ -544,75 +550,115 @@ export default function App() {
     }
   };
   const doDrive = async (action: 'save' | 'copy' | 'open') => {
-    if (!driveReady || driveBusy) return;
+    if (!driveReady || driveOperationBusy.current) return;
     if (!treeRef.current && action !== 'open') return;
-    const actionTreeId = treeRef.current?.id;
+    const snapshot = treeRef.current ? cloneTree(treeRef.current) : null;
+    const target = driveFile;
+    const warnings = restoreWarnings;
+    if (action === 'save' && warnings.length) {
+      setNotice(
+        'This local copy has missing portraits. Open the original from Drive again or use Save a copy.',
+      );
+      return;
+    }
+    if (
+      action === 'copy' &&
+      warnings.length &&
+      !window.confirm(
+        'This copy is incomplete. Missing portraits will be omitted from the new backup. Save a copy?',
+      )
+    )
+      return;
+    if (
+      action === 'save' &&
+      target &&
+      !window.confirm(`Replace "${target.name}" in Google Drive with the current tree?`)
+    )
+      return;
+    driveOperationBusy.current = true;
     setDriveBusy(true);
+    setPhotoProgress(null);
     try {
       await authorizeDrive();
       if (action === 'open') {
         setDriveFiles(await listDriveTrees());
         return;
       }
-      if (treeRef.current?.id !== actionTreeId) {
-        throw Error(
-          'The selected tree changed during Google authorization. Choose Save to Drive again.',
+      const file = await saveDriveTree(
+        snapshot!,
+        action === 'save' ? target?.id : undefined,
+        setPhotoProgress,
+      );
+      if (treeRef.current?.id === snapshot!.id) {
+        setDriveFile(file);
+        setRestoreWarnings([]);
+        setDriveSavedAt(
+          new Date().toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          }),
         );
       }
-      if (
-        action === 'save' &&
-        driveFile &&
-        !window.confirm(`Replace "${driveFile.name}" in Google Drive with the current tree?`)
-      )
-        return;
-      const file = await saveDriveTree(
-        treeRef.current!,
-        action === 'save' ? driveFile?.id : undefined,
-      );
-      setDriveFile(file);
-      setDriveSavedAt(
-        new Date().toLocaleTimeString([], {
-          hour: 'numeric',
-          minute: '2-digit',
-        }),
-      );
       try {
-        await saveDriveLink({ treeId: treeRef.current!.id, ...file });
-        setNotice(`Saved to Google Drive as ${file.name}.`);
+        await saveDriveLink({
+          treeId: snapshot!.id,
+          id: file.id,
+          name: file.name,
+          modifiedTime: file.modifiedTime,
+          restoreWarnings: [],
+        });
+        setNotice([`Saved to Google Drive as ${file.name}.`, ...file.cleanupWarnings].join(' '));
       } catch {
         setNotice(
-          `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Use Open from Drive next time.`,
+          [
+            `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Use Open from Drive next time.`,
+            ...file.cleanupWarnings,
+          ].join(' '),
         );
       }
     } catch (error) {
       showError(error);
     } finally {
+      driveOperationBusy.current = false;
       setDriveBusy(false);
+      setPhotoProgress(null);
     }
   };
   const loadDrive = async (file: DriveFile) => {
+    if (driveOperationBusy.current) return;
+    driveOperationBusy.current = true;
     setDriveBusy(true);
+    setPhotoProgress(null);
     try {
       await authorizeDrive();
-      const imported = await openDriveTree(file.id);
+      const result = await openDriveTree(file.id, setPhotoProgress);
+      const imported = result.tree;
       const copy = {
         ...imported,
         id: uid(),
         name: imported.name,
         updatedAt: Date.now(),
       };
+      // Persist the safety flag before exposing the local copy in the library.
+      await saveDriveLink({ treeId: copy.id, ...file, restoreWarnings: result.restoreWarnings });
       await saveTree(copy);
-      await saveDriveLink({ treeId: copy.id, ...file });
       await refreshLibrary();
       await openTree(copy.id);
       setDriveFile(file);
+      setRestoreWarnings(result.restoreWarnings);
       setDriveSavedAt('');
       setDriveFiles(null);
-      setNotice('Opened a local working copy. Save to Drive when ready.');
+      setNotice(
+        result.restoreWarnings.length
+          ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
+          : 'Opened a local working copy. Save to Drive when ready.',
+      );
     } catch (error) {
       showError(error);
     } finally {
+      driveOperationBusy.current = false;
       setDriveBusy(false);
+      setPhotoProgress(null);
     }
   };
   const rename = (item: Tree) =>
@@ -869,6 +915,7 @@ export default function App() {
                       : 'Set VITE_GOOGLE_CLIENT_ID to enable Google Drive'
                   }
                   onClick={() => doDrive('save')}
+                  aria-disabled={restoreWarnings.length > 0}
                 >
                   Save to Drive
                 </button>
@@ -938,6 +985,16 @@ export default function App() {
               </button>
             </div>
           </header>
+          {restoreWarnings.length > 0 && (
+            <div className="export-feedback" role="alert">
+              <p>
+                Incomplete Drive copy: portraits could not be restored for{' '}
+                {restoreWarnings.map((warning) => warning.name || warning.personId).join(', ')}.{' '}
+                Overwriting the original backup is blocked. Open it from Drive again to retry, or
+                Save a copy to omit missing portraits.
+              </p>
+            </div>
+          )}
           {exports.feedback.status !== 'idle' && (
             <div className="export-feedback">
               <OperationFeedback
@@ -1201,6 +1258,13 @@ export default function App() {
           <button aria-label="Dismiss message" onClick={() => setNotice('')}>
             <X size={16} />
           </button>
+        </div>
+      )}
+      {driveBusy && (
+        <div className="export-feedback" role="status" aria-live="polite">
+          {photoProgress
+            ? `${photoProgress.direction === 'upload' ? 'Uploading' : 'Downloading'} photos: ${photoProgress.completed} of ${photoProgress.total}`
+            : 'Connecting to Google Drive…'}
         </div>
       )}
       {driveActionsOpen && (

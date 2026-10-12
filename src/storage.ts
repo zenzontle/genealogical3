@@ -1,5 +1,6 @@
 import { assertValidLifeDates, duplicateTree, normalizeHomePerson, type Tree } from './model';
 import { normalizePersonNames } from './personNames';
+import type { RestoreWarning } from './drive';
 const DB = 'genealogical3';
 const STORE = 'trees';
 const LINKS = 'driveLinks';
@@ -8,6 +9,7 @@ export type DriveLink = {
   id: string;
   name: string;
   modifiedTime: string;
+  restoreWarnings?: RestoreWarning[];
 };
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
