@@ -39,7 +39,13 @@ export default defineConfig([
     rules: { 'react/no-multi-comp': 'error' },
   },
   {
-    files: ['eslint.config.js', 'vite.config.ts', 'scripts/**/*.{js,mjs,cjs}'],
+    files: [
+      'eslint.config.js',
+      'vite.config.ts',
+      'scripts/**/*.{js,mjs,cjs}',
+      'server/**/*.ts',
+      'api/**/*.ts',
+    ],
     languageOptions: { globals: globals.node },
   },
   prettier,

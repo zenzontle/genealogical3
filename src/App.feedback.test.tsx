@@ -8,6 +8,9 @@ import { deleteTree, getTree, listTrees, saveTree } from './storage';
 import { exportPng, portraitData } from './media';
 import type { PersonNode } from './PersonCard';
 import { mockDialogs } from './dialogTestSetup';
+import { authorizeDrive, disconnectDrive, restoreDrive, saveDriveTree } from './drive';
+
+const driveState = vi.hoisted(() => ({ configured: false }));
 
 vi.mock('./storage', () => ({
   listTrees: vi.fn(),
@@ -20,9 +23,12 @@ vi.mock('./storage', () => ({
   duplicateSavedTree: vi.fn(),
 }));
 vi.mock('./drive', () => ({
-  driveConfigured: false,
+  get driveConfigured() {
+    return driveState.configured;
+  },
   authorizeDrive: vi.fn(),
   disconnectDrive: vi.fn(),
+  restoreDrive: vi.fn(),
   listDriveTrees: vi.fn(),
   openDriveTree: vi.fn(),
   saveDriveTree: vi.fn(),
@@ -62,6 +68,10 @@ let original: Tree;
 let records: Map<string, Tree>;
 beforeEach(() => {
   vi.clearAllMocks();
+  driveState.configured = false;
+  vi.mocked(restoreDrive).mockResolvedValue(undefined);
+  vi.mocked(authorizeDrive).mockResolvedValue(undefined);
+  vi.mocked(disconnectDrive).mockResolvedValue(undefined);
   mockDialogs();
   const alex = makePerson('Alex'),
     taylor = makePerson('Taylor');
@@ -103,6 +113,70 @@ const openOriginal = async () => {
 };
 
 describe('local feedback integration', () => {
+  it('restores Drive before enabling saves and continues a pending save after authorization', async () => {
+    driveState.configured = true;
+    let restore!: () => void;
+    vi.mocked(restoreDrive).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          restore = resolve;
+        }),
+    );
+    render(<App />);
+    await openOriginal();
+    const save = screen.getByRole('button', { name: 'Save to Drive' });
+    expect(save).toHaveProperty('disabled', true);
+    await act(async () => restore());
+    let authorize!: () => void;
+    vi.mocked(authorizeDrive).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          authorize = resolve;
+        }),
+    );
+    vi.mocked(saveDriveTree).mockResolvedValueOnce({
+      id: 'file',
+      name: 'Family.json',
+      modifiedTime: '2026-10-11',
+    });
+    fireEvent.click(save);
+    expect(saveDriveTree).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+    await act(async () => authorize());
+    await screen.findByText('Saved to Google Drive as Family.json.');
+    expect(saveDriveTree).toHaveBeenCalledWith(original, undefined);
+  });
+
+  it('reports disconnect only after server success and keeps failures retryable', async () => {
+    driveState.configured = true;
+    render(<App />);
+    await openOriginal();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save to Drive' })).toHaveProperty(
+        'disabled',
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Drive' }));
+    vi.mocked(disconnectDrive).mockRejectedValueOnce(Error('Disconnect failed. Please retry.'));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Drive' }));
+    await screen.findByText('Disconnect failed. Please retry.');
+    expect(screen.queryByText(/Forgot Google Drive access/)).toBeNull();
+    let confirm!: () => void;
+    vi.mocked(disconnectDrive).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          confirm = resolve;
+        }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Drive' }));
+    expect(screen.queryByText(/Forgot Google Drive access/)).toBeNull();
+    await act(async () => confirm());
+    await screen.findByText(
+      'Forgot Google Drive access in this browser. Your local tree is still saved.',
+    );
+    expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+  });
   it('cancels tree deletion without changes and retains the tile after a failed delete', async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));

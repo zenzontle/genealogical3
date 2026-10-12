@@ -258,8 +258,8 @@ export function HomeScreen({
               </span>
               <h3>Save and share</h3>
               <p>
-                Your tree stays in this browser. Download a JSON backup or export a PNG to share
-                with family.
+                Your edits save in this browser. Download a JSON backup, export a PNG to share with
+                family, or choose Save to Drive for a cloud copy.
               </p>
             </div>
           </div>
@@ -326,16 +326,21 @@ export function HomeScreen({
                 <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
                   <Cloud size={28} aria-hidden="true" />
                   <h4>Outside this browser</h4>
-                  <p>Cloud copies are optional. Nothing uploads automatically.</p>
+                  <p>Cloud copies are optional. Trees upload only when you save to Drive.</p>
                   <ul>
                     <li>
                       <Cloud size={17} aria-hidden="true" />
                       <div>
                         <strong>Your Google Drive, if you use it</strong>
                         <p>
-                          Sign in with Google. Access is limited to files used with this app.
-                          Authorization stays in browser memory; Google stores any tree you choose
-                          to save.
+                          Connect Google Drive to save or open a tree. Access is limited to files
+                          used with this app. A secure cookie remembers this browser's connection
+                          for up to 30 days, including refreshes and browser restarts. Google may
+                          require you to reconnect sooner.
+                        </p>
+                        <p>
+                          Disconnect Drive forgets this browser's connection without deleting files
+                          or revoking Google's permission.
                         </p>
                       </div>
                     </li>
@@ -356,10 +361,11 @@ export function HomeScreen({
             <div className="privacy-server-note">
               <Server size={22} aria-hidden="true" />
               <div>
-                <h3>Our servers deliver the app. Your tree stays with you.</h3>
+                <h3>Your tree stays with you.</h3>
                 <p>
-                  Family details and Drive transfers aren't sent to a GENEalogical3 backend. We
-                  can't look up your tree or recover a lost local copy.
+                  Our servers deliver the app and renew your Google Drive access. Family details and
+                  tree files aren't sent to our servers. We can't look up your tree or recover a
+                  lost local copy.
                 </p>
               </div>
             </div>

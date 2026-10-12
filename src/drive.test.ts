@@ -11,37 +11,60 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function installGoogle(response: { access_token?: string; expires_in?: number; error?: string }) {
-  const requestAccessToken = vi.fn();
-  vi.stubGlobal('window', {
-    google: {
-      accounts: {
-        oauth2: {
-          initTokenClient: ({
-            callback,
-            scope,
-          }: {
-            scope: string;
-            callback: (result: {
-              access_token?: string;
-              expires_in?: number;
-              error?: string;
-            }) => void;
-          }) => {
-            expect(scope).toBe('https://www.googleapis.com/auth/drive.file');
-            requestAccessToken.mockImplementation(() => callback(response));
-            return { requestAccessToken };
-          },
-        },
-      },
-    },
+function installAuthorization(response: {
+  access_token?: string;
+  expires_in?: number;
+  error?: string;
+}) {
+  const authorizeDrive = vi.fn(async () => {
+    if (response.error || !response.access_token)
+      throw Error('Google Drive authorization was canceled or denied.');
   });
-  return requestAccessToken;
+  vi.doMock('./driveAuth', () => ({
+    driveConfigured: true,
+    authorizeDrive,
+    restoreDrive: vi.fn(),
+    disconnectDrive: vi.fn(),
+    driveAccessToken: vi.fn(async () => response.access_token || ''),
+  }));
+  return authorizeDrive;
 }
-
 describe('explicit Drive operations', () => {
+  it('renews access and retries a rejected Drive request once', async () => {
+    installAuthorization({ access_token: 'token' });
+    const { driveAccessToken } = await import('./driveAuth');
+    vi.mocked(driveAccessToken)
+      .mockResolvedValueOnce('old-token')
+      .mockResolvedValueOnce('renewed-token');
+    const tree = makeTree('Family');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(tree)));
+    vi.stubGlobal('fetch', fetchMock);
+    const drive = await import('./drive');
+    expect(await drive.openDriveTree('file')).toEqual(tree);
+    expect(driveAccessToken).toHaveBeenLastCalledWith(true);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer old-token');
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer renewed-token');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it('stops after a second Drive 401 and preserves renewal errors', async () => {
+    installAuthorization({ access_token: 'token' });
+    const fetchMock = vi.fn().mockImplementation(async () => new Response('', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const drive = await import('./drive');
+    await expect(drive.openDriveTree('file')).rejects.toThrow(/access expired/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const { driveAccessToken } = await import('./driveAuth');
+    vi.mocked(driveAccessToken)
+      .mockResolvedValueOnce('token')
+      .mockRejectedValueOnce(Error('Google Drive authentication is not configured.'));
+    await expect(drive.openDriveTree('file')).rejects.toThrow(/not configured/);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
   it('rejects an invalid home reference before upload and normalizes legacy Drive files', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const { homePersonId: _home, ...legacy } = makeTree('Legacy');
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ...legacy, version: 1 }), {
@@ -76,7 +99,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('requests drive.file and creates, lists, opens, and replaces a tree', async () => {
-    const consent = installGoogle({ access_token: 'token', expires_in: 3600 });
+    const consent = installAuthorization({ access_token: 'token', expires_in: 3600 });
     const person = makePerson('Home');
     const tree = {
       ...makeTree('Test family'),
@@ -156,7 +179,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).toHaveBeenCalledTimes(7);
   });
   it('looks up the folder again for each new tree or copy and reuses the oldest match', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (new URL(url).pathname === '/drive/v3/files') {
         expect(options?.method).toBeUndefined();
@@ -179,7 +202,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
   it('updates an existing file directly without changing its location', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi
       .fn()
       .mockResolvedValue(new Response(JSON.stringify({ id: 'legacy-file' })));
@@ -196,7 +219,7 @@ describe('explicit Drive operations', () => {
     expect(new URL(url).searchParams.has('removeParents')).toBe(false);
   });
   it('lists only app trees directly in the upload folder while excluding folders', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const files = [
       {
         id: 'folder-tree',
@@ -226,7 +249,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock.mock.calls.every(([, options]) => !options?.method)).toBe(true);
   });
   it('returns an empty tree list without creating a missing folder', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ files: [] })));
     vi.stubGlobal('fetch', fetchMock);
     const drive = await import('./drive');
@@ -238,7 +261,7 @@ describe('explicit Drive operations', () => {
   it.each([100, 2, 0, undefined])(
     'fetches every tree page when the first page contains %s files',
     async (firstPageSize) => {
-      installGoogle({ access_token: 'token', expires_in: 3600 });
+      installAuthorization({ access_token: 'token', expires_in: 3600 });
       const firstPage = Array.from({ length: firstPageSize ?? 0 }, (_, index) => ({
         id: `file-${index}`,
         name: `Family ${index}.genealogical3.json`,
@@ -292,7 +315,7 @@ describe('explicit Drive operations', () => {
     },
   );
   it('reports a later tree page failure instead of returning an incomplete list', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ files: [{ id: 'folder-1' }] })))
@@ -318,7 +341,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
   it('reports folder lookup failure without falling back to searching all of Drive', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 403 }));
     vi.stubGlobal('fetch', fetchMock);
     const drive = await import('./drive');
@@ -327,7 +350,7 @@ describe('explicit Drive operations', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('continues an empty folder search page before deciding to create a folder', async () => {
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -350,7 +373,7 @@ describe('explicit Drive operations', () => {
   it.each(['lookup', 'creation'] as const)(
     'stops the upload when folder %s fails',
     async (stage) => {
-      installGoogle({ access_token: 'token', expires_in: 3600 });
+      installAuthorization({ access_token: 'token', expires_in: 3600 });
       const fetchMock = vi.fn();
       if (stage === 'creation') {
         fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ files: [] })));
@@ -372,7 +395,7 @@ describe('explicit Drive operations', () => {
   it.each([undefined, '', 42])(
     'stops the upload when folder creation returns an invalid ID (%s)',
     async (id) => {
-      installGoogle({ access_token: 'token', expires_in: 3600 });
+      installAuthorization({ access_token: 'token', expires_in: 3600 });
       const fetchMock = vi
         .fn()
         .mockResolvedValueOnce(new Response(JSON.stringify({ files: [] })))
@@ -387,12 +410,12 @@ describe('explicit Drive operations', () => {
     },
   );
   it('keeps local work independent of denied consent and network failures', async () => {
-    installGoogle({ error: 'access_denied' });
+    installAuthorization({ error: 'access_denied' });
     const drive = await import('./drive');
     await expect(drive.authorizeDrive()).rejects.toThrow(/canceled or denied/);
     drive.disconnectDrive();
     vi.resetModules();
-    installGoogle({ access_token: 'token', expires_in: 3600 });
+    installAuthorization({ access_token: 'token', expires_in: 3600 });
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Error('offline')));
     const onlineDrive = await import('./drive');
     await onlineDrive.authorizeDrive();

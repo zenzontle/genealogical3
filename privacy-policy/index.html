@@ -151,7 +151,8 @@
 
       <h2>Optional Google Drive access</h2>
       <p>
-        Google authorization is requested only when you choose a Drive action. The app requests the
+        Google sign-in and consent are requested when you choose a Drive action without a remembered
+        connection. The app requests the
         <code>https://www.googleapis.com/auth/drive.file</code> permission, which limits access to
         files created by or authorized for this app rather than your entire Drive. GENEalogical3
         lists its tree files using file identifiers, names, and modification times, reads a tree
@@ -165,9 +166,16 @@
         stored locally to associate it with your tree.
       </p>
       <p>
-        Google access tokens are held only in browser memory, are not saved to browser storage, and
-        are not sent to a GENEalogical3 backend. The app does not request your Google password,
-        contacts, Gmail messages, or account profile or email permissions.
+        A GENEalogical3 authentication service hosted on Vercel exchanges Google's authorization
+        code and renews access tokens. It remembers this browser's connection for up to 30 days
+        using an encrypted, authenticated, HttpOnly cookie containing a refresh token, with a
+        separate connection binding cookie. A temporary authorization cookie lasts up to ten
+        minutes. These necessary cookies are host-only, use SameSite=Lax, and are Secure on the
+        public HTTPS website. Renewal does not extend the 30-day deadline. Access tokens returned to
+        the editor stay only in browser memory; they are not saved in IndexedDB or localStorage. The
+        authentication service does not store a token database or receive your tree files. The app
+        does not request your Google password, contacts, Gmail messages, or account profile or email
+        permissions.
       </p>
       <p>
         GENEalogical3 follows the
@@ -183,10 +191,12 @@
       <p>
         Vercel hosts the website. Loading the site sends ordinary request information to the host,
         such as your IP address, browser information, requested URL, and request time. The editor
-        loads fonts from Google Fonts, and Drive actions load Google Identity Services and use
-        Google's APIs. These services receive network requests and may process technical information
-        under their own policies. Font and website requests do not contain your family tree. This
-        policy page uses system fonts and does not load Google scripts.
+        loads fonts from Google Fonts, and Drive authorization opens Google's authorization pages
+        and uses Google's APIs. Remembered access is restored when the app loads and renewed as
+        needed by the authentication service. These services receive network requests and may
+        process technical information under their own policies. Font and website requests do not
+        contain your family tree. This policy page uses system fonts and does not load Google
+        scripts.
       </p>
       <p>
         See the <a href="https://vercel.com/legal/privacy-policy">Vercel Privacy Policy</a> and
@@ -208,10 +218,13 @@
           tree does not delete a Drive file, and deleting a Drive file does not delete local copies.
         </li>
         <li>
-          <strong>Google access:</strong> Choose Disconnect Drive to clear the token for the current
-          session. Reloading or closing the page also clears it. Disconnecting does not revoke
-          Google's permission grant or delete files. To revoke permission, remove GENEalogical3 in
-          your <a href="https://myaccount.google.com/connections">Google account connections</a>.
+          <strong>Google access:</strong> Choose Disconnect Drive to clear the remembered connection
+          and in-memory access token in this browser. Reloading or closing the page clears the
+          in-memory token, but the connection cookie remains until its 30-day deadline, you
+          disconnect, or you clear site cookies. Google may expire or revoke access earlier.
+          Disconnecting does not revoke Google's permission grant or delete files. To revoke
+          permission, remove GENEalogical3 in your
+          <a href="https://myaccount.google.com/connections">Google account connections</a>.
         </li>
         <li>
           <strong>Downloads and shared copies:</strong> Delete exports from devices, backups, and
@@ -221,7 +234,8 @@
       <p>
         You can inspect and correct information in the editor and export a JSON backup at any time.
         GENEalogical3 has no separate user account to delete. The developer does not maintain a
-        server-side family tree database or copies of your Google access tokens.
+        server-side family tree database or persistent token database. Tokens are processed by the
+        authentication service solely to support the Drive actions described above.
       </p>
 
       <h2>Security</h2>

@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "api/drive-auth/[action].ts": { "maxDuration": 30 }
+  },
   "rewrites": [
     { "source": "/privacy-policy", "destination": "/privacy-policy/index.html" },
     { "source": "/terms-of-service", "destination": "/terms-of-service/index.html" }
