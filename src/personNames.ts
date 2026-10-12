@@ -10,6 +10,7 @@ export function setPersonName(
   field: 'firstName' | 'lastName',
   value: string,
 ): Person {
+  if (person[field] === value) return person;
   const next = { ...person, [field]: value };
   return {
     ...next,

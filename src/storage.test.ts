@@ -70,6 +70,14 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe('home designation in browser storage', () => {
+  it('preserves both timestamps through repeated local saves and reads', async () => {
+    browserStorage([]);
+    const tree = { ...makeTree('Saved'), updatedAt: 100, dataUpdatedAt: 80 };
+    await saveTree(tree);
+    expect(await getTree(tree.id)).toEqual(tree);
+    await saveTree(tree);
+    expect(await listTrees()).toEqual([tree]);
+  });
   it('persists incomplete Drive restore status alongside its association without altering the local tree', async () => {
     const tree = { ...makeTree('Incomplete'), people: [makePerson('Missing portrait')] };
     browserStorage([tree]);
@@ -139,6 +147,7 @@ describe('home designation in browser storage', () => {
       id: copy.id,
       name: 'After edit (copy)',
       updatedAt: copy.updatedAt,
+      dataUpdatedAt: copy.dataUpdatedAt,
     });
     expect(copy.id).not.toBe(persisted.id);
     expect(await getTree(copy.id)).toEqual(copy);

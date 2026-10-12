@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { makePerson, makeTree, type Tree } from './model';
 import { deleteTree, getTree, listTrees, saveTree, getDriveLink, saveDriveLink } from './storage';
-import { exportPng, portraitData } from './media';
+import { exportJson, exportPng, portraitData } from './media';
 import type { PersonNode } from './PersonCard';
 import { mockDialogs } from './dialogTestSetup';
 import {
@@ -19,6 +19,20 @@ import {
 } from './drive';
 
 const driveState = vi.hoisted(() => ({ configured: false }));
+type CanvasEvents = {
+  onConnect: (connection: {
+    source: string;
+    target: string;
+    sourceHandle: string;
+    targetHandle: string;
+  }) => void;
+  onMoveEnd: (_: unknown, viewport: Tree['viewport']) => void;
+  onNodeDragStart: () => void;
+  onNodeDragStop: (_: unknown, node: PersonNode, nodes: PersonNode[]) => void;
+  onSelectionDragStart: () => void;
+  onSelectionDragStop: (_: unknown, nodes: PersonNode[]) => void;
+};
+let canvasEvents: CanvasEvents;
 
 vi.mock('./storage', () => ({
   listTrees: vi.fn(),
@@ -42,20 +56,32 @@ vi.mock('./drive', () => ({
   saveDriveTree: vi.fn(),
 }));
 vi.mock('./media', () => ({ exportJson: vi.fn(), exportPng: vi.fn(), portraitData: vi.fn() }));
+vi.mock('./feedback', async (original) => ({
+  ...(await original<typeof import('./feedback')>()),
+  afterPaint: () => Promise.resolve(),
+}));
 vi.mock('./useConnectorProximity', () => ({ useConnectorProximity: vi.fn() }));
 vi.mock('@xyflow/react', async (original) => ({
   ...(await original<typeof import('@xyflow/react')>()),
   ConnectionMode: { Loose: 'loose' },
   Background: () => null,
   Controls: () => null,
-  ReactFlow: ({ nodes, onInit }: { nodes: PersonNode[]; onInit: (instance: unknown) => void }) => {
+  ReactFlow: ({
+    nodes,
+    onInit,
+    ...events
+  }: CanvasEvents & { nodes: PersonNode[]; onInit: (instance: unknown) => void }) => {
+    canvasEvents = events;
+    const onMoveEnd = events.onMoveEnd;
     useEffect(() => {
       onInit({
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
-        setCenter: vi.fn(),
-        fitView: vi.fn(),
+        getZoom: () => 1,
+        getNode: (id: string) => nodes.find((node) => node.id === id),
+        setCenter: vi.fn(() => onMoveEnd(null, { x: 200, y: 300, zoom: 1.1 })),
+        fitView: vi.fn(() => onMoveEnd(null, { x: 100, y: 100, zoom: 0.8 })),
       });
-    }, [onInit]);
+    }, [onInit, nodes, onMoveEnd]);
     return (
       <div>
         {nodes.map((node) => (
@@ -83,6 +109,10 @@ beforeEach(() => {
   vi.mocked(getDriveLink).mockReset().mockResolvedValue(undefined);
   vi.mocked(saveDriveLink).mockReset().mockResolvedValue('link');
   mockDialogs();
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({ matches: false })),
+  );
   const alex = makePerson('Alex'),
     taylor = makePerson('Taylor');
   original = {
@@ -116,13 +146,260 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 const openOriginal = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Open Family' }));
   await screen.findByRole('button', { name: 'Select Alex' });
 };
+const editorSnapshot = async () => {
+  const count = vi.mocked(exportJson).mock.calls.length;
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export JSON' })));
+  expect(exportJson).toHaveBeenCalledTimes(count + 1);
+  expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
+  return vi.mocked(exportJson).mock.calls.at(-1)![0];
+};
 
 describe('local feedback integration', () => {
+  it('tracks adding people and relationships, including the first edit of a draft', async () => {
+    render(<App />);
+    await openOriginal();
+    vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+    act(() =>
+      canvasEvents.onConnect({
+        source: original.people[0].id,
+        target: original.people[1].id,
+        sourceHandle: 'bottom',
+        targetHandle: 'top',
+      }),
+    );
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    const added = await editorSnapshot();
+    expect(added.people).toHaveLength(3);
+    expect(added.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    await screen.findByText('Make a change to start saving');
+    const draft = await editorSnapshot();
+    expect(draft.updatedAt).toBe(draft.dataUpdatedAt);
+    fireEvent.click(screen.getByRole('button', { name: 'Add first person' }));
+    const edited = await editorSnapshot();
+    expect(edited.dataUpdatedAt).toBe(draft.dataUpdatedAt + 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open My family tree' });
+    expect(records.get(draft.id)).toEqual(edited);
+  });
+
+  it('advances meaningful person details and preserves repeated values', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    let expected = original.dataUpdatedAt;
+    const expectEdit = async (edit: () => void) => {
+      edit();
+      expect((await editorSnapshot()).dataUpdatedAt).toBe(++expected);
+    };
+    await expectEdit(() =>
+      fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alexander' } }),
+    );
+    await expectEdit(() =>
+      fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Family' } }),
+    );
+    await expectEdit(() =>
+      fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Al' } }),
+    );
+    await expectEdit(() =>
+      fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'A story' } }),
+    );
+    await expectEdit(() => fireEvent.click(screen.getByRole('button', { name: 'Male' })));
+    await expectEdit(() =>
+      fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+        target: { value: 'living' },
+      }),
+    );
+    await expectEdit(() =>
+      fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: '' } }),
+    );
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Alexander' } });
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Al' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Born', { exact: true }), {
+      target: { value: 'unknown' },
+    });
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(expected);
+  });
+
+  it('tracks home, relationships and portraits and preserves repeated values', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    let expected = original.dataUpdatedAt;
+    const expectEdit = async (edit: () => void) => {
+      edit();
+      expect((await editorSnapshot()).dataUpdatedAt).toBe(++expected);
+    };
+    await expectEdit(() =>
+      fireEvent.click(screen.getByRole('button', { name: 'Clear home person' })),
+    );
+    await expectEdit(() =>
+      fireEvent.click(screen.getByRole('button', { name: 'Set as home person' })),
+    );
+    fireEvent.click(screen.getByText('Relationships', { selector: 'h3' }));
+    await expectEdit(() =>
+      fireEvent.change(screen.getByLabelText('Partner status with Taylor'), {
+        target: { value: 'former' },
+      }),
+    );
+    fireEvent.change(screen.getByLabelText('Partner status with Taylor'), {
+      target: { value: 'former' },
+    });
+    fireEvent.change(screen.getByLabelText('Union type with Taylor'), {
+      target: { value: 'married' },
+    });
+    fireEvent.change(screen.getByLabelText('Relationship of Taylor to Alex'), {
+      target: { value: 'partner' },
+    });
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(expected);
+    vi.mocked(portraitData).mockResolvedValue('data:image/jpeg;base64,photo');
+    const upload = async () => {
+      fireEvent.change(screen.getByLabelText('Choose portrait'), {
+        target: { files: [new File(['photo'], 'photo.jpg', { type: 'image/jpeg' })] },
+      });
+      await screen.findByText('Photo updated.');
+    };
+    await upload();
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(++expected);
+    await upload();
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(expected);
+    await expectEdit(() => fireEvent.click(screen.getByRole('button', { name: 'Remove photo' })));
+    await expectEdit(() =>
+      fireEvent.click(screen.getByRole('button', { name: 'Remove relationship with Taylor' })),
+    );
+  });
+
+  it('keeps invalid date drafts and identical committed dates out of timestamp tracking', async () => {
+    original.people[0].born = { precision: 'year', year: 1980 };
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '' } });
+    expect(screen.getByText('Date edits not saved')).toBeTruthy();
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt);
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '1980' } });
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt);
+    expect(saveTree).not.toHaveBeenCalled();
+    vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt - 100);
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '1981' } });
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
+  });
+
+  it('counts a completed group drag once and advances undo/redo from the current clock', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+    render(<App />);
+    await openOriginal();
+    const moved = original.people.map(
+      (person) =>
+        ({ id: person.id, position: { x: person.x + 80, y: person.y + 40 } }) as PersonNode,
+    );
+    act(() => canvasEvents.onSelectionDragStart());
+    act(() => canvasEvents.onMoveEnd(null, { x: 999, y: 999, zoom: 0.5 }));
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt);
+    act(() => canvasEvents.onSelectionDragStop(null, moved));
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
+    act(() => canvasEvents.onNodeDragStop(null, moved[0], moved));
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
+    clock.mockReturnValue(original.dataUpdatedAt - 500);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    const undone = await editorSnapshot();
+    expect(undone.people).toEqual(original.people);
+    expect(undone.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    const redone = await editorSnapshot();
+    expect(redone.people.map((p) => [p.x, p.y])).toEqual([
+      [80, 40],
+      [80, 40],
+    ]);
+    expect(redone.dataUpdatedAt).toBe(original.dataUpdatedAt + 3);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    expect(records.get(original.id)?.dataUpdatedAt).toBe(redone.dataUpdatedAt);
+  });
+
+  it('preserves data timestamps during navigation, panels, selection and ordinary saves', async () => {
+    render(<App />);
+    await openOriginal();
+    expect(saveTree).not.toHaveBeenCalled();
+    vi.spyOn(Date, 'now').mockReturnValue(original.updatedAt + 1000);
+    act(() => canvasEvents.onMoveEnd(null, { x: 10, y: 20, zoom: 1 }));
+    act(() => canvasEvents.onMoveEnd(null, { x: 10, y: 20, zoom: 0.5 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fit tree' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Center on home person' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    const snapshot = await editorSnapshot();
+    expect(snapshot.dataUpdatedAt).toBe(original.dataUpdatedAt);
+    expect(snapshot.updatedAt).toBe(original.updatedAt + 1000);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    expect(records.get(original.id)).toEqual(snapshot);
+  });
+
+  it('does not persist an untouched draft after viewport changes or an unchanged rename', async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    await screen.findByText('Make a change to start saving');
+    const draft = await editorSnapshot();
+    act(() => canvasEvents.onMoveEnd(null, { x: 10, y: 20, zoom: 0.5 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Fit tree' }));
+    fireEvent.click(screen.getByTitle('Rename tree'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(draft.dataUpdatedAt);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    expect(saveTree).not.toHaveBeenCalled();
+    expect(records.size).toBe(1);
+  });
+
+  it.each(['editor', 'library'] as const)(
+    'uses matching persisted and in-memory timestamps for %s renames',
+    async (location) => {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+      render(<App />);
+      if (location === 'editor') {
+        await openOriginal();
+        fireEvent.click(screen.getByTitle('Rename tree'));
+      } else fireEvent.click(await screen.findByRole('button', { name: 'Rename Family' }));
+      fireEvent.change(screen.getByLabelText('Tree name'), { target: { value: 'Renamed' } });
+      // Any accidental second timestamp capture would make memory disagree with storage.
+      vi.mocked(saveTree).mockImplementationOnce(async (tree) => {
+        records.set(tree.id, tree);
+        clock.mockReturnValue(original.dataUpdatedAt + 1000);
+        return tree.id;
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(records.get(original.id)).toMatchObject({
+        name: 'Renamed',
+        updatedAt: original.dataUpdatedAt,
+        dataUpdatedAt: original.dataUpdatedAt + 1,
+      });
+      if (location === 'library') {
+        fireEvent.click(await screen.findByRole('button', { name: 'Open Renamed' }));
+        await screen.findByRole('button', { name: 'Select Alex' });
+      }
+      expect(await editorSnapshot()).toEqual(records.get(original.id));
+      fireEvent.click(screen.getByTitle('Rename tree'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
+    },
+  );
+
   it('restores Drive before enabling saves and continues a pending save after authorization', async () => {
     driveState.configured = true;
     let restore!: () => void;
@@ -241,6 +518,7 @@ describe('local feedback integration', () => {
   it.each([false, true])(
     'preserves a portrait that finishes during rename persistence (autosave queued: %s)',
     async (autosaveQueued) => {
+      vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
       render(<App />);
       await openOriginal();
       fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
@@ -284,7 +562,9 @@ describe('local feedback integration', () => {
       await act(() => vi.advanceTimersByTimeAsync(450));
       expect(records.get(original.id)?.name).toBe('Renamed family');
       expect(records.get(original.id)?.people[0].portrait).toBe(portrait);
+      expect(records.get(original.id)?.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
       expect(screen.getByText('Saved locally')).toBeTruthy();
+      expect(await editorSnapshot()).toEqual(records.get(original.id));
 
       fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
       expect(screen.getByTitle('Rename tree').textContent).toContain('Family');
@@ -296,6 +576,7 @@ describe('local feedback integration', () => {
   );
 
   it('deletes a home person and relationships, then restores both with Undo', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
     render(<App />);
     await openOriginal();
     fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
@@ -309,6 +590,7 @@ describe('local feedback integration', () => {
       true,
     );
     expect(screen.getByText('1 people · 0 connections')).toBeTruthy();
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await screen.findByRole('button', { name: 'Select Alex' });
     expect(screen.getByRole('button', { name: 'Center on home person' })).toHaveProperty(
@@ -316,6 +598,7 @@ describe('local feedback integration', () => {
       false,
     );
     expect(screen.getByText('2 people · 1 connections')).toBeTruthy();
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
   });
 
   it('finishes pending writes before returning to the library and deleting the last tree', async () => {
@@ -344,8 +627,10 @@ describe('local feedback integration', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(records.has(original.id)).toBe(false);
     expect(screen.queryByRole('button', { name: 'Open Family' })).toBeNull();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Start a family tree' }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Start a family tree' }),
+      ),
     );
   });
 
@@ -454,6 +739,7 @@ describe('Drive portrait feedback and associations', () => {
     await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
     const copyId = [...links.keys()][0];
     expect(copyId).not.toBe(original.id);
+    expect(records.get(copyId)?.dataUpdatedAt).toBe(original.dataUpdatedAt);
     expect(links.get(copyId)?.restoreWarnings).toEqual(warnings);
     cleanup();
     render(<App />);

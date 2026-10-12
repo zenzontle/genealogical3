@@ -25,6 +25,7 @@ for (const count of [100, 300]) {
     childId: person.id,
     kind: 'unspecified',
   }));
+  const now = Date.now();
   const tree = {
     version: 1,
     id: randomUUID(),
@@ -32,7 +33,8 @@ for (const count of [100, 300]) {
     people,
     relations,
     viewport: { x: 0, y: 0, zoom: 1 },
-    updatedAt: Date.now(),
+    updatedAt: now,
+    dataUpdatedAt: now,
   };
   writeFileSync(new URL(`tree-${count}.json`, output), JSON.stringify(tree));
 }

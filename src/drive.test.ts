@@ -146,10 +146,15 @@ describe('separate-photo Drive backups', () => {
         tree = family(values as (number | null)[]),
         progress: PhotoProgress[] = [];
       const original = structuredClone(tree);
+      tree.updatedAt = 100;
+      tree.dataUpdatedAt = 80;
+      original.updatedAt = 100;
+      original.dataUpdatedAt = 80;
       const file = await saveDriveTree(tree, undefined, (p) => progress.push(p));
       const doc = remote.document(file.id);
       expect(doc).toMatchObject({ format: 'genealogical3-drive', version: 1, backupId: file.id });
       expect(doc.tree.people.every((person) => person.portrait === null)).toBe(true);
+      expect(doc.tree).toMatchObject({ updatedAt: 100, dataUpdatedAt: 80 });
       const folder = remote.files.get(doc.photoFolderId)!;
       expect(folder.name).toBe(`${file.id}.photos`);
       expect(folder.parents).toEqual(remote.files.get(file.id)!.parents);

@@ -31,11 +31,13 @@ export function useTreeImport(onSaved: (tree: Tree) => void, onRefresh: () => Pr
         await stage('Validating tree…');
         valid = false;
         const imported = validateTree(JSON.parse(text));
+        const now = Date.now();
         current.copy = {
           ...imported,
           id: uid(),
           name: `${imported.name} (imported)`,
-          updatedAt: Date.now(),
+          updatedAt: now,
+          dataUpdatedAt: now,
         };
         valid = true;
       }
