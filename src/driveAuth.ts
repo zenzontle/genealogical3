@@ -11,6 +11,26 @@ let cancelPopup: (() => void) | null = null;
 
 export const driveConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
 
+const disconnectChannel =
+  driveConfigured && typeof window !== 'undefined' && typeof window.BroadcastChannel === 'function'
+    ? new window.BroadcastChannel('genealogical3-drive-auth')
+    : null;
+
+function clearAccess(nextConnection: typeof connection) {
+  ++generation;
+  cancelPopup?.();
+  accessToken = '';
+  expiresAt = 0;
+  connection = nextConnection;
+}
+
+if (disconnectChannel) {
+  disconnectChannel.onmessage = (event: MessageEvent<unknown>) => {
+    if (event.data === 'disconnect') clearAccess('disconnected');
+  };
+  import.meta.hot?.dispose(() => disconnectChannel.close());
+}
+
 async function authRequest(action: 'token' | 'disconnect'): Promise<Response> {
   try {
     return await fetch(`${endpoint}/${action}`, {
@@ -153,11 +173,7 @@ export function authorizeDrive(): Promise<void> {
 
 export function disconnectDrive(): Promise<void> {
   if (disconnectPromise) return disconnectPromise;
-  ++generation;
-  cancelPopup?.();
-  accessToken = '';
-  expiresAt = 0;
-  connection = 'unknown';
+  clearAccess('unknown');
   const pendingToken = tokenPromise;
   disconnectPromise = (async () => {
     // Clear cookies after any token response, so a late 401 cannot clear a newer connection.
@@ -165,6 +181,7 @@ export function disconnectDrive(): Promise<void> {
     const response = await authRequest('disconnect');
     if (!response.ok) throw await responseError(response);
     connection = 'disconnected';
+    disconnectChannel?.postMessage('disconnect');
   })().finally(() => {
     disconnectPromise = null;
   });

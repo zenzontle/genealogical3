@@ -4,6 +4,23 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 let fetchMock: ReturnType<typeof vi.fn>;
 let open: MockInstance<typeof window.open>;
 let popup: Window;
+const channels = new Set<TestBroadcastChannel>();
+
+class TestBroadcastChannel {
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  constructor(readonly name: string) {
+    channels.add(this);
+  }
+  postMessage = vi.fn((data: unknown) => {
+    for (const channel of channels) {
+      if (channel !== this && channel.name === this.name) {
+        channel.onmessage?.(new MessageEvent('message', { data }));
+      }
+    }
+  });
+  close = vi.fn(() => channels.delete(this));
+}
+
 const tokenResponse = (token = 'token') =>
   new Response(JSON.stringify({ accessToken: token, expiresAt: Date.now() + 3600_000 }));
 const disconnected = () =>
@@ -12,12 +29,14 @@ const disconnected = () =>
 beforeEach(() => {
   vi.resetModules();
   vi.stubEnv('VITE_GOOGLE_CLIENT_ID', 'client');
+  vi.stubGlobal('BroadcastChannel', TestBroadcastChannel);
   popup = { closed: false, close: vi.fn() } as unknown as Window;
   open = vi.spyOn(window, 'open').mockReturnValue(popup);
   fetchMock = vi.fn().mockImplementation(async () => tokenResponse());
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
+  for (const channel of channels) channel.close();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -33,6 +52,115 @@ function message(
 }
 
 describe('Drive authorization lifecycle', () => {
+  it('clears other tabs only after successful disconnect and requires explicit reconnection', async () => {
+    const firstTab = await import('./driveAuth');
+    await firstTab.restoreDrive();
+    vi.resetModules();
+    const secondTab = await import('./driveAuth');
+    await secondTab.restoreDrive();
+    const [sender, receiver] = [...channels];
+    expect(channels.size).toBe(2);
+
+    let confirm!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          confirm = resolve;
+        }),
+    );
+    const disconnect = firstTab.disconnectDrive();
+    await vi.waitFor(() => expect(confirm).toBeTypeOf('function'));
+    expect(await secondTab.driveAccessToken()).toBe('token');
+    expect(sender.postMessage).not.toHaveBeenCalled();
+
+    confirm(new Response('{}'));
+    await disconnect;
+    expect(sender.postMessage).toHaveBeenCalledExactlyOnceWith('disconnect');
+    expect(receiver.postMessage).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    fetchMock.mockResolvedValueOnce(disconnected());
+    await expect(secondTab.driveAccessToken()).rejects.toThrow(/reconnect/);
+    const reconnect = secondTab.authorizeDrive();
+    expect(open).toHaveBeenCalledOnce();
+    message();
+    await reconnect;
+  });
+
+  it('does not disconnect other tabs when the server rejects disconnect', async () => {
+    const firstTab = await import('./driveAuth');
+    await firstTab.restoreDrive();
+    vi.resetModules();
+    const secondTab = await import('./driveAuth');
+    await secondTab.restoreDrive();
+    fetchMock.mockResolvedValueOnce(new Response('{}', { status: 503 }));
+    await expect(firstTab.disconnectDrive()).rejects.toThrow(/authentication failed/);
+    expect(await secondTab.driveAccessToken()).toBe('token');
+    await secondTab.authorizeDrive();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(open).not.toHaveBeenCalled();
+    for (const channel of channels) expect(channel.postMessage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a pending token response in another tab after receiving disconnect', async () => {
+    const firstTab = await import('./driveAuth');
+    await firstTab.restoreDrive();
+    vi.resetModules();
+    const secondTab = await import('./driveAuth');
+    await secondTab.restoreDrive();
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = secondTab.driveAccessToken(true);
+    const canceled = expect(pending).rejects.toThrow(/canceled/);
+    await firstTab.disconnectDrive();
+    finish(tokenResponse('late-token'));
+    await canceled;
+    fetchMock.mockResolvedValueOnce(disconnected());
+    await expect(secondTab.driveAccessToken()).rejects.toThrow(/reconnect/);
+  });
+
+  it("cancels another tab's authorization popup and ignores its late success message", async () => {
+    const firstTab = await import('./driveAuth');
+    await firstTab.restoreDrive();
+    vi.resetModules();
+    const secondTab = await import('./driveAuth');
+    fetchMock.mockResolvedValueOnce(disconnected());
+    await secondTab.restoreDrive();
+    const pending = secondTab.authorizeDrive();
+    const canceled = expect(pending).rejects.toThrow(/canceled/);
+    await firstTab.disconnectDrive();
+    await canceled;
+    expect(popup.close).toHaveBeenCalledOnce();
+    message();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    fetchMock.mockResolvedValueOnce(disconnected());
+    await expect(secondTab.driveAccessToken()).rejects.toThrow(/reconnect/);
+  });
+
+  it('ignores unrelated messages on the authentication channel', async () => {
+    const auth = await import('./driveAuth');
+    await auth.restoreDrive();
+    const unrelated = new TestBroadcastChannel('genealogical3-drive-auth');
+    unrelated.postMessage({ type: 'disconnect' });
+    unrelated.postMessage(null);
+    expect(await auth.driveAccessToken()).toBe('token');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('preserves single-tab authentication when BroadcastChannel is unavailable', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined);
+    const auth = await import('./driveAuth');
+    await auth.restoreDrive();
+    await auth.disconnectDrive();
+    expect(channels.size).toBe(0);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/drive-auth/disconnect');
+  });
+
   it('restores remembered access and reuses it for repeated explicit actions', async () => {
     const auth = await import('./driveAuth');
     await auth.restoreDrive();
