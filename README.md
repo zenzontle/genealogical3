@@ -108,6 +108,8 @@ For Vercel, set these values in the project's environment variables for the depl
 
 ## Data and backups
 
+If a tree's `dataUpdatedAt` reaches the safe-integer limit, further meaningful edits are rejected without changing its data or history. Navigation and backups remain available; duplicate the tree to continue editing with a fresh timestamp.
+
 Trees carry two timestamps in milliseconds since the Unix epoch. `updatedAt` retains the local save and library-ordering behavior, including saved navigation. `dataUpdatedAt` tracks meaningful edits to names, people, portraits, relationships, home designation, and saved card positions. A completed drag counts once; undo and redo each count as a new edit, advancing from the current timestamp even if the clock stays the same or moves backward. Pan, zoom, fit, centering, selection, panels, opening, saving, and exporting preserve `dataUpdatedAt`.
 
 New trees, independent duplicates, and JSON-imported copies capture fresh, equal timestamps. Opening a Drive document preserves its source `dataUpdatedAt` when assigning a local working-copy ID. IndexedDB, portable JSON, and manual Drive backups preserve the field. Incoming JSON and Drive trees require a nonnegative safe integer; missing values have no fallback, backfill, or migration. Document versions remain unchanged. This tracking does not add automatic backups, backup baselines, or remote conflict handling.

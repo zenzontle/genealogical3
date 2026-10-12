@@ -39,6 +39,22 @@ describe('meaningful tree timestamps', () => {
     },
   );
 
+  it('allows the last safe increment and rejects exhaustion without changing either tree', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+    const current = { ...makeTree(), dataUpdatedAt: Number.MAX_SAFE_INTEGER - 1 };
+    const next = { ...current, name: 'Last edit' };
+    const updated = timestampDataChange(next, current);
+    expect(updated.dataUpdatedAt).toBe(Number.MAX_SAFE_INTEGER);
+    expect(validateTree(JSON.parse(JSON.stringify(updated)))).toEqual(updated);
+    const before = structuredClone(updated);
+    expect(() => timestampDataChange({ ...updated, name: 'Too far' }, updated)).toThrow(
+      /timestamp has reached its limit/,
+    );
+    expect(updated).toEqual(before);
+    expect(current.dataUpdatedAt).toBe(Number.MAX_SAFE_INTEGER - 1);
+    expect(next.dataUpdatedAt).toBe(Number.MAX_SAFE_INTEGER - 1);
+  });
+
   it.each([0, 123, Number.MAX_SAFE_INTEGER])(
     'preserves valid incoming dataUpdatedAt=%s',
     (dataUpdatedAt) => {

@@ -93,7 +93,12 @@ export const makeTree = (name = 'Untitled tree'): Tree => {
 /** Meaningful edits advance even when the clock is unchanged or moves backward. */
 export function timestampDataChange(next: Tree, current: Tree): Tree {
   const now = Date.now();
-  return { ...next, updatedAt: now, dataUpdatedAt: Math.max(now, current.dataUpdatedAt + 1) };
+  const dataUpdatedAt = Math.max(now, current.dataUpdatedAt + 1);
+  if (!Number.isSafeInteger(dataUpdatedAt))
+    throw Error(
+      "This tree's edit timestamp has reached its limit. Duplicate the tree to continue editing.",
+    );
+  return { ...next, updatedAt: now, dataUpdatedAt };
 }
 /** A local copy keeps its internal references but has its own document identity. */
 export function duplicateTree(tree: Tree): Tree {

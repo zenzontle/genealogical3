@@ -220,11 +220,6 @@ export default function App() {
     ) => {
       const previous = treeRef.current;
       if (!previous || next === previous) return;
-      if (record) {
-        history.current.push(cloneTree(previous));
-        if (history.current.length > 50) history.current.shift();
-        future.current = [];
-      }
       const stamped = timestamps
         ? { ...next, updatedAt: timestamps.updatedAt, dataUpdatedAt: timestamps.dataUpdatedAt }
         : change === 'data'
@@ -234,6 +229,11 @@ export default function App() {
               updatedAt: persist ? Date.now() : next.updatedAt,
               dataUpdatedAt: previous.dataUpdatedAt,
             };
+      if (record) {
+        history.current.push(cloneTree(previous));
+        if (history.current.length > 50) history.current.shift();
+        future.current = [];
+      }
       const updated = {
         ...stamped,
         version: 2 as const,
@@ -308,12 +308,14 @@ export default function App() {
   };
   const apply = useCallback(
     (update: (current: Tree) => Tree, record = true) => {
-      if (!treeRef.current) return;
+      if (!treeRef.current) return false;
       try {
         commit(update(treeRef.current), 'data', { record });
         setNotice('');
+        return true;
       } catch (error) {
         showError(error);
+        return false;
       }
     },
     [commit, showError],
@@ -371,7 +373,12 @@ export default function App() {
               kind: 'unspecified',
             },
       );
-    commit(next, 'data');
+    try {
+      commit(next, 'data');
+    } catch (error) {
+      showError(error);
+      return;
+    }
     selectPerson(person.id);
     if (relative)
       requestAnimationFrame(() =>
@@ -429,18 +436,30 @@ export default function App() {
     setConnectMode(null);
   };
   const undo = () => {
-    const previous = history.current.pop();
-    if (!previous || !treeRef.current) return;
-    future.current.push(cloneTree(treeRef.current));
-    setDateDrafts({});
-    commit(previous, 'data', { record: false });
+    const previous = history.current.at(-1),
+      current = treeRef.current;
+    if (!previous || !current) return;
+    try {
+      commit(previous, 'data', { record: false });
+      history.current.pop();
+      future.current.push(cloneTree(current));
+      setDateDrafts({});
+    } catch (error) {
+      showError(error);
+    }
   };
   const redo = () => {
-    const next = future.current.pop();
-    if (!next || !treeRef.current) return;
-    history.current.push(cloneTree(treeRef.current));
-    setDateDrafts({});
-    commit(next, 'data', { record: false });
+    const next = future.current.at(-1),
+      current = treeRef.current;
+    if (!next || !current) return;
+    try {
+      commit(next, 'data', { record: false });
+      future.current.pop();
+      history.current.push(cloneTree(current));
+      setDateDrafts({});
+    } catch (error) {
+      showError(error);
+    }
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -782,7 +801,15 @@ export default function App() {
     const current = treeRef.current;
     if (!current) return;
     const next = movePeopleToPositions(current, movedNodes);
-    if (next !== current) apply(() => next);
+    if (next === current || apply(() => next)) return;
+    // A rejected layout edit must also restore the cards rendered during the drag.
+    const positions = new Map(current.people.map((p) => [p.id, { x: p.x, y: p.y }]));
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        position: positions.get(node.id) || node.position,
+      })),
+    );
   };
   const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;

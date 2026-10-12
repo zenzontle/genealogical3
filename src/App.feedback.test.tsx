@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { makePerson, makeTree, type Tree } from './model';
+import { makePerson, makeTree, validateTree, type Tree } from './model';
 import { deleteTree, getTree, listTrees, saveTree, getDriveLink, saveDriveLink } from './storage';
 import { exportJson, exportPng, portraitData } from './media';
 import type { PersonNode } from './PersonCard';
@@ -161,6 +161,75 @@ const editorSnapshot = async () => {
 };
 
 describe('local feedback integration', () => {
+  it('rejects exhausted edits and person creation while preserving navigation, history and valid backups', async () => {
+    original.dataUpdatedAt = Number.MAX_SAFE_INTEGER;
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Rejected' } });
+    expect(screen.getByRole('alert').textContent).toContain('timestamp has reached its limit');
+    expect(await editorSnapshot()).toEqual(original);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    expect(await editorSnapshot()).toEqual(original);
+    act(() => canvasEvents.onSelectionDragStart());
+    const moved = original.people.map(
+      (person) => ({ id: person.id, position: { x: 100, y: 100 } }) as PersonNode,
+    );
+    act(() => canvasEvents.onSelectionDragStop(null, moved));
+    expect(await editorSnapshot()).toEqual(original);
+    expect(saveTree).not.toHaveBeenCalled();
+    act(() => canvasEvents.onMoveEnd(null, { x: 100, y: 100, zoom: 0.5 }));
+    const navigated = await editorSnapshot();
+    expect(validateTree(JSON.parse(JSON.stringify(navigated)))).toEqual(navigated);
+    expect(navigated.dataUpdatedAt).toBe(Number.MAX_SAFE_INTEGER);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    expect(records.get(original.id)).toEqual(navigated);
+  });
+
+  it.each(['Undo', 'Redo'] as const)(
+    'preserves the history stacks when exhausted %s is rejected',
+    async (action) => {
+      original.dataUpdatedAt = Number.MAX_SAFE_INTEGER - (action === 'Undo' ? 1 : 2);
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+      fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Last edit' } });
+      if (action === 'Redo') fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      const lastValid = await editorSnapshot();
+      expect(lastValid.dataUpdatedAt).toBe(Number.MAX_SAFE_INTEGER);
+      fireEvent.click(screen.getByRole('button', { name: action }));
+      expect(screen.getByRole('alert').textContent).toContain('timestamp has reached its limit');
+      expect(await editorSnapshot()).toEqual(lastValid);
+      expect(screen.getByRole('button', { name: action })).toHaveProperty('disabled', false);
+      expect(
+        screen.getByRole('button', { name: action === 'Undo' ? 'Redo' : 'Undo' }),
+      ).toHaveProperty('disabled', true);
+      fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Rejected edit' } });
+      expect(await editorSnapshot()).toEqual(lastValid);
+      expect(screen.getByRole('button', { name: action })).toHaveProperty('disabled', false);
+    },
+  );
+
+  it.each(['editor', 'library'] as const)(
+    'rejects exhausted %s renames before persisting',
+    async (location) => {
+      original.dataUpdatedAt = Number.MAX_SAFE_INTEGER;
+      render(<App />);
+      if (location === 'editor') {
+        await openOriginal();
+        fireEvent.click(screen.getByTitle('Rename tree'));
+      } else fireEvent.click(await screen.findByRole('button', { name: 'Rename Family' }));
+      fireEvent.change(screen.getByLabelText('Tree name'), { target: { value: 'Rejected name' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await screen.findByText(/timestamp has reached its limit/);
+      expect(saveTree).not.toHaveBeenCalled();
+      expect(records.get(original.id)).toEqual(original);
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    },
+  );
+
   it('tracks adding people and relationships, including the first edit of a draft', async () => {
     render(<App />);
     await openOriginal();
