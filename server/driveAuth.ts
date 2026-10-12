@@ -22,13 +22,18 @@ class AuthError extends Error {
   }
 }
 
-function configuration(env: NodeJS.ProcessEnv): Config {
+function configuration(env: NodeJS.ProcessEnv, localServer: boolean): Config {
   try {
     const url = new URL(env.DRIVE_APP_ORIGIN || '');
     const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
     const secure = url.protocol === 'https:';
     if (
-      (!secure && !(localhost && url.protocol === 'http:' && env.NODE_ENV !== 'production')) ||
+      (!secure &&
+        !(
+          localhost &&
+          url.protocol === 'http:' &&
+          (localServer || env.NODE_ENV !== 'production')
+        )) ||
       url.origin !== env.DRIVE_APP_ORIGIN ||
       url.username ||
       url.password
@@ -198,6 +203,7 @@ export async function handleDriveAuth(
   request: IncomingMessage,
   response: ServerResponse,
   env = process.env,
+  options: { localServer?: boolean } = {},
 ): Promise<void> {
   response.setHeader('Cache-Control', 'no-store');
   response.setHeader('Referrer-Policy', 'no-referrer');
@@ -206,7 +212,7 @@ export async function handleDriveAuth(
   let action = '';
   try {
     action = (request.url || '').split('?')[0].slice(`${cookiePath}/`.length);
-    config = configuration(env);
+    config = configuration(env, options.localServer === true);
     const url = new URL(request.url || '', config.origin);
     action = url.pathname.slice(`${cookiePath}/`.length);
     if (!['start', 'callback', 'token', 'disconnect'].includes(action))
