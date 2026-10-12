@@ -108,6 +108,12 @@ For Vercel, set these values in the project's environment variables for the depl
 
 ## Data and backups
 
+If a tree's `dataUpdatedAt` reaches the safe-integer limit, further meaningful edits are rejected without changing its data or history. Navigation and backups remain available; duplicate the tree to continue editing with a fresh timestamp.
+
+Trees carry two timestamps in milliseconds since the Unix epoch. `updatedAt` retains the local save and library-ordering behavior, including saved navigation. `dataUpdatedAt` tracks meaningful edits to names, people, portraits, relationships, home designation, and saved card positions. A completed drag counts once; undo and redo each count as a new edit, advancing from the current timestamp even if the clock stays the same or moves backward. Pan, zoom, fit, centering, selection, panels, opening, saving, and exporting preserve `dataUpdatedAt`.
+
+New trees, independent duplicates, and JSON-imported copies capture fresh, equal timestamps. Opening a Drive document preserves its source `dataUpdatedAt` when assigning a local working-copy ID. IndexedDB, portable JSON, and manual Drive backups preserve the field. Incoming JSON and Drive trees require a nonnegative safe integer; missing values have no fallback, backfill, or migration. Document versions remain unchanged. This tracking does not add automatic backups, backup baselines, or remote conflict handling.
+
 New trees remain temporary until their first edit, such as adding a person or changing the tree name. Panning, zooming, or returning to the library leaves an untouched draft unsaved. After the first edit, trees autosave to IndexedDB on the current browser and origin. Clearing browser data can remove them. Download JSON backups regularly, especially before changing browsers or devices. JSON carries all editable data and processed portraits. PNG is a visual snapshot and does not include notes or editability.
 
 The portable JSON format is versioned (`version: 2`); version 1 backups remain importable. Its document has a tree ID and name, people with stable IDs, optional fields and positions, an optional home designation (`homePersonId`, stored as a person ID or `null`), directed parent relationships, symmetric partner relationships, unassigned connections with their original handles, and viewport coordinates. Older backups and local trees without a home field open with no designation. Drive metadata and authorization stay outside the portable document.

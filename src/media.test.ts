@@ -48,6 +48,8 @@ describe('portable portrait processing', () => {
     vi.useFakeTimers();
     const tree = {
       ...makeTree('Portable'),
+      updatedAt: 100,
+      dataUpdatedAt: 80,
       people: [{ ...makePerson('Alex'), portrait: 'data:image/jpeg;base64,processed' }],
     };
     exportJson(tree);

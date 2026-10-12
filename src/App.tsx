@@ -52,11 +52,12 @@ import {
   makePerson,
   makeTree,
   personCardSize,
-  personLifeStatus,
   removePerson,
   setHomePerson,
   relationFromConnection,
   updateRelation,
+  updatePerson,
+  timestampDataChange,
   uid,
   type HandleSide,
   type LifeDates,
@@ -90,6 +91,13 @@ const nodeTypes = { person: PersonCard };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = 'draft' | 'saved' | 'saving' | 'error';
+type TreeChange = 'data' | 'navigation';
+type CommitOptions = {
+  record?: boolean;
+  persist?: boolean;
+  // Renames persist before committing; reuse the exact timestamps that were written.
+  timestamps?: Pick<Tree, 'updatedAt' | 'dataUpdatedAt'>;
+};
 
 export default function App() {
   const [screen, setScreen] = useState<'home' | 'editor'>('home');
@@ -205,23 +213,35 @@ export default function App() {
     return queued;
   }, []);
   const commit = useCallback(
-    (next: Tree, record = true, persist = true) => {
+    (
+      next: Tree,
+      change: TreeChange,
+      { record = true, persist = true, timestamps }: CommitOptions = {},
+    ) => {
       const previous = treeRef.current;
-      if (next === previous) return;
-      if (record && previous) {
+      if (!previous || next === previous) return;
+      const stamped = timestamps
+        ? { ...next, updatedAt: timestamps.updatedAt, dataUpdatedAt: timestamps.dataUpdatedAt }
+        : change === 'data'
+          ? timestampDataChange(next, previous)
+          : {
+              ...next,
+              updatedAt: persist ? Date.now() : next.updatedAt,
+              dataUpdatedAt: previous.dataUpdatedAt,
+            };
+      if (record) {
         history.current.push(cloneTree(previous));
         if (history.current.length > 50) history.current.shift();
         future.current = [];
       }
       const updated = {
-        ...next,
+        ...stamped,
         version: 2 as const,
-        updatedAt: persist ? Date.now() : next.updatedAt,
       };
       treeRef.current = updated;
       setTree(updated);
       // Viewport updates do not turn an untouched new tree into a saved tree.
-      if (record) draftTree.current = false;
+      if (change === 'data') draftTree.current = false;
       if (draftTree.current) return;
       if (!persist) {
         setSaveState('saved');
@@ -288,12 +308,14 @@ export default function App() {
   };
   const apply = useCallback(
     (update: (current: Tree) => Tree, record = true) => {
-      if (!treeRef.current) return;
+      if (!treeRef.current) return false;
       try {
-        commit(update(treeRef.current), record);
+        commit(update(treeRef.current), 'data', { record });
         setNotice('');
+        return true;
       } catch (error) {
         showError(error);
+        return false;
       }
     },
     [commit, showError],
@@ -305,7 +327,7 @@ export default function App() {
       ...(dateDrafts[personId] || {
         born: current.born,
         died: current.died,
-        lifeStatus: personLifeStatus(current) || undefined,
+        lifeStatus: current.lifeStatus,
       }),
       ...changes,
     };
@@ -315,11 +337,7 @@ export default function App() {
       else delete next[personId];
       return next;
     });
-    if (!lifeDatesError(dates))
-      apply((t) => ({
-        ...t,
-        people: t.people.map((p) => (p.id === personId ? { ...p, ...dates } : p)),
-      }));
+    if (!lifeDatesError(dates)) apply((t) => updatePerson(t, { ...current, ...dates }));
   };
   const addPerson = (relative?: Exclude<ConnectMode, null>) => {
     const current = treeRef.current;
@@ -355,7 +373,12 @@ export default function App() {
               kind: 'unspecified',
             },
       );
-    commit(next);
+    try {
+      commit(next, 'data');
+    } catch (error) {
+      showError(error);
+      return;
+    }
     selectPerson(person.id);
     if (relative)
       requestAnimationFrame(() =>
@@ -413,18 +436,30 @@ export default function App() {
     setConnectMode(null);
   };
   const undo = () => {
-    const previous = history.current.pop();
-    if (!previous || !treeRef.current) return;
-    future.current.push(cloneTree(treeRef.current));
-    setDateDrafts({});
-    commit(previous, false);
+    const previous = history.current.at(-1),
+      current = treeRef.current;
+    if (!previous || !current) return;
+    try {
+      commit(previous, 'data', { record: false });
+      history.current.pop();
+      future.current.push(cloneTree(current));
+      setDateDrafts({});
+    } catch (error) {
+      showError(error);
+    }
   };
   const redo = () => {
-    const next = future.current.pop();
-    if (!next || !treeRef.current) return;
-    history.current.push(cloneTree(treeRef.current));
-    setDateDrafts({});
-    commit(next, false);
+    const next = future.current.at(-1),
+      current = treeRef.current;
+    if (!next || !current) return;
+    try {
+      commit(next, 'data', { record: false });
+      future.current.pop();
+      history.current.push(cloneTree(current));
+      setDateDrafts({});
+    } catch (error) {
+      showError(error);
+    }
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -692,7 +727,7 @@ export default function App() {
         !current.people.some((person) => person.id === action.personId)
       )
         throw Error('This person was not found in the current tree.');
-      commit(removePerson(current, action.personId));
+      commit(removePerson(current, action.personId), 'data');
       setDateDrafts((previous) => {
         const next = { ...previous };
         delete next[action.personId];
@@ -715,7 +750,7 @@ export default function App() {
         treeRef.current?.id === action.treeId ? treeRef.current : await getTree(action.treeId);
       if (!current) throw Error('This tree was not found.');
       if (name !== current.name) {
-        let updated = { ...current, name, updatedAt: Date.now() };
+        let updated = timestampDataChange({ ...current, name }, current);
         try {
           await queueSave(updated);
         } catch (error) {
@@ -726,8 +761,8 @@ export default function App() {
         if (latest?.id === action.treeId) {
           // Preserve edits that finished during the write and replace their stale autosave.
           const changedWhileSaving = latest !== current;
-          if (changedWhileSaving) updated = { ...latest, name, updatedAt: Date.now() };
-          commit(updated, true, changedWhileSaving);
+          if (changedWhileSaving) updated = timestampDataChange({ ...latest, name }, latest);
+          commit(updated, 'data', { persist: changedWhileSaving, timestamps: updated });
         }
         setLibrary((previous) =>
           [updated, ...previous.filter((item) => item.id !== updated.id)].sort(
@@ -766,7 +801,15 @@ export default function App() {
     const current = treeRef.current;
     if (!current) return;
     const next = movePeopleToPositions(current, movedNodes);
-    if (next !== current) apply(() => next);
+    if (next === current || apply(() => next)) return;
+    // A rejected layout edit must also restore the cards rendered during the drag.
+    const positions = new Map(current.people.map((p) => [p.id, { x: p.x, y: p.y }]));
+    setNodes((nodes) =>
+      nodes.map((node) => ({
+        ...node,
+        position: positions.get(node.id) || node.position,
+      })),
+    );
   };
   const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;
@@ -779,7 +822,7 @@ export default function App() {
       0.01
     )
       return;
-    commit({ ...current, viewport }, false);
+    commit({ ...current, viewport }, 'navigation', { record: false });
   };
   const hasInvalidDateDraft = tree?.people.some((p) => !!lifeDatesError(dateDrafts[p.id] || p));
   const downloadJson = () => exports.run('JSON');
@@ -1166,21 +1209,14 @@ export default function App() {
                   onDatesChange={(changes) => editLifeDates(selected.id, changes)}
                   relations={tree!.relations}
                   people={tree!.people}
-                  onChange={(p) =>
-                    apply((t) => ({
-                      ...t,
-                      people: t.people.map((old) => (old.id === p.id ? p : old)),
-                    }))
-                  }
+                  onChange={(p) => apply((t) => updatePerson(t, p))}
                   onPortraitChange={(portrait) => {
                     const current = treeRef.current;
                     if (current?.id !== tree!.id || selectedId !== selected.id) return;
-                    apply((t) => ({
-                      ...t,
-                      people: t.people.map((person) =>
-                        person.id === selected.id ? { ...person, portrait } : person,
-                      ),
-                    }));
+                    apply((t) => {
+                      const person = t.people.find((p) => p.id === selected.id);
+                      return person ? updatePerson(t, { ...person, portrait }) : t;
+                    });
                   }}
                   onDelete={() => deletePerson(selected.id)}
                   onAddRelative={addPerson}

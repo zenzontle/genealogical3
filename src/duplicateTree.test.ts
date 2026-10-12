@@ -16,6 +16,7 @@ describe('local tree duplication', () => {
       ...makeTree('History'),
       version: 1,
       updatedAt: 1,
+      dataUpdatedAt: 2,
       people: [a, b],
       homePersonId: a.id,
       relations: [
@@ -33,6 +34,7 @@ describe('local tree duplication', () => {
       id: copy.id,
       name: 'History (copy)',
       updatedAt: 123456,
+      dataUpdatedAt: 123456,
     });
     expect(tree).toEqual(before);
     copy.people[0].notes = 'Different notes';

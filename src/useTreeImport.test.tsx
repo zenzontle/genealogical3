@@ -17,9 +17,31 @@ const jsonFile = (text: string) =>
 beforeEach(() => {
   vi.mocked(saveTree).mockReset().mockResolvedValue('saved');
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('JSON import feedback and recovery', () => {
+  it('gives an independent imported copy fresh, equal timestamps without changing its source', async () => {
+    const source = { ...makeTree('Source'), updatedAt: 50, dataUpdatedAt: 60 };
+    const before = structuredClone(source);
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+    const saved = vi.fn();
+    const { result } = renderHook(() => useTreeImport(saved, vi.fn().mockResolvedValue(undefined)));
+    await act(() => result.current.run(jsonFile(JSON.stringify(source))));
+    const copy = vi.mocked(saveTree).mock.calls[0][0];
+    expect(copy).toEqual({
+      ...source,
+      id: copy.id,
+      name: 'Source (imported)',
+      updatedAt: 100,
+      dataUpdatedAt: 100,
+    });
+    expect(copy.id).not.toBe(source.id);
+    expect(source).toEqual(before);
+    expect(saved).toHaveBeenCalledWith(copy);
+  });
   it('allows retrying a file read failure before validation', async () => {
     const file = jsonFile(JSON.stringify(makeTree('Family')));
     file.text.mockRejectedValueOnce(Error('Could not read file.'));

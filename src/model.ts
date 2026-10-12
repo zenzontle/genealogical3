@@ -59,6 +59,7 @@ export type Tree = {
   relations: Relation[];
   viewport: { x: number; y: number; zoom: number };
   updatedAt: number;
+  dataUpdatedAt: number;
 };
 export const uid = () => crypto.randomUUID();
 export const unknownDate = (): DateValue => ({ precision: 'unknown' });
@@ -75,24 +76,40 @@ export const makePerson = (name = 'New person', x = 0, y = 0): Person => ({
   x,
   y,
 });
-export const makeTree = (name = 'Untitled tree'): Tree => ({
-  version: 2,
-  id: uid(),
-  name,
-  people: [],
-  homePersonId: null,
-  relations: [],
-  viewport: { x: 0, y: 0, zoom: 1 },
-  updatedAt: Date.now(),
-});
+export const makeTree = (name = 'Untitled tree'): Tree => {
+  const now = Date.now();
+  return {
+    version: 2,
+    id: uid(),
+    name,
+    people: [],
+    homePersonId: null,
+    relations: [],
+    viewport: { x: 0, y: 0, zoom: 1 },
+    updatedAt: now,
+    dataUpdatedAt: now,
+  };
+};
+/** Meaningful edits advance even when the clock is unchanged or moves backward. */
+export function timestampDataChange(next: Tree, current: Tree): Tree {
+  const now = Date.now();
+  const dataUpdatedAt = Math.max(now, current.dataUpdatedAt + 1);
+  if (!Number.isSafeInteger(dataUpdatedAt))
+    throw Error(
+      "This tree's edit timestamp has reached its limit. Duplicate the tree to continue editing.",
+    );
+  return { ...next, updatedAt: now, dataUpdatedAt };
+}
 /** A local copy keeps its internal references but has its own document identity. */
 export function duplicateTree(tree: Tree): Tree {
+  const now = Date.now();
   return {
     ...structuredClone(tree),
     version: 2,
     id: uid(),
     name: `${tree.name} (copy)`,
-    updatedAt: Date.now(),
+    updatedAt: now,
+    dataUpdatedAt: now,
   };
 }
 export const dateLabel = (date: DateValue) =>
@@ -111,7 +128,21 @@ export function normalizeHomePerson(
   return { ...tree, homePersonId };
 }
 export function setHomePerson(tree: Tree, personId: string | null): Tree {
+  if (tree.homePersonId === personId) return tree;
   return normalizeHomePerson({ ...tree, homePersonId: personId });
+}
+/** Return the current tree for identical details, including newly allocated dates. */
+export function updatePerson(tree: Tree, person: Person): Tree {
+  const current = tree.people.find((p) => p.id === person.id);
+  if (!current) return tree;
+  const same = (Object.keys({ ...current, ...person }) as (keyof Person)[]).every((key) =>
+    key === 'born' || key === 'died'
+      ? person[key].precision === current[key].precision &&
+        dateLabel(person[key]) === dateLabel(current[key])
+      : person[key] === current[key],
+  );
+  if (same) return tree;
+  return { ...tree, people: tree.people.map((p) => (p.id === person.id ? person : p)) };
 }
 export function removePerson(tree: Tree, personId: string): Tree {
   return {
@@ -239,6 +270,8 @@ export function changeRelationRole(
   referenceId: string,
   role: RelationshipRole,
 ): Relation {
+  if ((role === 'parent-child' && relation.type === 'parent') || role === relation.type)
+    return relation;
   const endpoints = relationEndpoints(relation);
   const otherId = endpoints.find((id) => id !== referenceId)!;
   if (role === 'parent-child')
@@ -271,6 +304,7 @@ export function setRelationParent(
   relation: Extract<Relation, { type: 'parent' }>,
   parentId: string,
 ): Relation {
+  if (relation.parentId === parentId) return relation;
   const [a, b] = relationEndpoints(relation);
   if (parentId !== a && parentId !== b)
     throw Error('Choose one of the linked people as the parent.');
@@ -283,6 +317,15 @@ export function setRelationParent(
   };
 }
 export function updateRelation(tree: Tree, relation: Relation): Tree {
+  const current = tree.relations.find((r) => r.id === relation.id);
+  if (
+    current &&
+    Object.keys({ ...current, ...relation }).every(
+      (key) =>
+        (current as Record<string, unknown>)[key] === (relation as Record<string, unknown>)[key],
+    )
+  )
+    return tree;
   return addRelation(
     { ...tree, relations: tree.relations.filter((r) => r.id !== relation.id) },
     relation,
@@ -364,6 +407,8 @@ export function validateTree(input: unknown): Tree {
   if (
     typeof input.id !== 'string' ||
     typeof input.name !== 'string' ||
+    !Number.isSafeInteger(input.dataUpdatedAt) ||
+    Number(input.dataUpdatedAt) < 0 ||
     !Array.isArray(input.people) ||
     !Array.isArray(input.relations) ||
     !isObj(input.viewport) ||
