@@ -18,6 +18,7 @@ export function useDriveWorkspace(active: boolean) {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState('');
   const request = useRef(0);
+  const failedConnectionGeneration = useRef<number | null>(null);
   const mounted = useRef(false);
   const previousSession = useRef({ connection, generation: sessionGeneration });
   const reportError = useCallback((error: unknown) => {
@@ -73,11 +74,15 @@ export function useDriveWorkspace(active: boolean) {
   }, [active, connection, sessionGeneration, refresh]);
   const connect = async () => {
     const generation = getDriveGeneration();
+    failedConnectionGeneration.current = null;
     setError('');
     try {
       await authorizeDrive();
     } catch (error) {
-      if (mounted.current && generation === getDriveGeneration()) reportError(error);
+      if (mounted.current && generation === getDriveGeneration()) {
+        failedConnectionGeneration.current = generation;
+        reportError(error);
+      }
     }
   };
   const retry = async () => {
@@ -85,6 +90,7 @@ export function useDriveWorkspace(active: boolean) {
     setError('');
     try {
       if (getDriveConnection() === 'connected') await refresh();
+      else if (failedConnectionGeneration.current === generation) await connect();
       else await restoreDrive();
     } catch (error) {
       if (mounted.current && generation === getDriveGeneration()) reportError(error);

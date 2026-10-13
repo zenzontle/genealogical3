@@ -114,7 +114,7 @@ describe('Workspace metadata discovery', () => {
     'Google Drive authorization was canceled or denied.',
     'Access denied',
     'Google authorization was canceled or timed out.',
-  ])('preserves explicit connection failure: %s', async (message) => {
+  ])('preserves and retries explicit connection failure: %s', async (message) => {
     vi.mocked(restoreDrive).mockImplementation(async () => connection('disconnected'));
     vi.mocked(authorizeDrive).mockImplementationOnce(async () => {
       connection('connecting');
@@ -132,13 +132,25 @@ describe('Workspace metadata discovery', () => {
     rerender({ active: false });
     rerender({ active: true });
     expect(result.current.error).toBe(message);
+    vi.mocked(authorizeDrive).mockImplementationOnce(async () => {
+      connection('connecting');
+      connection('disconnected');
+      throw Error(message);
+    });
+    await act(() => result.current.retry());
+    expect(result.current.error).toBe(message);
+    expect(authorizeDrive).toHaveBeenCalledTimes(2);
+    expect(restoreDrive).toHaveBeenCalledOnce();
     await act(async () => {
       ++auth.generation;
       connection('disconnected');
     });
     expect(result.current.error).toBe('');
+    await act(() => result.current.retry());
+    expect(authorizeDrive).toHaveBeenCalledTimes(2);
+    expect(restoreDrive).toHaveBeenCalledTimes(2);
   });
-  it('clears a connection failure on a new attempt and lists after it succeeds', async () => {
+  it('retries a connection failure interactively in the click and lists after it succeeds', async () => {
     vi.mocked(restoreDrive).mockImplementation(async () => connection('disconnected'));
     vi.mocked(authorizeDrive).mockImplementationOnce(async () => {
       connection('connecting');
@@ -156,7 +168,8 @@ describe('Workspace metadata discovery', () => {
     });
     let attempt!: Promise<void>;
     act(() => {
-      attempt = result.current.connect();
+      attempt = result.current.retry();
+      expect(authorizeDrive).toHaveBeenCalledTimes(2);
     });
     expect(result.current.error).toBe('');
     expect(result.current.loading).toBe(true);
@@ -167,6 +180,7 @@ describe('Workspace metadata discovery', () => {
     });
     await waitFor(() => expect(result.current.files).toEqual([file]));
     expect(result.current.error).toBe('');
+    expect(restoreDrive).toHaveBeenCalledOnce();
   });
   it('clears stale listing feedback through a disconnecting session transition', async () => {
     vi.mocked(listDriveTrees).mockRejectedValueOnce(Error('Listing failed'));
