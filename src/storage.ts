@@ -81,3 +81,42 @@ export const saveDriveLink = (link: DriveLink) =>
   transaction<IDBValidKey>(LINKS, 'readwrite', (store) => store.put(link));
 export const deleteDriveLink = (treeId: string) =>
   transaction<undefined>(LINKS, 'readwrite', (store) => store.delete(treeId));
+
+/** Remove a local copy and/or every association with a deleted backup atomically. */
+export async function removeWorkspaceStorage({
+  treeId,
+  backupId,
+}: {
+  treeId?: string;
+  backupId?: string;
+}): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE, LINKS], 'readwrite');
+    const links = tx.objectStore(LINKS);
+    if (treeId) {
+      tx.objectStore(STORE).delete(treeId);
+      links.delete(treeId);
+    }
+    if (backupId) {
+      const cursor = links.openCursor();
+      cursor.onsuccess = () => {
+        const entry = cursor.result;
+        if (!entry) return;
+        if ((entry.value as DriveLink).id === backupId) entry.delete();
+        entry.continue();
+      };
+    }
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onabort = () => {
+      db.close();
+      reject(tx.error || Error('Browser storage was interrupted.'));
+    };
+    tx.onerror = () => {
+      /* onabort reports the transaction failure after rollback. */
+    };
+  });
+}

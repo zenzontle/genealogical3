@@ -56,6 +56,22 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Workspace metadata discovery', () => {
+  it('invalidates pending listings and filters a deleted backup from later stale metadata', async () => {
+    const pending = deferred<DriveFile[]>();
+    vi.mocked(listDriveTrees).mockReturnValueOnce(pending.promise);
+    const { result } = renderHook(() => useDriveWorkspace(true));
+    await waitFor(() => expect(listDriveTrees).toHaveBeenCalledOnce());
+    act(() => result.current.removeFile(file.id));
+    await act(async () => pending.resolve([file]));
+    expect(result.current.files).toEqual([]);
+    await act(() => result.current.refresh());
+    expect(result.current.files).toEqual([]);
+    await act(async () => {
+      ++auth.generation;
+      connection('connected');
+    });
+    await waitFor(() => expect(result.current.files).toEqual([file]));
+  });
   it.each(['unconfigured', 'disconnected'] as const)(
     'does not list or authorize for %s sessions',
     async (status) => {

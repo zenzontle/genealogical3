@@ -1,4 +1,4 @@
-import { ArrowRight, Cloud, Home } from 'lucide-react';
+import { ArrowRight, Cloud, Home, Monitor } from 'lucide-react';
 import type { DriveFile } from './drive';
 import type { Tree } from './model';
 import { TreePreview } from './TreePreview';
@@ -8,7 +8,7 @@ export function WorkspaceCard({
   entry,
   busy,
   duplicatingTreeId,
-  canRestore,
+  driveConnected,
   onOpenTree,
   onRestore,
   onDuplicateTree,
@@ -18,12 +18,12 @@ export function WorkspaceCard({
   entry: WorkspaceEntry;
   busy: boolean;
   duplicatingTreeId: string | null;
-  canRestore: boolean;
+  driveConnected: boolean;
   onOpenTree: (id: string) => void;
   onRestore: (file: DriveFile) => void;
   onDuplicateTree: (tree: Tree) => void;
   onRenameTree: (tree: Tree) => void;
-  onRemoveTree: (tree: Tree) => void;
+  onRemoveTree: (entry: WorkspaceEntry) => void;
 }) {
   const local = entry.kind === 'local' ? entry.tree : null;
   const name = entry.kind === 'local' ? entry.tree.name : driveTreeName(entry.file.name);
@@ -32,7 +32,7 @@ export function WorkspaceCard({
     <div className="tree-tile">
       <button
         className="tree-open"
-        disabled={busy}
+        disabled={busy || (!local && !driveConnected)}
         aria-label={`Open ${name}`}
         onClick={() => (entry.kind === 'local' ? onOpenTree(entry.tree.id) : onRestore(entry.file))}
       >
@@ -44,7 +44,22 @@ export function WorkspaceCard({
           </div>
         )}
         <strong title={name}>{name}</strong>
-        <span>{local ? (link ? 'This browser + Drive' : 'This browser') : 'Google Drive'}</span>
+        <span className="storage-icons">
+          {local && (
+            <span role="img" aria-label="Stored in this browser" title="Stored in this browser">
+              <Monitor size={17} aria-hidden="true" />
+            </span>
+          )}
+          {(!local || link) && (
+            <span
+              role="img"
+              aria-label="Backed up in Google Drive"
+              title="Backed up in Google Drive"
+            >
+              <Cloud size={17} aria-hidden="true" />
+            </span>
+          )}
+        </span>
         {local && local.homePersonId !== null && (
           <span className="library-home">
             <Home size={13} aria-hidden="true" />
@@ -66,43 +81,45 @@ export function WorkspaceCard({
           Open tree <ArrowRight size={15} />
         </span>
       </button>
-      {local && (
-        <div className="tree-tile-tools">
-          <button
-            aria-label={`Duplicate ${name}`}
-            title="Duplicate"
-            disabled={busy || duplicatingTreeId !== null}
-            onClick={() => onDuplicateTree(local)}
-          >
-            {duplicatingTreeId === local.id ? 'Duplicating…' : 'Duplicate'}
-          </button>
-          <button
-            aria-label={`Rename ${name}`}
-            title="Rename"
-            disabled={busy}
-            onClick={() => onRenameTree(local)}
-          >
-            Rename
-          </button>
-          <button
-            aria-label={`Delete ${name}`}
-            title="Delete"
-            disabled={busy}
-            onClick={() => onRemoveTree(local)}
-          >
-            Delete
-          </button>
-          {link && (
+      <div className="tree-tile-tools">
+        {local && (
+          <>
             <button
-              aria-label={`Restore Drive copy of ${name}`}
-              disabled={busy || !canRestore}
-              onClick={() => onRestore(link)}
+              aria-label={`Duplicate ${name}`}
+              title="Duplicate"
+              disabled={busy || duplicatingTreeId !== null}
+              onClick={() => onDuplicateTree(local)}
             >
-              Restore Drive copy
+              {duplicatingTreeId === local.id ? 'Duplicating…' : 'Duplicate'}
             </button>
-          )}
-        </div>
-      )}
+            <button
+              aria-label={`Rename ${name}`}
+              title="Rename"
+              disabled={busy}
+              onClick={() => onRenameTree(local)}
+            >
+              Rename
+            </button>
+            <button
+              aria-label={`Delete ${name}`}
+              title="Delete"
+              disabled={busy}
+              onClick={() => onRemoveTree(entry)}
+            >
+              Delete
+            </button>
+          </>
+        )}
+        {!local && (
+          <button
+            aria-label={`Delete ${name} from Drive`}
+            disabled={busy}
+            onClick={() => onRemoveTree(entry)}
+          >
+            Delete from Drive
+          </button>
+        )}
+      </div>
     </div>
   );
 }

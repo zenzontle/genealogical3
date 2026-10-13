@@ -36,6 +36,9 @@ import { DriveActionsDialog } from './DriveActionsDialog';
 import { useDriveWorkspace } from './useDriveWorkspace';
 import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
+import { WorkspaceDeletionDialog } from './WorkspaceDeletionDialog';
+import { useWorkspaceDeletion } from './useWorkspaceDeletion';
+import type { WorkspaceEntry } from './workspaceEntries';
 import { OperationFeedback } from './OperationFeedback';
 import { useTreeImport } from './useTreeImport';
 import { useTreeExport } from './useTreeExport';
@@ -64,8 +67,6 @@ import {
   type Tree,
 } from './model';
 import {
-  deleteDriveLink,
-  deleteTree,
   duplicateSavedTree,
   getDriveLink,
   getTree,
@@ -155,6 +156,45 @@ export default function App() {
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
+  const removingLocal = useRef(new Set<string>());
+  const removedLocal = useRef(new Set<string>());
+  const deletion = useWorkspaceDeletion({
+    operationBusy: driveOperationBusy,
+    onBusy: setDriveBusy,
+    onDriveDeleted: driveWorkspace.removeFile,
+    beforeLocalRemoval: async (id) => {
+      removingLocal.current.add(id);
+      if (treeRef.current?.id === id) {
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        ++saveCounter.current;
+      }
+      await saveQueue.current.catch(() => undefined);
+      return async () => {
+        removingLocal.current.delete(id);
+        // A rollback must persist edits whose autosaves were suppressed during deletion.
+        if (!removedLocal.current.has(id) && treeRef.current?.id === id) await saveNow();
+      };
+    },
+    onRemoved: (treeId, backupId) => {
+      if (treeId) removedLocal.current.add(treeId);
+      setLibrary((previous) => previous.filter((item) => item.id !== treeId));
+      setDriveLinks((previous) =>
+        previous.filter((link) => link.treeId !== treeId && link.id !== backupId),
+      );
+      if (treeRef.current?.id === treeId) {
+        treeRef.current = null;
+        setTree(null);
+        setScreen('home');
+      }
+      if (backupId && driveFile?.id === backupId) {
+        setDriveFile(null);
+        setRestoreWarnings([]);
+        setDriveSavedAt('');
+      }
+      if (backupId) void driveWorkspace.refresh();
+    },
+  });
   useConnectorProximity(canvasRef, screen === 'editor');
   useEffect(
     () => () => {
@@ -197,7 +237,13 @@ export default function App() {
     refreshLibrary();
   }, [refreshLibrary]);
   const queueSave = useCallback((value: Tree) => {
-    const queued = saveQueue.current.catch(() => undefined).then(() => saveTree(value));
+    const queued = saveQueue.current
+      .catch(() => undefined)
+      .then(() =>
+        removingLocal.current.has(value.id) || removedLocal.current.has(value.id)
+          ? undefined
+          : saveTree(value),
+      );
     saveQueue.current = queued;
     return queued;
   }, []);
@@ -585,7 +631,7 @@ export default function App() {
     const warnings = restoreWarnings;
     if (action === 'save' && warnings.length) {
       setNotice(
-        'This local copy has missing portraits. Use Restore Drive copy in Workspace to retry, or use Save a copy.',
+        'This local copy has missing portraits. Duplicate local edits for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again, or use Save a copy.',
       );
       return;
     }
@@ -733,9 +779,9 @@ export default function App() {
       setDuplicatingTreeId(null);
     }
   };
-  const removeTree = (item: Tree) => {
+  const removeTree = (entry: WorkspaceEntry) => {
     ++navigation.current;
-    setTreeAction({ kind: 'delete-tree', treeId: item.id, name: item.name });
+    deletion.open(entry);
   };
   const submitTreeAction = async (name: string) => {
     const action = treeAction;
@@ -801,14 +847,6 @@ export default function App() {
       }
       return;
     }
-    await deleteTree(action.treeId);
-    setLibrary((previous) => previous.filter((item) => item.id !== action.treeId));
-    if (treeRef.current?.id === action.treeId) {
-      treeRef.current = null;
-      setTree(null);
-      setScreen('home');
-    }
-    await deleteDriveLink(action.treeId);
   };
   const leaveEditor = async () => {
     ++navigation.current;
@@ -1084,8 +1122,9 @@ export default function App() {
               <p>
                 Incomplete Drive copy: portraits could not be restored for{' '}
                 {restoreWarnings.map((warning) => warning.name || warning.personId).join(', ')}.{' '}
-                Overwriting the original backup is blocked. Use Restore Drive copy in Workspace to
-                retry, or Save a copy to omit missing portraits.
+                Overwriting the original backup is blocked. Duplicate local edits for safekeeping,
+                delete the linked local copy, and reopen the remaining Drive card to download again,
+                or Save a copy to omit missing portraits.
               </p>
             </div>
           )}
@@ -1339,6 +1378,14 @@ export default function App() {
           onClose={() => setTreeAction(null)}
         />
       )}
+      {deletion.action && (
+        <WorkspaceDeletionDialog
+          action={deletion.action}
+          driveConnected={driveWorkspace.connection === 'connected'}
+          onSubmit={deletion.submit}
+          onClose={deletion.close}
+        />
+      )}
       {notice && (
         <div className="toast" role="alert">
           <span>{notice}</span>
@@ -1347,7 +1394,7 @@ export default function App() {
           </button>
         </div>
       )}
-      {driveBusy && (
+      {driveBusy && !deletion.action && (
         <div className="export-feedback" role="status" aria-live="polite">
           {photoProgress
             ? `${photoProgress.direction === 'upload' ? 'Uploading' : 'Downloading'} photos: ${photoProgress.completed} of ${photoProgress.total}`

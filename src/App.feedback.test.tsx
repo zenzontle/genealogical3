@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { makePerson, makeTree, validateTree, type Tree } from './model';
 import {
-  deleteTree,
+  removeWorkspaceStorage,
   duplicateSavedTree,
   getTree,
   listTrees,
@@ -25,6 +25,7 @@ import {
   saveDriveTree,
   openDriveTree,
   listDriveTrees,
+  deleteDriveBackup,
   type DriveSaveResult,
 } from './drive';
 
@@ -58,7 +59,7 @@ vi.mock('./storage', () => ({
   listDriveLinks: vi.fn(),
   getTree: vi.fn(),
   saveTree: vi.fn(),
-  deleteTree: vi.fn(),
+  removeWorkspaceStorage: vi.fn(),
   getDriveLink: vi.fn(),
   deleteDriveLink: vi.fn(),
   saveDriveLink: vi.fn(),
@@ -80,6 +81,14 @@ vi.mock('./drive', () => ({
   listDriveTrees: vi.fn(),
   openDriveTree: vi.fn(),
   saveDriveTree: vi.fn(),
+  createDriveDeletion: (id: string) => ({
+    id,
+    generation: driveState.generation,
+    deletedPortraitIds: [],
+    documentDeleted: false,
+    documentAttempted: false,
+  }),
+  deleteDriveBackup: vi.fn(),
 }));
 vi.mock('./media', () => ({ exportJson: vi.fn(), exportPng: vi.fn(), portraitData: vi.fn() }));
 vi.mock('./feedback', async (original) => ({
@@ -192,10 +201,20 @@ beforeEach(() => {
     records.set(tree.id, tree);
     return tree.id;
   });
-  vi.mocked(deleteTree).mockImplementation(async (id) => {
-    records.delete(id);
-    return undefined;
-  });
+  vi.mocked(removeWorkspaceStorage)
+    .mockReset()
+    .mockImplementation(async ({ treeId, backupId }) => {
+      if (treeId) {
+        records.delete(treeId);
+        links.delete(treeId);
+      }
+      if (backupId) for (const [id, link] of links) if (link.id === backupId) links.delete(id);
+    });
+  vi.mocked(deleteDriveBackup)
+    .mockReset()
+    .mockImplementation(async (progress) => {
+      progress.documentDeleted = true;
+    });
 });
 afterEach(() => {
   cleanup();
@@ -607,9 +626,9 @@ describe('local feedback integration', () => {
     render(<App />);
     fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(deleteTree).not.toHaveBeenCalled();
+    expect(removeWorkspaceStorage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
-    vi.mocked(deleteTree).mockRejectedValueOnce(Error('Deletion failed.'));
+    vi.mocked(removeWorkspaceStorage).mockRejectedValueOnce(Error('Deletion failed.'));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await screen.findByText('Deletion failed.');
     expect(records.has(original.id)).toBe(true);
@@ -771,6 +790,63 @@ describe('local feedback integration', () => {
       ),
     );
   });
+
+  it.each(['success', 'rollback-pending', 'rollback-suppressed'] as const)(
+    'preserves delayed layout edits when local deletion ends with %s',
+    async (outcome) => {
+      render(<App />);
+      await openOriginal();
+      const finishDrag = canvasEvents.onSelectionDragStop;
+      const moved: PersonNode[] = original.people.map((person) => ({
+        id: person.id,
+        type: 'person',
+        position: { x: person.x + 80, y: person.y + 40 },
+        data: {
+          person,
+          selected: false,
+          homeName: null,
+          isHome: false,
+          onSelect: vi.fn(),
+          onDelete: vi.fn(),
+        },
+      }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('button', { name: 'Delete Family' });
+      let finishDelete!: () => void;
+      vi.mocked(removeWorkspaceStorage).mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finishDelete = () => {
+              if (outcome === 'success') {
+                records.delete(original.id);
+                resolve();
+              } else reject(Error('Deletion rolled back.'));
+            };
+          }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(removeWorkspaceStorage).toHaveBeenCalledOnce());
+      const writes = vi.mocked(saveTree).mock.calls.length;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      act(() => finishDrag(null, moved));
+      if (outcome !== 'rollback-pending') await act(() => vi.advanceTimersByTimeAsync(450));
+      await act(async () => finishDelete());
+      if (outcome !== 'success') {
+        expect(records.get(original.id)?.people[0].x).toBe(moved[0].position.x);
+        expect(saveTree).toHaveBeenCalledTimes(writes + 1);
+        expect(screen.getByRole('alert').textContent).toContain('Deletion rolled back.');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Family' })));
+        expect((await editorSnapshot()).people[0].x).toBe(moved[0].position.x);
+        return;
+      }
+      await act(() => vi.advanceTimersByTimeAsync(450));
+      expect(saveTree).toHaveBeenCalledTimes(writes);
+      expect(records.has(original.id)).toBe(false);
+      expect(screen.queryByRole('button', { name: 'Open Family' })).toBeNull();
+    },
+  );
 
   it('preserves edits made while a portrait processes and shows export retry controls', async () => {
     render(<App />);
@@ -1048,12 +1124,12 @@ describe('combined Drive Workspace integration', () => {
     expect(saveDriveTree).not.toHaveBeenCalled();
     expect(authorizeDrive).not.toHaveBeenCalled();
   });
-  it('resumes linked local edits and restores a backup as a separate protected local copy', async () => {
+  it('resumes local edits, then downloads a protected working copy after local deletion', async () => {
     driveState.configured = true;
     links.set(original.id, { treeId: original.id, ...file });
     vi.mocked(listDriveTrees).mockResolvedValue([file]);
     render(<App />);
-    await screen.findByRole('button', { name: 'Restore Drive copy of Family' });
+    await screen.findByRole('img', { name: 'Backed up in Google Drive' });
     expect(screen.queryByRole('button', { name: 'Open Backup' })).toBeNull();
     await openOriginal();
     expect(openDriveTree).not.toHaveBeenCalled();
@@ -1067,16 +1143,18 @@ describe('combined Drive Workspace integration', () => {
     };
     const warnings = [{ personId: backup.people[0].id, name: 'Backup person' }];
     vi.mocked(openDriveTree).mockResolvedValueOnce({ tree: backup, restoreWarnings: warnings });
-    fireEvent.click(await screen.findByRole('button', { name: 'Restore Drive copy of Family' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Backup' }));
     await screen.findByRole('button', { name: 'Select Backup person' });
-    expect(records.get(original.id)).toEqual(original);
+    expect(records.has(original.id)).toBe(false);
     const copy = [...records.values()].find((tree) => tree.id !== original.id)!;
     expect(copy.name).toBe('Backup revision');
     expect(links.get(copy.id)?.restoreWarnings).toEqual(warnings);
     expect(openDriveTree).toHaveBeenCalledWith(file.id, expect.any(Function));
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
     await screen.findByRole('button', { name: 'Open Backup revision' });
-    expect(screen.getByRole('button', { name: 'Open Family' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open Family' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Open Backup' })).toBeNull();
   });
   it('reveals a Drive-only backup when its local copy is deleted', async () => {
@@ -1084,7 +1162,7 @@ describe('combined Drive Workspace integration', () => {
     links.set(original.id, { treeId: original.id, ...file });
     vi.mocked(listDriveTrees).mockResolvedValue([file]);
     render(<App />);
-    await screen.findByRole('button', { name: 'Restore Drive copy of Family' });
+    await screen.findByRole('img', { name: 'Backed up in Google Drive' });
     fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await screen.findByRole('button', { name: 'Open Backup' });
@@ -1152,6 +1230,125 @@ describe('combined Drive Workspace integration', () => {
   });
 });
 
+describe('Workspace deletion integration', () => {
+  const backup = { id: 'shared', name: 'Backup.genealogical3.json', modifiedTime: '2026-10-10' };
+  function linkedCopies() {
+    driveState.configured = true;
+    const other = { ...original, id: 'other-local', name: 'Other local' };
+    records.set(other.id, other);
+    for (const tree of [original, other]) links.set(tree.id, { treeId: tree.id, ...backup });
+    vi.mocked(listDriveTrees).mockResolvedValue([backup]);
+    return other;
+  }
+  it.each(['local', 'drive', 'both'] as const)(
+    'applies %s scope to shared backups while retaining other local copies',
+    async (scope) => {
+      const other = linkedCopies();
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
+      fireEvent.click(
+        screen.getByRole('radio', {
+          name: { local: 'Local only', drive: 'Drive only', both: 'Both' }[scope],
+        }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(records.has(original.id)).toBe(scope === 'drive');
+      expect(records.get(other.id)).toEqual(other);
+      expect(links.has(original.id)).toBe(false);
+      expect(links.has(other.id)).toBe(scope === 'local');
+      expect(deleteDriveBackup).toHaveBeenCalledTimes(scope === 'local' ? 0 : 1);
+      expect(screen.queryByRole('button', { name: 'Open Backup' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Open Other local' })).toBeTruthy();
+      if (scope !== 'local')
+        expect(screen.queryAllByRole('img', { name: 'Backed up in Google Drive' })).toHaveLength(0);
+    },
+  );
+  it('removes a Drive-only card and prevents a stale listing from restoring it', async () => {
+    driveState.configured = true;
+    vi.mocked(listDriveTrees).mockResolvedValue([backup]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Backup from Drive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(removeWorkspaceStorage).toHaveBeenCalledWith({ treeId: undefined, backupId: backup.id });
+    expect(records.get(original.id)).toEqual(original);
+    expect(screen.queryByRole('button', { name: 'Open Backup' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open Family' })).toBeTruthy();
+  });
+  it('preserves local data after partial Drive failure and retains progress through Cancel and reopen', async () => {
+    linkedCopies();
+    vi.mocked(deleteDriveBackup).mockImplementationOnce(async (progress) => {
+      progress.deletedPortraitIds.push('portrait-1');
+      throw Error('1 portrait file permanently deleted. Retry to finish cleanup.');
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await screen.findByText(/1 portrait file permanently deleted/);
+    expect(removeWorkspaceStorage).not.toHaveBeenCalled();
+    expect(records.has(original.id)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
+    expect(screen.getByRole('radio', { name: 'Both' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('group')).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(vi.mocked(deleteDriveBackup).mock.calls[1][0].deletedPortraitIds).toEqual([
+      'portrait-1',
+    ]);
+    expect(records.has(original.id)).toBe(false);
+  });
+  it('retries browser cleanup after Drive success even after disconnect without another Drive deletion', async () => {
+    linkedCopies();
+    vi.mocked(removeWorkspaceStorage).mockRejectedValueOnce(Error('Quota failure'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await screen.findByText(/browser cleanup failed/);
+    expect(records.has(original.id)).toBe(true);
+    await act(async () => {
+      ++driveState.generation;
+      setDriveConnection('disconnected');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
+    const before = vi.mocked(deleteDriveBackup).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deleteDriveBackup).toHaveBeenCalledTimes(before);
+    expect(records.has(original.id)).toBe(false);
+  });
+  it('holds local data until Drive finishes and prevents duplicate pending submissions', async () => {
+    linkedCopies();
+    let finish!: () => void;
+    vi.mocked(deleteDriveBackup).mockImplementationOnce(
+      (progress) =>
+        new Promise((resolve) => {
+          finish = () => {
+            progress.documentDeleted = true;
+            resolve();
+          };
+        }),
+    );
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Family' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Both' }));
+    const form = screen.getByRole('dialog').querySelector('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(deleteDriveBackup).toHaveBeenCalledOnce());
+    expect(removeWorkspaceStorage).not.toHaveBeenCalled();
+    expect(records.has(original.id)).toBe(true);
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty('disabled', true);
+    await act(async () => finish());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(records.has(original.id)).toBe(false);
+  });
+});
+
 describe('Drive connection entry points', () => {
   it.each([false, true])('offers Connect Drive with local trees present: %s', async (hasLocal) => {
     driveState.configured = true;
@@ -1187,9 +1384,8 @@ describe('Drive connection entry points', () => {
     expect(screen.queryByRole('button', { name: 'Open Remote' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Open Family' })).toHaveProperty('disabled', false);
     expect(links.get(original.id)?.id).toBe('linked');
-    expect(screen.getByRole('button', { name: 'Restore Drive copy of Family' })).toHaveProperty(
-      'disabled',
-      true,
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
+    expect(screen.getByRole('radio', { name: 'Drive only' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('radio', { name: 'Local only' })).toHaveProperty('disabled', false);
   });
 });

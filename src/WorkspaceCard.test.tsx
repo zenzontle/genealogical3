@@ -8,7 +8,7 @@ import type { WorkspaceEntry } from './workspaceEntries';
 
 afterEach(cleanup);
 const file = { id: 'backup', name: 'Family.genealogical3.json', modifiedTime: '2026-10-10' };
-function card(entry: WorkspaceEntry, canRestore = true) {
+function card(entry: WorkspaceEntry, driveConnected = true, busy = false) {
   const actions = {
     onOpenTree: vi.fn(),
     onRestore: vi.fn(),
@@ -16,67 +16,79 @@ function card(entry: WorkspaceEntry, canRestore = true) {
     onRenameTree: vi.fn(),
     onRemoveTree: vi.fn(),
   };
-  const view = render(
-    <WorkspaceCard
-      entry={entry}
-      busy={false}
-      duplicatingTreeId={null}
-      canRestore={canRestore}
-      {...actions}
-    />,
-  );
-  return { ...view, ...actions };
+  return {
+    ...render(
+      <WorkspaceCard
+        entry={entry}
+        busy={busy}
+        duplicatingTreeId={null}
+        driveConnected={driveConnected}
+        {...actions}
+      />,
+    ),
+    ...actions,
+  };
 }
-describe('Workspace card interactions', () => {
-  it('opens Drive-only cards by keyboard, without local previews, counts or management actions', async () => {
-    const user = userEvent.setup();
-    const { container, onRestore } = card({
-      kind: 'drive',
-      file,
-      updatedAt: Date.parse(file.modifiedTime),
-    });
-    const open = screen.getByRole('button', { name: 'Open Family' });
-    await user.tab();
-    expect(document.activeElement).toBe(open);
-    await user.keyboard('{Enter}');
-    expect(onRestore).toHaveBeenCalledWith(file);
-    expect(screen.getByText('Google Drive')).toBeTruthy();
-    expect(screen.queryByText(/people|person/)).toBeNull();
-    expect(container.querySelector('svg.tree-preview')).toBeNull();
-    expect(screen.queryByRole('button', { name: /Rename|Duplicate|Delete/ })).toBeNull();
-  });
-  it('resumes linked local edits and offers a separate keyboard-accessible restore action', async () => {
-    const user = userEvent.setup();
-    const tree = makeTree('Local edits');
-    const link = { treeId: tree.id, ...file };
-    const { onOpenTree, onRestore } = card({
-      kind: 'local',
-      tree,
-      link,
-      updatedAt: tree.updatedAt,
-    });
-    await user.tab();
-    await user.keyboard(' ');
-    expect(onOpenTree).toHaveBeenCalledWith(tree.id);
-    expect(onRestore).not.toHaveBeenCalled();
-    expect(screen.getByText('This browser + Drive')).toBeTruthy();
-    for (let i = 0; i < 4; i++) await user.tab();
-    expect(document.activeElement).toBe(
-      screen.getByRole('button', { name: 'Restore Drive copy of Local edits' }),
-    );
-    await user.keyboard('{Enter}');
-    expect(onRestore).toHaveBeenCalledWith(link);
-  });
-  it('keeps local cards available after disconnect but disables restoring a backup', () => {
+describe('Workspace card storage and actions', () => {
+  it.each(['local', 'linked', 'drive'] as const)(
+    'shows accessible icons and the action matrix for %s',
+    async (kind) => {
+      const tree = makeTree('Family');
+      const entry: WorkspaceEntry =
+        kind === 'drive'
+          ? { kind, file, updatedAt: 0 }
+          : {
+              kind: 'local',
+              tree,
+              link: kind === 'linked' ? { treeId: tree.id, ...file } : undefined,
+              updatedAt: 0,
+            };
+      const { onRemoveTree, onOpenTree, onRestore } = card(entry);
+      expect(screen.queryByRole('img', { name: 'Stored in this browser' }) !== null).toBe(
+        kind !== 'drive',
+      );
+      expect(screen.queryByRole('img', { name: 'Backed up in Google Drive' }) !== null).toBe(
+        kind !== 'local',
+      );
+      for (const icon of screen.getAllByRole('img'))
+        expect(icon.title).toBe(icon.getAttribute('aria-label'));
+      expect(screen.getAllByRole('button')).toHaveLength(kind === 'drive' ? 2 : 4);
+      expect(screen.queryByRole('button', { name: /restore/i })).toBeNull();
+      expect(screen.queryByRole('button', { name: /Rename/ }) !== null).toBe(kind !== 'drive');
+      expect(screen.queryByRole('button', { name: /Duplicate/ }) !== null).toBe(kind !== 'drive');
+      const user = userEvent.setup();
+      await user.tab();
+      await user.keyboard('{Enter}');
+      if (kind === 'drive') expect(onRestore).toHaveBeenCalledWith(file);
+      else {
+        expect(onOpenTree).toHaveBeenCalledWith(tree.id);
+        expect(onRestore).not.toHaveBeenCalled();
+      }
+      await user.click(
+        screen.getByRole('button', {
+          name: kind === 'drive' ? 'Delete Family from Drive' : 'Delete Family',
+        }),
+      );
+      expect(onRemoveTree).toHaveBeenCalledWith(entry);
+    },
+  );
+  it('keeps all local actions available while disconnected', () => {
     const tree = makeTree('Local');
-    card(
-      { kind: 'local', tree, link: { treeId: tree.id, ...file }, updatedAt: tree.updatedAt },
+    card({ kind: 'local', tree, link: { treeId: tree.id, ...file }, updatedAt: 0 }, false);
+    for (const button of screen.getAllByRole('button'))
+      expect(button).toHaveProperty('disabled', false);
+  });
+  it('disables opening disconnected remote cards but allows the deletion dialog to explain connection requirements', () => {
+    card({ kind: 'drive', file, updatedAt: 0 }, false);
+    expect(screen.getByRole('button', { name: 'Open Family' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Delete Family from Drive' })).toHaveProperty(
+      'disabled',
       false,
     );
-    expect(screen.getByRole('button', { name: 'Open Local' })).toHaveProperty('disabled', false);
-    expect(screen.getByRole('button', { name: 'Restore Drive copy of Local' })).toHaveProperty(
-      'disabled',
-      true,
-    );
+  });
+  it('disables card controls while pending', () => {
+    card({ kind: 'drive', file, updatedAt: 0 }, true, true);
+    for (const button of screen.getAllByRole('button'))
+      expect(button).toHaveProperty('disabled', true);
   });
 });
