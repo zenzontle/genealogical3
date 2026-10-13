@@ -8,6 +8,7 @@ export type DriveLink = {
   treeId: string;
   id: string;
   name: string;
+  description?: string;
   modifiedTime: string;
   restoreWarnings?: RestoreWarning[];
 };

@@ -936,7 +936,12 @@ describe('Drive portrait feedback and associations', () => {
 
   it('persists incomplete restore warnings through reload, blocks overwrite, and confirms an independent copy', async () => {
     driveState.configured = true;
-    const file = { id: 'source-drive', name: 'Family.json', modifiedTime: '' };
+    const file = {
+      id: 'source-drive',
+      name: 'Family.json',
+      description: 'Saved family',
+      modifiedTime: '',
+    };
     const warnings = [{ personId: original.people[0].id, name: 'Alex' }];
     const links = new Map<string, Awaited<ReturnType<typeof getDriveLink>>>();
     vi.mocked(getDriveLink).mockImplementation(async (id) => links.get(id));
@@ -948,12 +953,13 @@ describe('Drive portrait feedback and associations', () => {
     vi.mocked(openDriveTree).mockResolvedValueOnce({ tree: original, restoreWarnings: warnings });
     render(<App />);
     await screen.findByRole('button', { name: 'Open Family' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Family.json' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Saved family' }));
     await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
     const copyId = [...links.keys()][0];
     expect(copyId).not.toBe(original.id);
     expect(records.get(copyId)?.dataUpdatedAt).toBe(original.dataUpdatedAt);
     expect(links.get(copyId)?.restoreWarnings).toEqual(warnings);
+    expect(links.get(copyId)?.description).toBe('Saved family');
     cleanup();
     render(<App />);
     const opens = await screen.findAllByRole('button', { name: 'Open Family' });
@@ -1222,11 +1228,16 @@ describe('combined Drive Workspace integration', () => {
     render(<App />);
     await openOriginal();
     const before = vi.mocked(listDriveTrees).mock.calls.length;
-    vi.mocked(saveDriveTree).mockResolvedValueOnce({ ...file, cleanupWarnings: [] });
+    vi.mocked(saveDriveTree).mockResolvedValueOnce({
+      ...file,
+      description: 'Readable backup',
+      cleanupWarnings: [],
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
     await screen.findByText('Saved to Google Drive as Backup.genealogical3.json.');
     await waitFor(() => expect(listDriveTrees).toHaveBeenCalledTimes(before + 1));
     expect(links.get(original.id)?.id).toBe(file.id);
+    expect(links.get(original.id)?.description).toBe('Readable backup');
   });
 });
 

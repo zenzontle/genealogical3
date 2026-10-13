@@ -35,6 +35,19 @@ function dialog(action = linked, driveConnected = true, submit = vi.fn(async () 
   };
 }
 describe('Workspace deletion confirmation', () => {
+  it('identifies an ID-named Drive-only backup by its readable metadata', () => {
+    dialog({
+      entry: {
+        kind: 'drive',
+        file: { ...file, name: 'backup.json', description: 'García family' },
+        updatedAt: 0,
+      },
+      scope: 'drive',
+      started: false,
+    });
+    expect(screen.getByRole('dialog').textContent).toContain('“García family” from Google Drive');
+    expect(screen.getByRole('dialog').textContent).not.toContain('backup.json');
+  });
   it.each(['local', 'drive', 'both'] as const)(
     'explains and explicitly confirms %s scope',
     async (scope) => {
@@ -73,7 +86,7 @@ describe('Workspace deletion confirmation', () => {
         entry: {
           kind: 'local',
           tree: { ...tree, name: 'Renamed local tree' },
-          link: { treeId: tree.id, ...file, name: 'Original backup.genealogical3.json' },
+          link: { treeId: tree.id, ...file, name: 'backup.json', description: 'Original backup' },
           updatedAt: 0,
         },
       });

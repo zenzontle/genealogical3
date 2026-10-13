@@ -37,6 +37,7 @@ function family(values: (number | null)[] = [1, 2]): Tree {
 type RemoteFile = {
   id: string;
   name: string;
+  description?: string;
   modifiedTime: string;
   mimeType: string;
   parents: string[];
@@ -407,17 +408,21 @@ describe('separate-photo Drive backups', () => {
     const remote = fakeDrive();
     const tree = family([]);
     const file = await saveDriveTree(tree);
+    expect(file.description).toBe('Family');
     const folderId = remote.document(file.id).photoFolderId;
     remote.files.get(file.id)!.name = 'Family.genealogical3.json';
     tree.name = 'Renamed family';
     const updated = await saveDriveTree(tree, file.id);
     expect(updated.name).toBe(`${file.id}.json`);
+    expect(updated.description).toBe('Renamed family');
+    expect(remote.files.get(file.id)!.description).toBe('Renamed family');
     expect(remote.document(file.id).photoFolderId).toBe(folderId);
     expect(remote.files.get(folderId)!.name).toBe(`${file.id}.photos`);
     expect(remote.document(file.id).tree.name).toBe('Renamed family');
     const copy = await saveDriveTree(tree);
     expect(copy.id).not.toBe(file.id);
     expect(copy.name).toBe(`${copy.id}.json`);
+    expect(copy.description).toBe('Renamed family');
     expect(remote.files.get(remote.document(copy.id).photoFolderId)!.name).toBe(
       `${copy.id}.photos`,
     );
@@ -913,6 +918,23 @@ describe('separate-photo Drive backups', () => {
 });
 
 describe('Drive picker', () => {
+  it('lists readable tree names for ID filenames without downloading documents or photos', async () => {
+    const remote = fakeDrive();
+    const tree = { ...family([]), name: 'Familia García 家族'.repeat(10) };
+    const file = await saveDriveTree(tree);
+    remote.calls.length = 0;
+    const listed = await listDriveTrees();
+    expect(listed).toMatchObject([
+      { id: file.id, name: `${file.id}.json`, description: tree.name },
+    ]);
+    expect(remote.calls).toHaveLength(2);
+    expect(
+      remote.calls.every((call) => !call.options.method && !call.url.searchParams.has('alt')),
+    ).toBe(true);
+    expect(remote.calls.at(-1)!.url.searchParams.get('fields')).toBe(
+      'nextPageToken,files(id,name,description,modifiedTime)',
+    );
+  });
   it('lists only tree documents in genealogical3 with explicit app/type tags', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family());

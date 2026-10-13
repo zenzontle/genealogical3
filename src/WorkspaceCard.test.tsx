@@ -30,6 +30,17 @@ function card(entry: WorkspaceEntry, driveConnected = true, busy = false) {
   };
 }
 describe('Workspace card storage and actions', () => {
+  it('uses readable metadata for a Drive-only card and its action labels', () => {
+    card({
+      kind: 'drive',
+      file: { ...file, name: 'backup.json', description: 'García family' },
+      updatedAt: 0,
+    });
+    expect(screen.getByText('García family')).toHaveProperty('title', 'García family');
+    expect(screen.getByRole('button', { name: 'Open García family' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete García family from Drive' })).toBeTruthy();
+    expect(screen.queryByText('backup.json')).toBeNull();
+  });
   it.each(['local', 'linked', 'drive'] as const)(
     'shows accessible icons and the action matrix for %s',
     async (kind) => {

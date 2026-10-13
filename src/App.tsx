@@ -329,7 +329,16 @@ export default function App() {
       setSelectedId(null);
       setSelectedRelationId(null);
       setPendingCenter(null);
-      setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
+      setDriveFile(
+        link
+          ? {
+              id: link.id,
+              name: link.name,
+              description: link.description,
+              modifiedTime: link.modifiedTime,
+            }
+          : null,
+      );
       setRestoreWarnings(link?.restoreWarnings || []);
       setDriveSavedAt('');
       setScreen('editor');
@@ -674,6 +683,7 @@ export default function App() {
           treeId: snapshot!.id,
           id: file.id,
           name: file.name,
+          description: file.description,
           modifiedTime: file.modifiedTime,
           restoreWarnings: [],
         });
@@ -721,6 +731,7 @@ export default function App() {
         treeId: copy.id,
         id: file.id,
         name: file.name,
+        description: file.description,
         modifiedTime: file.modifiedTime,
         restoreWarnings: result.restoreWarnings,
       });

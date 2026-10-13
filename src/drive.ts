@@ -18,8 +18,8 @@ const api = 'https://www.googleapis.com/drive/v3/files';
 const uploadApi = 'https://www.googleapis.com/upload/drive/v3/files';
 const app = 'GENEalogical3';
 const folderMimeType = 'application/vnd.google-apps.folder';
-const metadataFields = 'id,name,modifiedTime,mimeType,parents,appProperties,trashed';
-export type DriveFile = { id: string; name: string; modifiedTime: string };
+const metadataFields = 'id,name,description,modifiedTime,mimeType,parents,appProperties,trashed';
+export type DriveFile = { id: string; name: string; description?: string; modifiedTime: string };
 type FileMetadata = DriveFile & {
   mimeType: string;
   parents?: string[];
@@ -212,7 +212,7 @@ export async function listDriveTrees(): Promise<DriveFile[]> {
   return listFiles(
     new URLSearchParams({
       q: `trashed = false and '${escaped(folderId)}' in parents and mimeType = 'application/json' and appProperties has { key='app' and value='${app}' } and (appProperties has { key='kind' and value='tree' } or appProperties has { key='format' and value='tree-v1' })`,
-      fields: 'nextPageToken,files(id,name,modifiedTime)',
+      fields: 'nextPageToken,files(id,name,description,modifiedTime)',
       pageSize: '100',
       orderBy: 'modifiedTime desc',
     }),
@@ -424,6 +424,7 @@ async function saveSnapshot(
   const meta = {
     ...(existingId ? {} : { id: backupId, parents: [parent!] }),
     name: `${backupId}.json`,
+    description: tree.name.trim() || 'Family tree',
     mimeType: 'application/json',
     appProperties: { ...properties('tree', backupId), format: 'drive-v1' },
   };
@@ -432,7 +433,7 @@ async function saveSnapshot(
   const file: DriveFile = existingId
     ? await (
         await request(
-          `${uploadApi}/${encodeURIComponent(existingId)}?uploadType=multipart&fields=id,name,modifiedTime`,
+          `${uploadApi}/${encodeURIComponent(existingId)}?uploadType=multipart&fields=id,name,description,modifiedTime`,
           options,
           generation,
         )
@@ -485,7 +486,13 @@ async function saveSnapshot(
     }
   }
   assertGeneration(generation);
-  return { id: file.id, name: file.name, modifiedTime: file.modifiedTime, cleanupWarnings };
+  return {
+    id: file.id,
+    name: file.name,
+    description: meta.description,
+    modifiedTime: file.modifiedTime,
+    cleanupWarnings,
+  };
 }
 let operations: Promise<unknown> = Promise.resolve();
 const deletedBackups = new Set<string>();
