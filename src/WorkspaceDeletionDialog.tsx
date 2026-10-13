@@ -24,13 +24,15 @@ export function WorkspaceDeletionDialog({
   const { entry } = action;
   const linked = entry.kind === 'local' && !!entry.link;
   const name = entry.kind === 'local' ? entry.tree.name : driveTreeName(entry.file.name);
+  const backup = entry.kind === 'drive' ? entry.file : entry.link;
+  const backupName = backup ? driveTreeName(backup.name) : '';
   const busy = feedback.status === 'pending';
   const browserCleanup = !!action.progress?.documentDeleted;
   const driveUnavailable = !driveConnected && !browserCleanup;
   const explanation: Record<DeletionScope, string> = {
     local: `Remove “${name}” from this browser.${linked ? ' Its Drive backup will remain available to open again.' : ' Keep a backup first if you want to keep this tree.'}`,
-    drive: `Permanently delete “${name}” from Google Drive, including its associated portraits. This cannot be undone.${linked ? ' All local copies will remain, without this Drive association.' : ''}`,
-    both: `Permanently delete the Drive backup of “${name}” and its associated portraits, then remove this local copy from this browser. This cannot be undone. Other local copies will remain, without this Drive association.`,
+    drive: `Permanently delete “${backupName}” from Google Drive, including its associated portraits. This cannot be undone.${linked ? ' All local copies will remain, without this Drive association.' : ''}`,
+    both: `Permanently delete “${backupName}” from Google Drive and its associated portraits, then remove “${name}” from this browser. This cannot be undone. Other local copies will remain, without this Drive association.`,
   };
   return (
     <LocalDialog

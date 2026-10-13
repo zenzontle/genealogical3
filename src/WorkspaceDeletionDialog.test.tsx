@@ -64,6 +64,32 @@ describe('Workspace deletion confirmation', () => {
     expect(screen.queryByRole('radio')).toBeNull();
     expect(screen.getByRole('dialog').textContent).toContain('associated portraits');
   });
+  it.each(['local', 'drive', 'both'] as const)(
+    'identifies the correct copies for %s deletion after a local rename',
+    async (scope) => {
+      const user = userEvent.setup();
+      dialog({
+        ...linked,
+        entry: {
+          kind: 'local',
+          tree: { ...tree, name: 'Renamed local tree' },
+          link: { treeId: tree.id, ...file, name: 'Original backup.genealogical3.json' },
+          updatedAt: 0,
+        },
+      });
+      await user.click(
+        screen.getByRole('radio', {
+          name: { local: 'Local only', drive: 'Drive only', both: 'Both' }[scope],
+        }),
+      );
+      const description = screen.getByRole('dialog').querySelector('p')!.textContent!;
+      if (scope !== 'drive')
+        expect(description).toContain('“Renamed local tree” from this browser');
+      if (scope !== 'local') expect(description).toContain('“Original backup” from Google Drive');
+      if (scope === 'drive') expect(description).not.toContain('Renamed local tree');
+      if (scope === 'local') expect(description).not.toContain('Original backup');
+    },
+  );
   it('disables Drive choices while disconnected but still confirms local deletion', async () => {
     const user = userEvent.setup();
     const { submit } = dialog(linked, false);
