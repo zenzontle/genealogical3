@@ -533,37 +533,6 @@ const deletionOwned = (file: FileMetadata, kind: string, id: string) =>
   file.appProperties?.app === app &&
   file.appProperties?.kind === kind &&
   file.appProperties?.backupId === id;
-async function deletionPhotoFolder(doc: DriveDocument, generation: number) {
-  let folder: FileMetadata;
-  try {
-    folder = await metadata(doc.photoFolderId, generation);
-  } catch (error) {
-    if (error instanceof DriveRequestError && error.status === 404) return undefined;
-    throw error;
-  }
-  if (
-    folder.id !== doc.photoFolderId ||
-    folder.mimeType !== folderMimeType ||
-    !deletionOwned(folder, 'photos', doc.backupId)
-  )
-    throw Error('The photo folder does not belong to this backup. Deletion stopped.');
-  // Include Trash and inspect all children: deleting a folder also deletes its contents.
-  const children = await listFiles(
-    new URLSearchParams({
-      q: `'${escaped(doc.photoFolderId)}' in parents`,
-      fields: `nextPageToken,files(${metadataFields})`,
-      pageSize: '100',
-    }),
-    generation,
-  );
-  if (
-    children.some(
-      (child) => child.mimeType !== 'image/jpeg' || !deletionOwned(child, 'portrait', doc.backupId),
-    )
-  )
-    throw Error('The photo folder contains unrelated files. Deletion stopped to protect them.');
-  return children;
-}
 async function deleteBackup(progress: DriveDeletionProgress) {
   const { id, generation } = progress;
   if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw Error('Invalid Google Drive backup identifier.');
@@ -605,7 +574,6 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         'The backup changed during deletion. Reopen its Workspace card to review before retrying.',
       );
     progress.revision = doc.revision;
-    const folderChildren = await deletionPhotoFolder(doc, generation);
     // Do not exclude Trash: superseded portraits must also be permanently removed.
     const inventory = await listFiles(
       new URLSearchParams({
@@ -618,7 +586,6 @@ async function deleteBackup(progress: DriveDeletionProgress) {
     const ids = new Set([
       ...doc.portraits.map((ref) => ref.imageFileId),
       ...inventory.map((photo) => photo.id),
-      ...(folderChildren || []).map((photo) => photo.id),
     ]);
     const verifiedPortraitIds: string[] = [];
     // Preflight every candidate so a validation failure leaves the retained backup intact.
@@ -652,14 +619,9 @@ async function deleteBackup(progress: DriveDeletionProgress) {
     const current = await readDocument(id, generation);
     if (JSON.stringify(current) !== JSON.stringify(doc))
       throw Error('The backup changed during deletion. The tree document was kept.');
-    const remaining = await deletionPhotoFolder(doc, generation);
-    if (remaining) {
-      if (remaining.length)
-        throw Error('The photo folder is no longer empty. The tree document was kept.');
-      await remove(doc.photoFolderId);
-    }
   }
-  // Keep the document until photo and folder cleanup succeeds, then recheck ownership.
+  // drive.file can hide unrelated descendants, so an empty child listing cannot
+  // prove a folder is safe to delete. Retain folders and recheck document ownership.
   const fresh = await metadata(id, generation);
   if (
     fresh.id !== id ||
