@@ -19,7 +19,7 @@ import {
 import { BrandMark } from './BrandMark';
 import { SexIcon } from './SexIcon';
 import { WorkspaceCard } from './WorkspaceCard';
-import { workspaceEntries } from './workspaceEntries';
+import { workspaceEntries, type WorkspaceEntry } from './workspaceEntries';
 import type { DriveFile } from './drive';
 import type { DriveLink } from './storage';
 import type { Tree } from './model';
@@ -64,7 +64,7 @@ export function HomeScreen({
   onImportTree: () => void;
   onOpenTree: (id: string) => void;
   onRenameTree: (tree: Tree) => void;
-  onRemoveTree: (tree: Tree) => void;
+  onRemoveTree: (entry: WorkspaceEntry) => void;
   importBusy?: boolean;
   importFeedback?: ReactNode;
   driveFiles?: DriveFile[];
@@ -211,7 +211,7 @@ export function HomeScreen({
                   entry={entry}
                   busy={importBusy || (entry.kind === 'drive' && driveBusy)}
                   duplicatingTreeId={duplicatingTreeId}
-                  canRestore={driveConnected && !driveBusy}
+                  driveConnected={driveConnected}
                   onOpenTree={onOpenTree}
                   onRestore={onRestoreDrive}
                   onDuplicateTree={onDuplicateTree}
@@ -316,7 +316,7 @@ export function HomeScreen({
                   <strong>Only when you choose</strong>
                   <p>
                     Connect to see Drive trees in Workspace. Documents and photos download only when
-                    you open or restore a Drive copy.
+                    you open a Drive-only card.
                   </p>
                 </div>
                 <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
@@ -330,11 +330,11 @@ export function HomeScreen({
                         <strong>Your Google Drive, if you use it</strong>
                         <p>
                           Connect Google Drive to see its trees in Workspace. Opening a linked tree
-                          resumes your local edits. Use Restore Drive copy to retrieve a separate
-                          backup copy. Access is limited to files used with this app. A secure
-                          cookie remembers this browser's connection for up to 30 days, including
-                          refreshes and browser restarts. Google may require you to reconnect
-                          sooner.
+                          resumes your local edits. To download again, duplicate local edits for
+                          safekeeping, delete the linked local copy, and reopen the remaining Drive
+                          card. Access is limited to files used with this app. A secure cookie
+                          remembers this browser's connection for up to 30 days, including refreshes
+                          and browser restarts. Google may require you to reconnect sooner.
                         </p>
                         <p>
                           Disconnect Drive forgets this browser's connection without deleting files

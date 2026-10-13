@@ -246,11 +246,13 @@ async function transfer<T>(
   );
   if (failed) throw failure;
 }
-export async function openDriveTree(
+async function restoreTree(
   id: string,
+  generation: number,
   progress?: ProgressCallback,
 ): Promise<DriveRestoreResult> {
-  const input = await (await request(mediaUrl(id))).json();
+  const input = await (await request(mediaUrl(id), {}, generation)).json();
+  assertGeneration(generation);
   // Preserve the existing portable-file read path; no legacy migration is performed.
   if (input?.format !== driveFormat) return { tree: validateTree(input), restoreWarnings: [] };
   const doc = validateDriveDocument(input, id);
@@ -261,7 +263,7 @@ export async function openDriveTree(
     async (ref) => {
       let response: Response;
       try {
-        response = await request(mediaUrl(ref.imageFileId));
+        response = await request(mediaUrl(ref.imageFileId), {}, generation);
       } catch (error) {
         if (error instanceof DriveRequestError && [403, 404, 410].includes(error.status)) {
           images.set(ref.imageFileId, null);
@@ -290,6 +292,7 @@ export async function openDriveTree(
     progress,
   );
   const byPerson = new Map(doc.portraits.map((ref) => [ref.personId, ref]));
+  assertGeneration(generation);
   const restoreWarnings: RestoreWarning[] = [];
   const tree = {
     ...doc.tree,
@@ -484,7 +487,167 @@ async function saveSnapshot(
   assertGeneration(generation);
   return { id: file.id, name: file.name, modifiedTime: file.modifiedTime, cleanupWarnings };
 }
-let saves: Promise<unknown> = Promise.resolve();
+let operations: Promise<unknown> = Promise.resolve();
+const deletedBackups = new Set<string>();
+function queueDriveOperation<T>(generation: number, run: () => Promise<T>): Promise<T> {
+  const operation = operations
+    .catch(() => undefined)
+    .then(async () => {
+      assertGeneration(generation);
+      // Share the existing save lock with downloads and permanent deletion, including other tabs.
+      if (globalThis.navigator?.locks)
+        return navigator.locks.request('genealogical3-drive-save', run);
+      return run();
+    });
+  operations = operation;
+  return operation;
+}
+export function openDriveTree(
+  id: string,
+  progress?: ProgressCallback,
+): Promise<DriveRestoreResult> {
+  const generation = getDriveGeneration();
+  return queueDriveOperation(generation, () => restoreTree(id, generation, progress));
+}
+
+/** Keep this state after errors so retries never repeat confirmed permanent deletions. */
+export type DriveDeletionProgress = {
+  id: string;
+  generation: number;
+  deletedPortraitIds: string[];
+  documentDeleted: boolean;
+  documentAttempted: boolean;
+  portraitAttempted?: string;
+  revision?: string;
+};
+export function createDriveDeletion(id: string): DriveDeletionProgress {
+  return {
+    id,
+    generation: getDriveGeneration(),
+    deletedPortraitIds: [],
+    documentDeleted: false,
+    documentAttempted: false,
+  };
+}
+const deletionOwned = (file: FileMetadata, kind: string, id: string) =>
+  file.appProperties?.app === app &&
+  file.appProperties?.kind === kind &&
+  file.appProperties?.backupId === id;
+async function deleteBackup(progress: DriveDeletionProgress) {
+  const { id, generation } = progress;
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw Error('Invalid Google Drive backup identifier.');
+  assertGeneration(generation);
+  const remove = async (fileId: string) => {
+    try {
+      await request(`${api}/${encodeURIComponent(fileId)}`, { method: 'DELETE' }, generation);
+    } catch (error) {
+      // An earlier verified DELETE may have succeeded despite a lost response.
+      if (!(error instanceof DriveRequestError && error.status === 404)) throw error;
+    }
+  };
+  let file: FileMetadata;
+  try {
+    file = await metadata(id, generation);
+  } catch (error) {
+    if (!(error instanceof DriveRequestError && error.status === 404 && progress.documentAttempted))
+      throw error;
+    progress.documentDeleted = true;
+    deletedBackups.add(`${generation}:${id}`);
+    return;
+  }
+  const legacy = file.appProperties?.app === app && file.appProperties?.format === 'tree-v1';
+  if (
+    file.id !== id ||
+    file.mimeType !== 'application/json' ||
+    (!deletionOwned(file, 'tree', id) && !legacy)
+  )
+    throw Error('This file is not an app-owned tree backup. Deletion stopped.');
+  const input = await (await request(mediaUrl(id), {}, generation)).json();
+  if (legacy) {
+    validateTree(input);
+    if (input?.format === driveFormat)
+      throw Error('The backup identity does not match its metadata.');
+  } else {
+    const doc = validateDriveDocument(input, id);
+    if (progress.revision && progress.revision !== doc.revision)
+      throw Error(
+        'The backup changed during deletion. Reopen its Workspace card to review before retrying.',
+      );
+    progress.revision = doc.revision;
+    // Do not exclude Trash: superseded portraits must also be permanently removed.
+    const inventory = await listFiles(
+      new URLSearchParams({
+        q: `appProperties has { key='app' and value='${app}' } and appProperties has { key='kind' and value='portrait' } and appProperties has { key='backupId' and value='${escaped(id)}' }`,
+        fields: `nextPageToken,files(${metadataFields})`,
+        pageSize: '100',
+      }),
+      generation,
+    );
+    const ids = new Set([
+      ...doc.portraits.map((ref) => ref.imageFileId),
+      ...inventory.map((photo) => photo.id),
+    ]);
+    for (const photoId of ids) {
+      if (progress.deletedPortraitIds.includes(photoId)) continue;
+      let photo: FileMetadata;
+      try {
+        photo = await metadata(photoId, generation);
+      } catch (error) {
+        if (!(error instanceof DriveRequestError && error.status === 404)) throw error;
+        // Missing references need no deletion; count only our verified, attempted DELETEs.
+        if (progress.portraitAttempted === photoId) progress.deletedPortraitIds.push(photoId);
+        continue;
+      }
+      if (
+        photo.id !== photoId ||
+        !deletionOwned(photo, 'portrait', id) ||
+        photo.mimeType !== 'image/jpeg'
+      )
+        throw Error(
+          'A portrait does not belong to this backup. Deletion stopped to protect unrelated files.',
+        );
+      progress.portraitAttempted = photoId;
+      await remove(photoId);
+      progress.deletedPortraitIds.push(photoId);
+      progress.portraitAttempted = undefined;
+    }
+    const current = await readDocument(id, generation);
+    if (JSON.stringify(current) !== JSON.stringify(doc))
+      throw Error('The backup changed during deletion. The tree document was kept.');
+  }
+  // Recheck ownership immediately before deleting the document. Never delete folders.
+  const fresh = await metadata(id, generation);
+  if (
+    fresh.id !== id ||
+    fresh.mimeType !== 'application/json' ||
+    (legacy
+      ? fresh.appProperties?.app !== app || fresh.appProperties?.format !== 'tree-v1'
+      : !deletionOwned(fresh, 'tree', id))
+  )
+    throw Error('The backup ownership changed. The tree document was kept.');
+  progress.documentAttempted = true;
+  await remove(id);
+  progress.documentDeleted = true;
+  deletedBackups.add(`${generation}:${id}`);
+}
+const deletions = new WeakMap<DriveDeletionProgress, Promise<void>>();
+export function deleteDriveBackup(progress: DriveDeletionProgress): Promise<void> {
+  if (progress.documentDeleted) return Promise.resolve();
+  const pending = deletions.get(progress);
+  if (pending) return pending;
+  const operation = queueDriveOperation(progress.generation, () => deleteBackup(progress))
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'Drive deletion failed.';
+      const completed = progress.deletedPortraitIds.length;
+      throw Error(
+        `${message} ${completed ? `${completed} portrait file${completed === 1 ? '' : 's'} permanently deleted. The tree document has not been confirmed deleted.` : 'No files have been confirmed deleted.'} Retry to finish cleanup.`,
+        { cause: error },
+      );
+    })
+    .finally(() => deletions.delete(progress));
+  deletions.set(progress, operation);
+  return operation;
+}
 export function saveDriveTree(
   tree: Tree,
   existingId?: string,
@@ -502,16 +665,9 @@ export function saveDriveTree(
   } catch (error) {
     return Promise.reject(error);
   }
-  const operation = saves
-    .catch(() => undefined)
-    .then(async () => {
-      const run = () => saveSnapshot(snapshot, generation, existingId, progress);
-      // Web Locks also serialize saves from other tabs of this browser and origin.
-      if (globalThis.navigator?.locks) {
-        return await navigator.locks.request('genealogical3-drive-save', run);
-      }
-      return run();
-    });
-  saves = operation;
-  return operation;
+  return queueDriveOperation(generation, () => {
+    if (existingId && deletedBackups.has(`${generation}:${existingId}`))
+      throw Error('This Drive backup was deleted. Use Save a copy.');
+    return saveSnapshot(snapshot, generation, existingId, progress);
+  });
 }

@@ -5,7 +5,6 @@ import { errorMessage, type FeedbackState } from './feedback';
 
 export type TreeAction =
   | { kind: 'rename'; treeId: string; name: string }
-  | { kind: 'delete-tree'; treeId: string; name: string }
   | { kind: 'delete-person'; treeId: string; personId: string; name: string; isHome: boolean };
 
 export function TreeActionDialog({
@@ -24,16 +23,10 @@ export function TreeActionDialog({
     errorId = useId();
   const rename = action.kind === 'rename';
   const busy = feedback.status === 'pending';
-  const title = rename
-    ? 'Rename tree'
-    : action.kind === 'delete-tree'
-      ? 'Delete tree?'
-      : 'Delete person?';
+  const title = rename ? 'Rename tree' : 'Delete person?';
   const description = rename
     ? 'Choose a name for this family tree.'
-    : action.kind === 'delete-tree'
-      ? `Delete “${action.name}” from this browser? Export a backup first if you want to keep it.`
-      : `Delete ${action.name || 'this person'} and their relationships?${action.isHome ? ' This also clears the home person designation.' : ''} You can undo this change.`;
+    : `Delete ${action.name || 'this person'} and their relationships?${action.isHome ? ' This also clears the home person designation.' : ''} You can undo this change.`;
   return (
     <LocalDialog title={title} description={description} busy={busy} onClose={onClose}>
       <form

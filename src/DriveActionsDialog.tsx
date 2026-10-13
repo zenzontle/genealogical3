@@ -52,12 +52,15 @@ export function DriveActionsDialog({
             </p>
             <p>
               Open a Google Drive card in Workspace to retrieve the document and its private photos.
-              Use Restore Drive copy on a linked card to keep local edits and retry missing
-              portraits. Download JSON from the editor for a portable backup with embedded
-              portraits. Save a copy creates independent photo files. After a successful save,
-              replaced or removed photos go to Drive Trash; older Drive revisions may then have
-              missing photos. Keep each backup's photo folder with its document. Editing across
-              devices at the same time is unsupported.
+              To retry missing portraits, duplicate local edits for safekeeping, delete the linked
+              local copy, and reopen the remaining Drive card to download again. Download JSON from
+              the editor for a portable backup with embedded portraits. Save a copy creates
+              independent photo files. After a successful save, replaced or removed photos go to
+              Drive Trash; older Drive revisions may then have missing photos. Keep each backup's
+              photo folder with its document. Editing across devices at the same time is
+              unsupported. Drive deletion permanently removes the backup and its app-owned
+              portraits, including superseded portraits in Trash. Photo folder containers remain to
+              protect unrelated contents.
             </p>
             <div className="drive-action-list">
               <button

@@ -6,6 +6,8 @@ export type WorkspaceEntry =
   | { kind: 'local'; tree: Tree; link?: DriveLink; updatedAt: number }
   | { kind: 'drive'; file: DriveFile; updatedAt: number };
 
+export type DeletionScope = 'local' | 'drive' | 'both';
+
 export const driveTreeName = (name: string) => name.replace(/\.genealogical3\.json$/i, '');
 
 export function workspaceEntries(

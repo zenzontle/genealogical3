@@ -9,6 +9,7 @@ import {
   listDriveLinks,
   saveDriveLink,
   saveTree,
+  removeWorkspaceStorage,
 } from './storage';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -23,19 +24,47 @@ function browserStorage(initial: unknown[]) {
     return value.id;
   });
   const modes: string[] = [];
+  const storeNames: (string | string[])[] = [];
+  const failure = { linkDelete: false };
   const db = {
     close: vi.fn(),
-    transaction: (storeName: string, mode: string) => {
+    transaction: (stores: string | string[], mode: string) => {
       modes.push(mode);
-      const activeRecords = storeName === 'driveLinks' ? links : records;
+      storeNames.push(stores);
+      const stagedTrees = new Map(records),
+        stagedLinks = new Map(links);
+      let pending = 0,
+        aborted = false;
       const tx = {
         oncomplete: () => {},
-        objectStore: () => {
+        onabort: () => {},
+        error: null as Error | null,
+        objectStore: (selected?: string) => {
+          const storeName = selected || stores;
+          const activeRecords = storeName === 'driveLinks' ? stagedLinks : stagedTrees;
           const request = (read: () => unknown) => {
-            const result = { result: undefined as unknown };
+            ++pending;
+            const result = { result: undefined as unknown, onsuccess: () => {} };
             queueMicrotask(() => {
-              result.result = read();
-              tx.oncomplete();
+              if (aborted) return;
+              try {
+                result.result = read();
+                result.onsuccess();
+              } catch (error) {
+                aborted = true;
+                tx.error = error as Error;
+                tx.onabort();
+                return;
+              }
+              if (--pending === 0) {
+                if (mode === 'readwrite') {
+                  records.clear();
+                  for (const [id, value] of stagedTrees) records.set(id, value);
+                  links.clear();
+                  for (const [id, value] of stagedLinks) links.set(id, value);
+                }
+                tx.oncomplete();
+              }
             });
             return result;
           };
@@ -45,15 +74,45 @@ function browserStorage(initial: unknown[]) {
             put: (value: { id: string; treeId?: string }) =>
               request(() => {
                 if (storeName === 'driveLinks') {
-                  links.set(value.treeId, structuredClone(value));
+                  stagedLinks.set(value.treeId, structuredClone(value));
                   return value.treeId;
                 }
-                return put(value);
+                put(value);
+                stagedTrees.set(value.id, structuredClone(value));
+                return value.id;
               }),
             delete: (id: string) =>
               request(() => {
+                if (storeName === 'driveLinks' && failure.linkDelete)
+                  throw Error('Link deletion failed');
                 activeRecords.delete(id);
               }),
+            openCursor: () => {
+              const keys = [...activeRecords.keys()];
+              let index = 0;
+              const cursor = { result: null as unknown, onsuccess: () => {} };
+              const advance = () => {
+                const operation = request(() => {
+                  while (index < keys.length && !activeRecords.has(keys[index])) ++index;
+                  const id = keys[index++];
+                  cursor.result =
+                    id === undefined
+                      ? null
+                      : {
+                          value: activeRecords.get(id),
+                          delete: () =>
+                            request(() => {
+                              if (failure.linkDelete) throw Error('Link deletion failed');
+                              activeRecords.delete(id);
+                            }),
+                          continue: advance,
+                        };
+                });
+                operation.onsuccess = () => cursor.onsuccess();
+              };
+              advance();
+              return cursor;
+            },
           };
         },
       };
@@ -67,10 +126,51 @@ function browserStorage(initial: unknown[]) {
       return request;
     },
   });
-  return { records, put, modes };
+  return { records, links, put, modes, storeNames, failure };
 }
 
 describe('home designation in browser storage', () => {
+  it.each(['local', 'drive', 'both'] as const)(
+    'atomically applies %s scope to shared associations without removing other local copies',
+    async (scope) => {
+      const selected = makeTree('Selected'),
+        other = makeTree('Other'),
+        unrelated = makeTree('Unrelated');
+      const storage = browserStorage([selected, other, unrelated]);
+      for (const tree of [selected, other, unrelated])
+        await saveDriveLink({
+          treeId: tree.id,
+          id: tree === unrelated ? 'another-backup' : 'shared',
+          name: '',
+          modifiedTime: '',
+        });
+      await removeWorkspaceStorage({
+        treeId: scope === 'drive' ? undefined : selected.id,
+        backupId: scope === 'local' ? undefined : 'shared',
+      });
+      expect((await getTree(selected.id)) !== undefined).toBe(scope === 'drive');
+      expect(await getTree(other.id)).toEqual(other);
+      expect(await getDriveLink(selected.id)).toBeUndefined();
+      expect((await getDriveLink(other.id)) !== undefined).toBe(scope === 'local');
+      expect((await getDriveLink(unrelated.id))?.id).toBe('another-backup');
+      expect(storage.storeNames).toContainEqual(['trees', 'driveLinks']);
+    },
+  );
+  it('rolls back tree removal when link cleanup fails, then supports retry', async () => {
+    const tree = makeTree('Kept');
+    const storage = browserStorage([tree]);
+    await saveDriveLink({ treeId: tree.id, id: 'backup', name: '', modifiedTime: '' });
+    storage.failure.linkDelete = true;
+    await expect(removeWorkspaceStorage({ treeId: tree.id, backupId: 'backup' })).rejects.toThrow(
+      'Link deletion failed',
+    );
+    expect(await getTree(tree.id)).toEqual(tree);
+    expect((await getDriveLink(tree.id))?.id).toBe('backup');
+    storage.failure.linkDelete = false;
+    await removeWorkspaceStorage({ treeId: tree.id, backupId: 'backup' });
+    expect(await getTree(tree.id)).toBeUndefined();
+    expect(await getDriveLink(tree.id)).toBeUndefined();
+  });
   it('lists every Drive association in a read-only transaction without writing trees', async () => {
     const { put, modes } = browserStorage([]);
     const links = ['first', 'second'].map((treeId) => ({

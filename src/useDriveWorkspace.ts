@@ -19,6 +19,7 @@ export function useDriveWorkspace(active: boolean) {
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [error, setError] = useState('');
   const request = useRef(0);
+  const deleted = useRef(new Map<number, Set<string>>());
   const failedConnectionGeneration = useRef<number | null>(null);
   const mounted = useRef(false);
   const previousSession = useRef({ connection, generation: sessionGeneration });
@@ -40,7 +41,7 @@ export function useDriveWorkspace(active: boolean) {
     try {
       const files = await listDriveTrees();
       if (valid()) {
-        setFiles(files);
+        setFiles(files.filter((file) => !deleted.current.get(generation)?.has(file.id)));
         setFilesGeneration(generation);
         setState('ready');
       }
@@ -124,5 +125,14 @@ export function useDriveWorkspace(active: boolean) {
     refresh,
     connect,
     retry,
+    removeFile: (id: string, generation = getDriveGeneration()) => {
+      const ids = deleted.current.get(generation) || new Set<string>();
+      ids.add(id);
+      deleted.current.set(generation, ids);
+      if (generation !== getDriveGeneration()) return;
+      ++request.current;
+      setFiles((previous) => previous.filter((file) => file.id !== id));
+      setState('ready');
+    },
   };
 }

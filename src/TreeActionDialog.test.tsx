@@ -113,7 +113,13 @@ describe('local action dialogs', () => {
     opener.focus();
     const first = render(
       <TreeActionDialog
-        action={{ kind: 'delete-tree', treeId: 'tree', name: 'Family' }}
+        action={{
+          kind: 'delete-person',
+          treeId: 'tree',
+          personId: 'person',
+          name: 'Family',
+          isHome: false,
+        }}
         onSubmit={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -122,7 +128,13 @@ describe('local action dialogs', () => {
     expect(document.activeElement).toBe(opener);
     const second = render(
       <TreeActionDialog
-        action={{ kind: 'delete-tree', treeId: 'tree', name: 'Family' }}
+        action={{
+          kind: 'delete-person',
+          treeId: 'tree',
+          personId: 'person',
+          name: 'Family',
+          isHome: false,
+        }}
         onSubmit={vi.fn()}
         onClose={vi.fn()}
       />,
