@@ -26,7 +26,10 @@ export function WorkspaceCard({
   onRemoveTree: (entry: WorkspaceEntry) => void;
 }) {
   const local = entry.kind === 'local' ? entry.tree : null;
-  const name = entry.kind === 'local' ? entry.tree.name : driveTreeName(entry.file.name);
+  const name =
+    entry.kind === 'local'
+      ? entry.tree.name
+      : driveTreeName(entry.file.name, entry.file.description);
   const link = entry.kind === 'local' ? entry.link : undefined;
   return (
     <div className="tree-tile">

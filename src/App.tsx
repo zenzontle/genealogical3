@@ -38,7 +38,7 @@ import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
 import { WorkspaceDeletionDialog } from './WorkspaceDeletionDialog';
 import { useWorkspaceDeletion } from './useWorkspaceDeletion';
-import type { WorkspaceEntry } from './workspaceEntries';
+import { driveTreeName, type WorkspaceEntry } from './workspaceEntries';
 import { OperationFeedback } from './OperationFeedback';
 import { useTreeImport } from './useTreeImport';
 import { useTreeExport } from './useTreeExport';
@@ -329,7 +329,16 @@ export default function App() {
       setSelectedId(null);
       setSelectedRelationId(null);
       setPendingCenter(null);
-      setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
+      setDriveFile(
+        link
+          ? {
+              id: link.id,
+              name: link.name,
+              description: link.description,
+              modifiedTime: link.modifiedTime,
+            }
+          : null,
+      );
       setRestoreWarnings(link?.restoreWarnings || []);
       setDriveSavedAt('');
       setScreen('editor');
@@ -646,7 +655,9 @@ export default function App() {
     if (
       action === 'save' &&
       target &&
-      !window.confirm(`Replace "${target.name}" in Google Drive with the current tree?`)
+      !window.confirm(
+        `Replace "${driveTreeName(target.name, target.description)}" in Google Drive with the current tree?`,
+      )
     )
       return;
     driveOperationBusy.current = true;
@@ -659,6 +670,7 @@ export default function App() {
         action === 'save' ? target?.id : undefined,
         setPhotoProgress,
       );
+      const savedName = driveTreeName(file.name, file.description);
       if (treeRef.current?.id === snapshot!.id) {
         setDriveFile(file);
         setRestoreWarnings([]);
@@ -674,14 +686,15 @@ export default function App() {
           treeId: snapshot!.id,
           id: file.id,
           name: file.name,
+          description: file.description,
           modifiedTime: file.modifiedTime,
           restoreWarnings: [],
         });
-        setNotice([`Saved to Google Drive as ${file.name}.`, ...file.cleanupWarnings].join(' '));
+        setNotice([`Saved to Google Drive as ${savedName}.`, ...file.cleanupWarnings].join(' '));
       } catch {
         setNotice(
           [
-            `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
+            `Saved to Google Drive as ${savedName}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
             ...file.cleanupWarnings,
           ].join(' '),
         );
@@ -721,6 +734,7 @@ export default function App() {
         treeId: copy.id,
         id: file.id,
         name: file.name,
+        description: file.description,
         modifiedTime: file.modifiedTime,
         restoreWarnings: result.restoreWarnings,
       });

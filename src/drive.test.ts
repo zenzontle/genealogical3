@@ -37,11 +37,13 @@ function family(values: (number | null)[] = [1, 2]): Tree {
 type RemoteFile = {
   id: string;
   name: string;
+  description?: string;
   modifiedTime: string;
   mimeType: string;
   parents: string[];
   appProperties: Record<string, string>;
   trashed?: boolean;
+  appAccessible?: boolean;
   content: Uint8Array;
 };
 type Call = { url: URL; options: RequestInit; meta?: Partial<RemoteFile> };
@@ -80,6 +82,7 @@ function fakeDrive() {
     if (!options.method && url.pathname === '/drive/v3/files') {
       const query = url.searchParams.get('q') || '';
       const listed = [...files.values()].filter((file) => {
+        if (file.appAccessible === false) return false;
         if (query.includes('trashed = false') && file.trashed) return false;
         for (const match of query.matchAll(
           /appProperties has \{ key='([^']+)' and value='([^']+)' \}/g,
@@ -104,9 +107,18 @@ function fakeDrive() {
       return (await hooks.after?.(call)) || json(file);
     }
     const file = files.get(id);
-    if (!file) return json({}, 404);
+    if (!file || file.appAccessible === false) return json({}, 404);
     if (options.method === 'DELETE') {
-      files.delete(id);
+      // Drive deletes all folder descendants, even those invisible to drive.file.
+      const pending = [file];
+      while (pending.length) {
+        const removed = pending.pop()!;
+        if (removed.mimeType === 'application/vnd.google-apps.folder')
+          pending.push(
+            ...[...files.values()].filter((child) => child.parents.includes(removed.id)),
+          );
+        files.delete(removed.id);
+      }
       return (await hooks.after?.(call)) || new Response(null, { status: 204 });
     }
     if (options.method === 'PATCH') {
@@ -160,6 +172,36 @@ afterEach(() => {
 });
 
 describe('permanent Drive deletion', () => {
+  it.each([false, true])(
+    'retains the folder and invisible unrelated contents, including Trash: %s',
+    async (trashed) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1]));
+      const doc = remote.document(file.id);
+      const folder = remote.files.get(doc.photoFolderId)!;
+      remote.files.set('hidden', {
+        ...folder,
+        id: 'hidden',
+        name: 'Unrelated private file',
+        mimeType: 'text/plain',
+        parents: [folder.id],
+        appProperties: {},
+        appAccessible: false,
+        trashed,
+      });
+      remote.calls.length = 0;
+      await deleteDriveBackup(createDriveDeletion(file.id));
+      expect(remote.files.has(file.id)).toBe(false);
+      expect(remote.files.has(doc.portraits[0].imageFileId)).toBe(false);
+      expect(remote.files.has(folder.id)).toBe(true);
+      expect(remote.files.has('hidden')).toBe(true);
+      expect(
+        remote.calls.some(
+          (call) => call.options.method === 'DELETE' && call.url.pathname.endsWith(folder.id),
+        ),
+      ).toBe(false);
+    },
+  );
   it('deletes current and superseded trashed portraits individually, document last, retaining containers and unrelated files', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([1, 2]));
@@ -362,6 +404,29 @@ describe('permanent Drive deletion', () => {
 });
 
 describe('separate-photo Drive backups', () => {
+  it('renames an existing document to the shared backup ID when overwriting, and gives copies their own ID', async () => {
+    const remote = fakeDrive();
+    const tree = family([]);
+    const file = await saveDriveTree(tree);
+    expect(file.description).toBe('Family');
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.files.get(file.id)!.name = 'Family.genealogical3.json';
+    tree.name = 'Renamed family';
+    const updated = await saveDriveTree(tree, file.id);
+    expect(updated.name).toBe(`${file.id}.json`);
+    expect(updated.description).toBe('Renamed family');
+    expect(remote.files.get(file.id)!.description).toBe('Renamed family');
+    expect(remote.document(file.id).photoFolderId).toBe(folderId);
+    expect(remote.files.get(folderId)!.name).toBe(`${file.id}.photos`);
+    expect(remote.document(file.id).tree.name).toBe('Renamed family');
+    const copy = await saveDriveTree(tree);
+    expect(copy.id).not.toBe(file.id);
+    expect(copy.name).toBe(`${copy.id}.json`);
+    expect(copy.description).toBe('Renamed family');
+    expect(remote.files.get(remote.document(copy.id).photoFolderId)!.name).toBe(
+      `${copy.id}.photos`,
+    );
+  });
   it.each(['copy', 'overwrite'] as const)(
     'cancels %s saves when the account changes during a portrait upload',
     async (mode) => {
@@ -499,6 +564,7 @@ describe('separate-photo Drive backups', () => {
       expect(doc.tree).toMatchObject({ updatedAt: 100, dataUpdatedAt: 80 });
       const folder = remote.files.get(doc.photoFolderId)!;
       expect(folder.name).toBe(`${file.id}.photos`);
+      expect(file.name).toBe(`${file.id}.json`);
       expect(folder.parents).toEqual(remote.files.get(file.id)!.parents);
       const unique = new Set(values.filter((value) => value !== null));
       expect(remote.photoUploads()).toHaveLength(unique.size);
@@ -852,6 +918,23 @@ describe('separate-photo Drive backups', () => {
 });
 
 describe('Drive picker', () => {
+  it('lists readable tree names for ID filenames without downloading documents or photos', async () => {
+    const remote = fakeDrive();
+    const tree = { ...family([]), name: 'Familia García 家族'.repeat(10) };
+    const file = await saveDriveTree(tree);
+    remote.calls.length = 0;
+    const listed = await listDriveTrees();
+    expect(listed).toMatchObject([
+      { id: file.id, name: `${file.id}.json`, description: tree.name },
+    ]);
+    expect(remote.calls).toHaveLength(2);
+    expect(
+      remote.calls.every((call) => !call.options.method && !call.url.searchParams.has('alt')),
+    ).toBe(true);
+    expect(remote.calls.at(-1)!.url.searchParams.get('fields')).toBe(
+      'nextPageToken,files(id,name,description,modifiedTime)',
+    );
+  });
   it('lists only tree documents in genealogical3 with explicit app/type tags', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family());

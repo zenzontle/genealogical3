@@ -41,4 +41,8 @@ describe('combined Workspace entries', () => {
     expect(driveTreeName(file.name)).toBe('Family');
     expect(driveTreeName('Other.json')).toBe('Other.json');
   });
+  it('prefers the readable metadata name and falls back for older or blank descriptions', () => {
+    expect(driveTreeName('backup.json', ' Familia García 家族 ')).toBe('Familia García 家族');
+    expect(driveTreeName(file.name, '  ')).toBe('Family');
+  });
 });

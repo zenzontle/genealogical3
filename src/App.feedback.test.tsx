@@ -883,6 +883,58 @@ describe('local feedback integration', () => {
 
 // Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
 describe('Drive portrait feedback and associations', () => {
+  it.each([false, true])(
+    'identifies the saved backup by its readable name when link persistence fails: %s',
+    async (linkFails) => {
+      driveState.configured = true;
+      const file = {
+        id: 'remote-1',
+        name: 'remote-1.json',
+        description: 'García family',
+        modifiedTime: '',
+        cleanupWarnings: ['Photo cleanup could not be completed.'],
+      };
+      vi.mocked(saveDriveTree).mockResolvedValueOnce(file);
+      if (linkFails) vi.mocked(saveDriveLink).mockRejectedValueOnce(Error('Storage unavailable'));
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      const notice = linkFails
+        ? 'Saved to Google Drive as García family, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.'
+        : 'Saved to Google Drive as García family.';
+      await screen.findByText(`${notice} Photo cleanup could not be completed.`);
+      expect(links.has(original.id)).toBe(!linkFails);
+      expect(screen.queryByText(/Saved to Google Drive as remote-1/)).toBeNull();
+    },
+  );
+  it.each([
+    { name: 'remote-1.json', description: 'Saved family', label: 'Saved family' },
+    { name: 'Old family.genealogical3.json', description: undefined, label: 'Old family' },
+  ])(
+    'identifies the overwrite target as $label and respects cancellation',
+    async ({ name, description, label }) => {
+      driveState.configured = true;
+      const backup = { id: 'remote-1', name, description, modifiedTime: '' };
+      links.set(original.id, { treeId: original.id, ...backup });
+      const confirm = vi
+        .spyOn(window, 'confirm')
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+      vi.mocked(saveDriveTree).mockResolvedValueOnce({ ...backup, cleanupWarnings: [] });
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      expect(confirm).toHaveBeenCalledWith(
+        `Replace "${label}" in Google Drive with the current tree?`,
+      );
+      expect(saveDriveTree).not.toHaveBeenCalled();
+      expect(authorizeDrive).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      await screen.findByText(`Saved to Google Drive as ${label}.`);
+      expect(saveDriveTree).toHaveBeenCalledWith(original, backup.id, expect.any(Function));
+      expect(confirm).toHaveBeenCalledTimes(2);
+    },
+  );
   it('associates a pending save with its captured tree after switching during authorization and transfer', async () => {
     driveState.configured = true;
     const other = { ...makeTree('Other family'), people: [makePerson('Morgan')] };
@@ -936,7 +988,12 @@ describe('Drive portrait feedback and associations', () => {
 
   it('persists incomplete restore warnings through reload, blocks overwrite, and confirms an independent copy', async () => {
     driveState.configured = true;
-    const file = { id: 'source-drive', name: 'Family.json', modifiedTime: '' };
+    const file = {
+      id: 'source-drive',
+      name: 'Family.json',
+      description: 'Saved family',
+      modifiedTime: '',
+    };
     const warnings = [{ personId: original.people[0].id, name: 'Alex' }];
     const links = new Map<string, Awaited<ReturnType<typeof getDriveLink>>>();
     vi.mocked(getDriveLink).mockImplementation(async (id) => links.get(id));
@@ -948,12 +1005,13 @@ describe('Drive portrait feedback and associations', () => {
     vi.mocked(openDriveTree).mockResolvedValueOnce({ tree: original, restoreWarnings: warnings });
     render(<App />);
     await screen.findByRole('button', { name: 'Open Family' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Family.json' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Saved family' }));
     await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
     const copyId = [...links.keys()][0];
     expect(copyId).not.toBe(original.id);
     expect(records.get(copyId)?.dataUpdatedAt).toBe(original.dataUpdatedAt);
     expect(links.get(copyId)?.restoreWarnings).toEqual(warnings);
+    expect(links.get(copyId)?.description).toBe('Saved family');
     cleanup();
     render(<App />);
     const opens = await screen.findAllByRole('button', { name: 'Open Family' });
@@ -978,7 +1036,7 @@ describe('Drive portrait feedback and associations', () => {
       cleanupWarnings: [],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
-    await screen.findByText('Saved to Google Drive as Family.json.');
+    await screen.findByText('Saved to Google Drive as Saved family.');
     expect(vi.mocked(saveDriveTree).mock.calls.at(-1)?.[1]).toBeUndefined();
     expect(links.get(copyId)?.id).toBe('independent-drive');
     expect(links.get(copyId)?.restoreWarnings).toEqual([]);
@@ -1222,11 +1280,16 @@ describe('combined Drive Workspace integration', () => {
     render(<App />);
     await openOriginal();
     const before = vi.mocked(listDriveTrees).mock.calls.length;
-    vi.mocked(saveDriveTree).mockResolvedValueOnce({ ...file, cleanupWarnings: [] });
+    vi.mocked(saveDriveTree).mockResolvedValueOnce({
+      ...file,
+      description: 'Readable backup',
+      cleanupWarnings: [],
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-    await screen.findByText('Saved to Google Drive as Backup.genealogical3.json.');
+    await screen.findByText('Saved to Google Drive as Readable backup.');
     await waitFor(() => expect(listDriveTrees).toHaveBeenCalledTimes(before + 1));
     expect(links.get(original.id)?.id).toBe(file.id);
+    expect(links.get(original.id)?.description).toBe('Readable backup');
   });
 });
 

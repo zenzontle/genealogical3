@@ -23,9 +23,12 @@ export function WorkspaceDeletionDialog({
     guidance = useId();
   const { entry } = action;
   const linked = entry.kind === 'local' && !!entry.link;
-  const name = entry.kind === 'local' ? entry.tree.name : driveTreeName(entry.file.name);
+  const name =
+    entry.kind === 'local'
+      ? entry.tree.name
+      : driveTreeName(entry.file.name, entry.file.description);
   const backup = entry.kind === 'drive' ? entry.file : entry.link;
-  const backupName = backup ? driveTreeName(backup.name) : '';
+  const backupName = backup ? driveTreeName(backup.name, backup.description) : '';
   const busy = feedback.status === 'pending';
   const browserCleanup = !!action.progress?.documentDeleted;
   const driveUnavailable = !driveConnected && !browserCleanup;
