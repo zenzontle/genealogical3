@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { makeTree } from './model';
 
 let fetchMock: ReturnType<typeof vi.fn>;
 let open: MockInstance<typeof window.open>;
@@ -36,6 +38,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => {
+  cleanup();
   for (const channel of channels) channel.close();
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -52,6 +55,68 @@ function message(
 }
 
 describe('Drive authorization lifecycle', () => {
+  it('cancels an in-flight save before continuing with a broadcast account connection', async () => {
+    const auth = await import('./driveAuth');
+    const { saveDriveTree } = await import('./drive');
+    await auth.restoreDrive();
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/drive-auth/token') return tokenResponse('other-account');
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const pending = saveDriveTree(makeTree('Private tree'));
+    const canceled = expect(pending).rejects.toThrow(/connection changed/i);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    [...channels][0].onmessage?.(new MessageEvent('message', { data: 'connect' }));
+    await vi.waitFor(() => expect(auth.getDriveConnection()).toBe('connected'));
+    expect(await auth.driveAccessToken()).toBe('other-account');
+    finish(new Response(JSON.stringify({ ids: ['old-account-file'] })));
+    await canceled;
+    const requests = fetchMock.mock.calls.filter(([url]) =>
+      String(url).startsWith('https://www.googleapis.com/'),
+    );
+    expect(requests).toHaveLength(1);
+    expect(requests[0][1].headers.Authorization).toBe('Bearer token');
+    expect(open).not.toHaveBeenCalled();
+  });
+  it('reports the post-popup cookie failure in Workspace and retries interactive authorization', async () => {
+    fetchMock.mockResolvedValueOnce(disconnected());
+    const auth = await import('./driveAuth');
+    const { useDriveWorkspace } = await import('./useDriveWorkspace');
+    const { result, rerender } = renderHook(({ active }) => useDriveWorkspace(active), {
+      initialProps: { active: true },
+    });
+    await waitFor(() => expect(result.current.connection).toBe('disconnected'));
+    const generation = auth.getDriveGeneration();
+    fetchMock.mockResolvedValueOnce(disconnected());
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.connect();
+    });
+    await act(async () => {
+      message();
+      await pending;
+    });
+    expect(auth.getDriveGeneration()).toBe(generation + 1);
+    expect(result.current.error).toMatch(/Allow site cookies/);
+    rerender({ active: false });
+    rerender({ active: true });
+    expect(result.current.error).toMatch(/Allow site cookies/);
+    expect(result.current.ready).toBe(true);
+    act(() => {
+      pending = result.current.retry();
+      expect(open).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      message();
+      await pending;
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.connection).toBe('connected');
+    expect(result.current.error).toBe('');
+  });
   it('publishes restoration, explicit connection, expiration and cross-tab disconnect without sharing tokens', async () => {
     fetchMock.mockResolvedValueOnce(disconnected());
     const first = await import('./driveAuth');

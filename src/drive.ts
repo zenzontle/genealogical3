@@ -1,6 +1,6 @@
 import type { Tree } from './model';
 import { assertValidLifeDates, normalizeHomePerson, validateTree } from './model';
-import { driveAccessToken, expireDriveConnection } from './driveAuth';
+import { driveAccessToken, expireDriveConnection, getDriveGeneration } from './driveAuth';
 import {
   driveFormat,
   embeddedPortrait,
@@ -40,15 +40,26 @@ class DriveRequestError extends Error {
     super(message);
   }
 }
-async function request(url: string, options: RequestInit = {}) {
+function assertGeneration(generation: number) {
+  if (generation !== getDriveGeneration())
+    throw Error(
+      'Google Drive connection changed. Return to Workspace and retry in the intended account.',
+    );
+}
+async function request(url: string, options: RequestInit = {}, generation = getDriveGeneration()) {
+  assertGeneration(generation);
   let token = await driveAccessToken();
   const send = async () => {
+    assertGeneration(generation);
     try {
-      return await fetch(url, {
+      const response = await fetch(url, {
         ...options,
         headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
       });
+      assertGeneration(generation);
+      return response;
     } catch {
+      assertGeneration(generation);
       throw new DriveRequestError(0, 'Could not reach Google Drive. Your local tree is unchanged.');
     }
   };
@@ -84,13 +95,15 @@ const owned = (file: FileMetadata, kind: string, backupId: string) =>
 const escaped = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const mediaUrl = (id: string) => `${api}/${encodeURIComponent(id)}?alt=media`;
 const metadataUrl = (id: string) => `${api}/${encodeURIComponent(id)}?fields=${metadataFields}`;
-const metadata = async (id: string): Promise<FileMetadata> =>
-  (await request(metadataUrl(id))).json();
-async function readDocument(id: string): Promise<DriveDocument> {
-  return validateDriveDocument(await (await request(mediaUrl(id))).json(), id);
+const metadata = async (id: string, generation?: number): Promise<FileMetadata> =>
+  (await request(metadataUrl(id), {}, generation)).json();
+async function readDocument(id: string, generation?: number): Promise<DriveDocument> {
+  return validateDriveDocument(await (await request(mediaUrl(id), {}, generation)).json(), id);
 }
-async function generateId(): Promise<string> {
-  const data = await (await request(`${api}/generateIds?count=1&space=drive&type=files`)).json();
+async function generateId(generation?: number): Promise<string> {
+  const data = await (
+    await request(`${api}/generateIds?count=1&space=drive&type=files`, {}, generation)
+  ).json();
   if (typeof data.ids?.[0] !== 'string' || !data.ids[0])
     throw Error('Google Drive did not return a file identifier.');
   return data.ids[0];
@@ -102,14 +115,15 @@ async function create(
   url: string,
   options: RequestInit,
   expected: Record<string, unknown>,
+  generation?: number,
 ): Promise<FileMetadata> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await (await request(url, options)).json();
+      return await (await request(url, options, generation)).json();
     } catch (error) {
       if (!(error instanceof DriveRequestError)) throw error;
       if (error.status === 409) {
-        const file = await metadata(id);
+        const file = await metadata(id, generation);
         const props = expected.appProperties as Record<string, string>;
         const parents = expected.parents as string[];
         // Drive resolves the special 'root' parent alias to the actual root ID.
@@ -135,8 +149,9 @@ async function createFolder(
   parent: string,
   kind: string,
   backupId?: string,
+  generation?: number,
 ): Promise<string> {
-  const id = await generateId();
+  const id = await generateId(generation);
   const body = {
     id,
     name,
@@ -149,10 +164,11 @@ async function createFolder(
     `${api}?fields=${metadataFields}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
     body,
+    generation,
   );
   return id;
 }
-async function findDriveFolderId(): Promise<string | undefined> {
+async function findDriveFolderId(generation?: number): Promise<string | undefined> {
   const query = new URLSearchParams({
     q: `trashed = false and name = 'genealogical3' and mimeType = '${folderMimeType}' and 'root' in parents`,
     fields: 'nextPageToken,files(id)',
@@ -162,7 +178,7 @@ async function findDriveFolderId(): Promise<string | undefined> {
   let pageToken: string | undefined;
   do {
     if (pageToken) query.set('pageToken', pageToken);
-    const data = (await (await request(`${api}?${query}`)).json()) as {
+    const data = (await (await request(`${api}?${query}`, {}, generation)).json()) as {
       files?: { id: string }[];
       nextPageToken?: string;
     };
@@ -170,15 +186,18 @@ async function findDriveFolderId(): Promise<string | undefined> {
     pageToken = data.nextPageToken;
   } while (pageToken);
 }
-async function getUploadFolderId(): Promise<string> {
-  return (await findDriveFolderId()) || (await createFolder('genealogical3', 'root', 'library'));
+async function getUploadFolderId(generation: number): Promise<string> {
+  return (
+    (await findDriveFolderId(generation)) ||
+    (await createFolder('genealogical3', 'root', 'library', undefined, generation))
+  );
 }
-async function listFiles(query: URLSearchParams): Promise<FileMetadata[]> {
+async function listFiles(query: URLSearchParams, generation?: number): Promise<FileMetadata[]> {
   const files: FileMetadata[] = [];
   let pageToken: string | undefined;
   do {
     if (pageToken) query.set('pageToken', pageToken);
-    const data = (await (await request(`${api}?${query}`)).json()) as {
+    const data = (await (await request(`${api}?${query}`, {}, generation)).json()) as {
       files?: FileMetadata[];
       nextPageToken?: string;
     };
@@ -296,8 +315,8 @@ function multipart(meta: Record<string, unknown>, content: Blob) {
     ]),
   };
 }
-async function photoInventory(doc: DriveDocument): Promise<FileMetadata[]> {
-  const folder = await metadata(doc.photoFolderId);
+async function photoInventory(doc: DriveDocument, generation: number): Promise<FileMetadata[]> {
+  const folder = await metadata(doc.photoFolderId, generation);
   if (!owned(folder, 'photos', doc.backupId) || folder.mimeType !== folderMimeType)
     throw Error('The backup photo folder is missing or does not belong to this backup.');
   const files = await listFiles(
@@ -306,6 +325,7 @@ async function photoInventory(doc: DriveDocument): Promise<FileMetadata[]> {
       fields: `nextPageToken,files(${metadataFields})`,
       pageSize: '100',
     }),
+    generation,
   );
   return files.filter(
     (file) =>
@@ -316,24 +336,26 @@ async function photoInventory(doc: DriveDocument): Promise<FileMetadata[]> {
 }
 async function saveSnapshot(
   tree: Tree,
+  generation: number,
   existingId?: string,
   progress?: ProgressCallback,
 ): Promise<DriveSaveResult> {
-  const backupId = existingId || (await generateId());
+  assertGeneration(generation);
+  const backupId = existingId || (await generateId(generation));
   let previous: DriveDocument | undefined;
   let folderId: string;
   let inventory: FileMetadata[] = [];
   let parent: string | undefined;
   if (existingId) {
-    const file = await metadata(existingId);
+    const file = await metadata(existingId, generation);
     if (!owned(file, 'tree', existingId) || file.mimeType !== 'application/json')
       throw Error('This file is not a separate-photo backup. Use Save a copy.');
-    previous = await readDocument(existingId);
-    inventory = await photoInventory(previous);
+    previous = await readDocument(existingId, generation);
+    inventory = await photoInventory(previous, generation);
     folderId = previous.photoFolderId;
   } else {
-    parent = await getUploadFolderId();
-    folderId = await createFolder(`${backupId}.photos`, parent, 'photos', backupId);
+    parent = await getUploadFolderId(generation);
+    folderId = await createFolder(`${backupId}.photos`, parent, 'photos', backupId, generation);
   }
   const portraits: PortraitReference[] = [];
   const photos = new Map<string, { bytes: Uint8Array<ArrayBuffer>; refs: PortraitReference[] }>();
@@ -365,7 +387,7 @@ async function saveSnapshot(
   await transfer(
     uploads,
     async (photo) => {
-      const id = await generateId();
+      const id = await generateId(generation);
       const meta = {
         id,
         name: `${photo.digest}.jpg`,
@@ -378,6 +400,7 @@ async function saveSnapshot(
         `${uploadApi}?uploadType=multipart&fields=${metadataFields}`,
         { method: 'POST', ...multipart(meta, new Blob([photo.bytes], { type: 'image/jpeg' })) },
         meta,
+        generation,
       );
       photo.refs.forEach((ref) => {
         ref.imageFileId = id;
@@ -408,6 +431,7 @@ async function saveSnapshot(
         await request(
           `${uploadApi}/${encodeURIComponent(existingId)}?uploadType=multipart&fields=id,name,modifiedTime`,
           options,
+          generation,
         )
       ).json()
     : await create(
@@ -415,11 +439,12 @@ async function saveSnapshot(
         `${uploadApi}?uploadType=multipart&fields=${metadataFields}`,
         options,
         meta,
+        generation,
       );
   const cleanupWarnings: string[] = [];
   if (previous) {
     try {
-      const current = await readDocument(backupId);
+      const current = await readDocument(backupId, generation);
       if (JSON.stringify(current) !== JSON.stringify(doc))
         cleanupWarnings.push('Photo cleanup skipped because another save changed the backup.');
       else {
@@ -430,17 +455,21 @@ async function saveSnapshot(
         )) {
           try {
             // Check ownership and location again immediately before trashing.
-            const fresh = await metadata(old.id);
+            const fresh = await metadata(old.id, generation);
             if (
               owned(fresh, 'portrait', backupId) &&
               fresh.mimeType === 'image/jpeg' &&
               fresh.parents?.includes(folderId)
             )
-              await request(`${api}/${encodeURIComponent(old.id)}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ trashed: true }),
-              });
+              await request(
+                `${api}/${encodeURIComponent(old.id)}`,
+                {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ trashed: true }),
+                },
+                generation,
+              );
           } catch {
             cleanupWarnings.push(
               `Saved successfully, but photo ${old.id} could not be moved to Drive Trash.`,
@@ -452,6 +481,7 @@ async function saveSnapshot(
       cleanupWarnings.push('Saved successfully, but photo cleanup could not be completed.');
     }
   }
+  assertGeneration(generation);
   return { id: file.id, name: file.name, modifiedTime: file.modifiedTime, cleanupWarnings };
 }
 let saves: Promise<unknown> = Promise.resolve();
@@ -460,7 +490,8 @@ export function saveDriveTree(
   existingId?: string,
   progress?: ProgressCallback,
 ): Promise<DriveSaveResult> {
-  // Capture before waiting for another save; caller edits cannot alter this operation.
+  // Capture the session and tree before waiting for another save.
+  const generation = getDriveGeneration();
   let snapshot: Tree;
   try {
     assertValidLifeDates(tree);
@@ -474,7 +505,7 @@ export function saveDriveTree(
   const operation = saves
     .catch(() => undefined)
     .then(async () => {
-      const run = () => saveSnapshot(snapshot, existingId, progress);
+      const run = () => saveSnapshot(snapshot, generation, existingId, progress);
       // Web Locks also serialize saves from other tabs of this browser and origin.
       if (globalThis.navigator?.locks) {
         return await navigator.locks.request('genealogical3-drive-save', run);

@@ -3,7 +3,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDriveWorkspace } from './useDriveWorkspace';
 import { authorizeDrive, listDriveTrees, restoreDrive, type DriveFile } from './drive';
-import type { DriveConnection } from './driveAuth';
+import { DriveAuthorizationError, type DriveConnection } from './driveAuth';
 
 const auth = vi.hoisted(() => ({
   configured: true,
@@ -193,6 +193,32 @@ describe('Workspace metadata discovery', () => {
     await act(async () => connection('disconnected'));
     expect(result.current.error).toBe('');
     expect(result.current.ready).toBe(true);
+  });
+  it('ignores a delayed cookie failure after a newer cross-tab disconnect', async () => {
+    vi.mocked(restoreDrive).mockImplementation(async () => connection('disconnected'));
+    const pending = deferred<void>();
+    vi.mocked(authorizeDrive).mockImplementationOnce(() => {
+      connection('connecting');
+      return pending.promise;
+    });
+    const { result } = renderHook(() => useDriveWorkspace(true));
+    await waitFor(() => expect(result.current.connection).toBe('disconnected'));
+    let attempt!: Promise<void>;
+    act(() => {
+      attempt = result.current.connect();
+    });
+    ++auth.generation;
+    const cookieError = new DriveAuthorizationError('Allow site cookies', auth.generation);
+    await act(async () => {
+      ++auth.generation;
+      connection('disconnected');
+      pending.reject(cookieError);
+      await attempt;
+    });
+    expect(result.current.error).toBe('');
+    await act(() => result.current.retry());
+    expect(authorizeDrive).toHaveBeenCalledOnce();
+    expect(restoreDrive).toHaveBeenCalledTimes(2);
   });
   it('retries a failed session restoration without opening sign-in', async () => {
     vi.mocked(restoreDrive).mockImplementationOnce(async () => {

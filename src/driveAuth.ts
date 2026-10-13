@@ -5,7 +5,7 @@ let accessToken = '';
 let expiresAt = 0;
 let connection: 'unknown' | 'connected' | 'disconnected' = 'unknown';
 let generation = 0;
-let tokenPromise: Promise<void> | null = null;
+let tokenPromise: Promise<number> | null = null;
 let authorizationPromise: Promise<void> | null = null;
 let disconnectPromise: Promise<void> | null = null;
 let cancelPopup: (() => void) | null = null;
@@ -23,6 +23,14 @@ let status: DriveConnection = driveConfigured ? 'restoring' : 'unconfigured';
 const listeners = new Set<() => void>();
 export const getDriveConnection = () => status;
 export const getDriveGeneration = () => generation;
+export class DriveAuthorizationError extends Error {
+  constructor(
+    message: string,
+    public generation: number,
+  ) {
+    super(message);
+  }
+}
 export function subscribeDriveConnection(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -94,7 +102,7 @@ async function responseError(response: Response): Promise<Error> {
   );
 }
 
-function renewToken(): Promise<void> {
+function renewToken(): Promise<number> {
   if (tokenPromise) return tokenPromise;
   const currentGeneration = generation;
   tokenPromise = (async () => {
@@ -102,7 +110,8 @@ function renewToken(): Promise<void> {
     if (currentGeneration !== generation) throw Error('Google Drive connection was canceled.');
     if (response.status === 401) {
       expireDriveConnection();
-      return;
+      // Identify this expiry even if another session change follows before the caller resumes.
+      return currentGeneration + 1;
     }
     if (!response.ok) throw await responseError(response);
     const token = (await response.json().catch(() => null)) as {
@@ -124,6 +133,7 @@ function renewToken(): Promise<void> {
     expiresAt = token.expiresAt;
     connection = 'connected';
     publish('connected');
+    return currentGeneration;
   })()
     .catch((error: unknown) => {
       if (currentGeneration === generation) publish('error');
@@ -182,10 +192,12 @@ function connectPopup(): Promise<void> {
     window.addEventListener('message', onMessage);
   }).then(async () => {
     if (currentGeneration !== generation) throw Error('Google Drive connection was canceled.');
-    await renewToken();
+    const tokenGeneration = await renewToken();
+    if (tokenGeneration !== generation) throw Error('Google Drive connection was canceled.');
     if (connection !== 'connected')
-      throw Error(
+      throw new DriveAuthorizationError(
         'Google Drive could not remember this connection. Allow site cookies and reconnect.',
+        tokenGeneration,
       );
     disconnectChannel?.postMessage('connect');
   });
@@ -202,9 +214,11 @@ export function authorizeDrive(): Promise<void> {
   authorizationPromise = (
     connection === 'disconnected'
       ? connectPopup()
-      : renewToken().then(() => {
+      : renewToken().then((tokenGeneration) => {
+          if (tokenGeneration !== generation) throw Error('Google Drive connection was canceled.');
           // A new user click is required after renewal discovers an expired/revoked session.
-          if (connection !== 'connected') throw Error(reconnectMessage);
+          if (connection !== 'connected')
+            throw new DriveAuthorizationError(reconnectMessage, tokenGeneration);
         })
   ).finally(() => {
     authorizationPromise = null;

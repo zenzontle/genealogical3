@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { DriveAuthorizationError } from './driveAuth';
 import {
   authorizeDrive,
   driveConfigured,
@@ -68,8 +69,14 @@ export function useDriveWorkspace(active: boolean) {
       ++request.current;
       setFiles([]);
       setState(connection === 'error' ? 'error' : 'idle');
-      // Failed popup attempts keep the session generation; passive disconnects change it.
-      if ((sessionChanged && connection !== 'error') || connection === 'unconfigured') setError('');
+      // Preserve feedback for an authorization failure in this session, including cookie expiry.
+      if (
+        (sessionChanged &&
+          connection !== 'error' &&
+          failedConnectionGeneration.current !== sessionGeneration) ||
+        connection === 'unconfigured'
+      )
+        setError('');
     } else if (active || changed) void refresh();
   }, [active, connection, sessionGeneration, refresh]);
   const connect = async () => {
@@ -79,8 +86,10 @@ export function useDriveWorkspace(active: boolean) {
     try {
       await authorizeDrive();
     } catch (error) {
-      if (mounted.current && generation === getDriveGeneration()) {
-        failedConnectionGeneration.current = generation;
+      const failureGeneration =
+        error instanceof DriveAuthorizationError ? error.generation : generation;
+      if (mounted.current && failureGeneration === getDriveGeneration()) {
+        failedConnectionGeneration.current = failureGeneration;
         reportError(error);
       }
     }
