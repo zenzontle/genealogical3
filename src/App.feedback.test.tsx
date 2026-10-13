@@ -883,6 +883,34 @@ describe('local feedback integration', () => {
 
 // Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
 describe('Drive portrait feedback and associations', () => {
+  it.each([
+    { name: 'remote-1.json', description: 'Saved family', label: 'Saved family' },
+    { name: 'Old family.genealogical3.json', description: undefined, label: 'Old family' },
+  ])(
+    'identifies the overwrite target as $label and respects cancellation',
+    async ({ name, description, label }) => {
+      driveState.configured = true;
+      const backup = { id: 'remote-1', name, description, modifiedTime: '' };
+      links.set(original.id, { treeId: original.id, ...backup });
+      const confirm = vi
+        .spyOn(window, 'confirm')
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+      vi.mocked(saveDriveTree).mockResolvedValueOnce({ ...backup, cleanupWarnings: [] });
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      expect(confirm).toHaveBeenCalledWith(
+        `Replace "${label}" in Google Drive with the current tree?`,
+      );
+      expect(saveDriveTree).not.toHaveBeenCalled();
+      expect(authorizeDrive).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      await screen.findByText(`Saved to Google Drive as ${name}.`);
+      expect(saveDriveTree).toHaveBeenCalledWith(original, backup.id, expect.any(Function));
+      expect(confirm).toHaveBeenCalledTimes(2);
+    },
+  );
   it('associates a pending save with its captured tree after switching during authorization and transfer', async () => {
     driveState.configured = true;
     const other = { ...makeTree('Other family'), people: [makePerson('Morgan')] };

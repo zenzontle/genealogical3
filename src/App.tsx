@@ -38,7 +38,7 @@ import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
 import { WorkspaceDeletionDialog } from './WorkspaceDeletionDialog';
 import { useWorkspaceDeletion } from './useWorkspaceDeletion';
-import type { WorkspaceEntry } from './workspaceEntries';
+import { driveTreeName, type WorkspaceEntry } from './workspaceEntries';
 import { OperationFeedback } from './OperationFeedback';
 import { useTreeImport } from './useTreeImport';
 import { useTreeExport } from './useTreeExport';
@@ -655,7 +655,9 @@ export default function App() {
     if (
       action === 'save' &&
       target &&
-      !window.confirm(`Replace "${target.name}" in Google Drive with the current tree?`)
+      !window.confirm(
+        `Replace "${driveTreeName(target.name, target.description)}" in Google Drive with the current tree?`,
+      )
     )
       return;
     driveOperationBusy.current = true;
