@@ -109,6 +109,77 @@ describe('Workspace metadata discovery', () => {
     expect(result.current.files).toEqual([file]);
     expect(result.current.error).toBe('');
   });
+  it.each([
+    'Google sign-in was blocked. Allow popups for this site and retry.',
+    'Google Drive authorization was canceled or denied.',
+    'Access denied',
+    'Google authorization was canceled or timed out.',
+  ])('preserves explicit connection failure: %s', async (message) => {
+    vi.mocked(restoreDrive).mockImplementation(async () => connection('disconnected'));
+    vi.mocked(authorizeDrive).mockImplementationOnce(async () => {
+      connection('connecting');
+      connection('disconnected');
+      throw Error(message);
+    });
+    const { result, rerender } = renderHook(({ active }) => useDriveWorkspace(active), {
+      initialProps: { active: true },
+    });
+    await waitFor(() => expect(result.current.connection).toBe('disconnected'));
+    await act(() => result.current.connect());
+    expect(result.current.error).toBe(message);
+    expect(result.current.ready).toBe(true);
+    expect(listDriveTrees).not.toHaveBeenCalled();
+    rerender({ active: false });
+    rerender({ active: true });
+    expect(result.current.error).toBe(message);
+    await act(async () => {
+      ++auth.generation;
+      connection('disconnected');
+    });
+    expect(result.current.error).toBe('');
+  });
+  it('clears a connection failure on a new attempt and lists after it succeeds', async () => {
+    vi.mocked(restoreDrive).mockImplementation(async () => connection('disconnected'));
+    vi.mocked(authorizeDrive).mockImplementationOnce(async () => {
+      connection('connecting');
+      connection('disconnected');
+      throw Error('Access denied');
+    });
+    const { result } = renderHook(() => useDriveWorkspace(true));
+    await waitFor(() => expect(result.current.connection).toBe('disconnected'));
+    await act(() => result.current.connect());
+    expect(result.current.error).toBe('Access denied');
+    const pending = deferred<void>();
+    vi.mocked(authorizeDrive).mockImplementationOnce(() => {
+      connection('connecting');
+      return pending.promise;
+    });
+    let attempt!: Promise<void>;
+    act(() => {
+      attempt = result.current.connect();
+    });
+    expect(result.current.error).toBe('');
+    expect(result.current.loading).toBe(true);
+    await act(async () => {
+      connection('connected');
+      pending.resolve();
+      await attempt;
+    });
+    await waitFor(() => expect(result.current.files).toEqual([file]));
+    expect(result.current.error).toBe('');
+  });
+  it('clears stale listing feedback through a disconnecting session transition', async () => {
+    vi.mocked(listDriveTrees).mockRejectedValueOnce(Error('Listing failed'));
+    const { result } = renderHook(() => useDriveWorkspace(true));
+    await waitFor(() => expect(result.current.error).toBe('Listing failed'));
+    await act(async () => {
+      ++auth.generation;
+      connection('disconnecting');
+    });
+    await act(async () => connection('disconnected'));
+    expect(result.current.error).toBe('');
+    expect(result.current.ready).toBe(true);
+  });
   it('retries a failed session restoration without opening sign-in', async () => {
     vi.mocked(restoreDrive).mockImplementationOnce(async () => {
       connection('error');

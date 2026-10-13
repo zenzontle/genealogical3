@@ -60,15 +60,15 @@ export function useDriveWorkspace(active: boolean) {
     return invalidate;
   }, [reportError]);
   useEffect(() => {
-    const changed =
-      previousSession.current.connection !== connection ||
-      previousSession.current.generation !== sessionGeneration;
+    const sessionChanged = previousSession.current.generation !== sessionGeneration;
+    const changed = previousSession.current.connection !== connection || sessionChanged;
     previousSession.current = { connection, generation: sessionGeneration };
     if (connection !== 'connected') {
       ++request.current;
       setFiles([]);
       setState(connection === 'error' ? 'error' : 'idle');
-      if (connection === 'disconnected' || connection === 'unconfigured') setError('');
+      // Failed popup attempts keep the session generation; passive disconnects change it.
+      if ((sessionChanged && connection !== 'error') || connection === 'unconfigured') setError('');
     } else if (active || changed) void refresh();
   }, [active, connection, sessionGeneration, refresh]);
   const connect = async () => {
