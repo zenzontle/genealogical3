@@ -883,6 +883,30 @@ describe('local feedback integration', () => {
 
 // Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
 describe('Drive portrait feedback and associations', () => {
+  it.each([false, true])(
+    'identifies the saved backup by its readable name when link persistence fails: %s',
+    async (linkFails) => {
+      driveState.configured = true;
+      const file = {
+        id: 'remote-1',
+        name: 'remote-1.json',
+        description: 'García family',
+        modifiedTime: '',
+        cleanupWarnings: ['Photo cleanup could not be completed.'],
+      };
+      vi.mocked(saveDriveTree).mockResolvedValueOnce(file);
+      if (linkFails) vi.mocked(saveDriveLink).mockRejectedValueOnce(Error('Storage unavailable'));
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+      const notice = linkFails
+        ? 'Saved to Google Drive as García family, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.'
+        : 'Saved to Google Drive as García family.';
+      await screen.findByText(`${notice} Photo cleanup could not be completed.`);
+      expect(links.has(original.id)).toBe(!linkFails);
+      expect(screen.queryByText(/Saved to Google Drive as remote-1/)).toBeNull();
+    },
+  );
   it.each([
     { name: 'remote-1.json', description: 'Saved family', label: 'Saved family' },
     { name: 'Old family.genealogical3.json', description: undefined, label: 'Old family' },
@@ -906,7 +930,7 @@ describe('Drive portrait feedback and associations', () => {
       expect(saveDriveTree).not.toHaveBeenCalled();
       expect(authorizeDrive).not.toHaveBeenCalled();
       fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-      await screen.findByText(`Saved to Google Drive as ${name}.`);
+      await screen.findByText(`Saved to Google Drive as ${label}.`);
       expect(saveDriveTree).toHaveBeenCalledWith(original, backup.id, expect.any(Function));
       expect(confirm).toHaveBeenCalledTimes(2);
     },
@@ -1012,7 +1036,7 @@ describe('Drive portrait feedback and associations', () => {
       cleanupWarnings: [],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
-    await screen.findByText('Saved to Google Drive as Family.json.');
+    await screen.findByText('Saved to Google Drive as Saved family.');
     expect(vi.mocked(saveDriveTree).mock.calls.at(-1)?.[1]).toBeUndefined();
     expect(links.get(copyId)?.id).toBe('independent-drive');
     expect(links.get(copyId)?.restoreWarnings).toEqual([]);
@@ -1262,7 +1286,7 @@ describe('combined Drive Workspace integration', () => {
       cleanupWarnings: [],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-    await screen.findByText('Saved to Google Drive as Backup.genealogical3.json.');
+    await screen.findByText('Saved to Google Drive as Readable backup.');
     await waitFor(() => expect(listDriveTrees).toHaveBeenCalledTimes(before + 1));
     expect(links.get(original.id)?.id).toBe(file.id);
     expect(links.get(original.id)?.description).toBe('Readable backup');

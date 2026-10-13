@@ -670,6 +670,7 @@ export default function App() {
         action === 'save' ? target?.id : undefined,
         setPhotoProgress,
       );
+      const savedName = driveTreeName(file.name, file.description);
       if (treeRef.current?.id === snapshot!.id) {
         setDriveFile(file);
         setRestoreWarnings([]);
@@ -689,11 +690,11 @@ export default function App() {
           modifiedTime: file.modifiedTime,
           restoreWarnings: [],
         });
-        setNotice([`Saved to Google Drive as ${file.name}.`, ...file.cleanupWarnings].join(' '));
+        setNotice([`Saved to Google Drive as ${savedName}.`, ...file.cleanupWarnings].join(' '));
       } catch {
         setNotice(
           [
-            `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
+            `Saved to Google Drive as ${savedName}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
             ...file.cleanupWarnings,
           ].join(' '),
         );
