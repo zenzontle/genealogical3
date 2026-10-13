@@ -587,6 +587,8 @@ async function deleteBackup(progress: DriveDeletionProgress) {
       ...doc.portraits.map((ref) => ref.imageFileId),
       ...inventory.map((photo) => photo.id),
     ]);
+    const verifiedPortraitIds: string[] = [];
+    // Preflight every candidate so a validation failure leaves the retained backup intact.
     for (const photoId of ids) {
       if (progress.deletedPortraitIds.includes(photoId)) continue;
       let photo: FileMetadata;
@@ -606,6 +608,9 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         throw Error(
           'A portrait does not belong to this backup. Deletion stopped to protect unrelated files.',
         );
+      verifiedPortraitIds.push(photoId);
+    }
+    for (const photoId of verifiedPortraitIds) {
       progress.portraitAttempted = photoId;
       await remove(photoId);
       progress.deletedPortraitIds.push(photoId);

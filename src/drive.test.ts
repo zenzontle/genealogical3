@@ -216,22 +216,42 @@ describe('permanent Drive deletion', () => {
     },
   );
   it.each(['app', 'kind', 'backupId', 'mimeType'])(
-    'protects referenced portraits with changed %s',
+    'preserves every portrait when a later referenced portrait has changed %s',
     async (field) => {
       const remote = fakeDrive();
-      const file = await saveDriveTree(family([1]));
-      const id = remote.document(file.id).portraits[0].imageFileId;
+      const file = await saveDriveTree(family([1, 2]));
+      const doc = remote.document(file.id);
+      const id = doc.portraits[1].imageFileId;
       if (field === 'mimeType')
         remote.files.get(id)!.mimeType = 'application/vnd.google-apps.folder';
       else remote.files.get(id)!.appProperties[field] = 'other';
       remote.calls.length = 0;
-      await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
-        /portrait does not belong/,
-      );
+      const progress = createDriveDeletion(file.id);
+      await expect(deleteDriveBackup(progress)).rejects.toThrow(/portrait does not belong/);
       expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+      expect(progress.deletedPortraitIds).toEqual([]);
+      expect(doc.portraits.every((ref) => remote.files.has(ref.imageFileId))).toBe(true);
+      expect(remote.document(file.id)).toEqual(doc);
       expect(remote.files.has(file.id)).toBe(true);
     },
   );
+  it('preserves the backup when a superseded portrait in Trash fails preflight', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const old = remote.document(file.id).portraits[0].imageFileId;
+    await saveDriveTree(family([2]), file.id);
+    expect(remote.files.get(old)?.trashed).toBe(true);
+    remote.files.get(old)!.mimeType = 'image/png';
+    const doc = remote.document(file.id);
+    remote.calls.length = 0;
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
+      /No files have been confirmed deleted/,
+    );
+    expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+    expect(remote.files.has(old)).toBe(true);
+    expect(remote.files.has(doc.portraits[0].imageFileId)).toBe(true);
+    expect(remote.document(file.id)).toEqual(doc);
+  });
   it('stops on failure, reports partial deletion, and resumes without repeating completed steps', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([1, 2]));
