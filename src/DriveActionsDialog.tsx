@@ -2,14 +2,14 @@ import { X } from 'lucide-react';
 
 export function DriveActionsDialog({
   configured,
-  connected,
+  canDisconnect,
   busy,
   onAction,
   onDisconnect,
   onClose,
 }: {
   configured: boolean;
-  connected: boolean;
+  canDisconnect: boolean;
   busy: boolean;
   onAction: (action: 'save' | 'copy') => void;
   onDisconnect: () => void;
@@ -78,7 +78,7 @@ export function DriveActionsDialog({
               >
                 Save a copy
               </button>
-              {connected && (
+              {canDisconnect && (
                 <button disabled={busy} onClick={onDisconnect}>
                   Disconnect Drive
                 </button>

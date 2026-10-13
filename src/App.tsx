@@ -144,6 +144,7 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
+    navigation = useRef(0),
     treeRef = useRef<Tree | null>(null),
     draftTree = useRef(false),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -257,6 +258,7 @@ export default function App() {
     [queueSave, refreshLibrary, showError],
   );
   const openTree = async (id: string, draft?: Tree) => {
+    const request = ++navigation.current;
     try {
       if (saveTimer.current && treeRef.current) {
         clearTimeout(saveTimer.current);
@@ -267,6 +269,7 @@ export default function App() {
       const found = draft || (await getTree(id));
       if (!found) throw Error('This tree was not found.');
       const link = draft ? undefined : await getDriveLink(id);
+      if (request !== navigation.current) return false;
       history.current = [];
       future.current = [];
       treeRef.current = found;
@@ -288,7 +291,7 @@ export default function App() {
       setNotice('');
       return true;
     } catch (error) {
-      showError(error);
+      if (request === navigation.current) showError(error);
       return false;
     }
   };
@@ -649,6 +652,7 @@ export default function App() {
   };
   const loadDrive = async (file: DriveFile) => {
     if (driveOperationBusy.current) return;
+    const origin = navigation.current;
     driveOperationBusy.current = true;
     setDriveBusy(true);
     setPhotoProgress(null);
@@ -656,6 +660,7 @@ export default function App() {
       await authorizeDrive();
       const generation = getDriveGeneration();
       const result = await openDriveTree(file.id, setPhotoProgress);
+      if (origin !== navigation.current) return;
       if (generation !== getDriveGeneration() || getDriveConnection() !== 'connected')
         throw Error('Google Drive connection changed. Open the Workspace card again to retry.');
       const imported = result.tree;
@@ -675,6 +680,7 @@ export default function App() {
       });
       await saveTree(copy);
       await refreshLibrary();
+      if (origin !== navigation.current) return;
       if (!(await openTree(copy.id))) return;
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
@@ -685,7 +691,7 @@ export default function App() {
           : 'Opened a local working copy. Save to Drive when ready.',
       );
     } catch (error) {
-      showError(error);
+      if (origin === navigation.current) showError(error);
     } finally {
       driveOperationBusy.current = false;
       setDriveBusy(false);
@@ -800,6 +806,7 @@ export default function App() {
     await deleteDriveLink(action.treeId);
   };
   const leaveEditor = async () => {
+    ++navigation.current;
     await saveNow();
     setPendingCenter(null);
     setScreen('home');
@@ -1345,7 +1352,9 @@ export default function App() {
       {driveActionsOpen && (
         <DriveActionsDialog
           configured={driveConfigured}
-          connected={driveWorkspace.connection === 'connected'}
+          canDisconnect={
+            driveWorkspace.connection === 'connected' || driveWorkspace.connection === 'error'
+          }
           busy={driveBusy || !driveReady}
           onAction={doDrive}
           onDisconnect={forgetDrive}

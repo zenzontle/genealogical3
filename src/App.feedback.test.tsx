@@ -572,10 +572,18 @@ describe('local feedback integration', () => {
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Drive' }));
-    vi.mocked(disconnectDrive).mockRejectedValueOnce(Error('Disconnect failed. Please retry.'));
+    vi.mocked(disconnectDrive).mockImplementationOnce(async () => {
+      ++driveState.generation;
+      setDriveConnection('error');
+      throw Error('Disconnect failed. Please retry.');
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect Drive' }));
     await screen.findByText('Disconnect failed. Please retry.');
     expect(screen.queryByText(/Forgot Google Drive access/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Disconnect Drive' })).toHaveProperty(
+      'disabled',
+      false,
+    );
     let confirm!: () => void;
     vi.mocked(disconnectDrive).mockImplementationOnce(
       () =>
@@ -590,6 +598,9 @@ describe('local feedback integration', () => {
       'Forgot Google Drive access in this browser. Your local tree is still saved.',
     );
     expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+    expect(disconnectDrive).toHaveBeenCalledTimes(2);
+    expect(restoreDrive).toHaveBeenCalledOnce();
+    expect(authorizeDrive).not.toHaveBeenCalled();
   });
   it('cancels tree deletion without changes and retains the tile after a failed delete', async () => {
     render(<App />);
@@ -916,6 +927,75 @@ describe('Drive portrait feedback and associations', () => {
 
 describe('combined Drive Workspace integration', () => {
   const file = { id: 'backup', name: 'Backup.genealogical3.json', modifiedTime: '2026-10-10' };
+  it.each([
+    ['download', 'local'],
+    ['download', 'new'],
+    ['storage', 'home'],
+    ['opening', 'local'],
+  ] as const)(
+    'keeps newer %s-stage navigation to %s when a restore completes',
+    async (stage, destination) => {
+      driveState.configured = true;
+      vi.mocked(listDriveTrees).mockResolvedValue([file]);
+      const backup = { ...makeTree('Backup revision'), people: [makePerson('Backup person')] };
+      const result = { tree: backup, restoreWarnings: [] };
+      let finish!: () => void;
+      if (stage === 'download') {
+        vi.mocked(openDriveTree).mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finish = () => resolve(result);
+            }),
+        );
+      } else {
+        vi.mocked(openDriveTree).mockResolvedValueOnce(result);
+        if (stage === 'storage') {
+          vi.mocked(saveTree).mockImplementationOnce(
+            (tree) =>
+              new Promise((resolve) => {
+                finish = () => {
+                  records.set(tree.id, tree);
+                  resolve(tree.id);
+                };
+              }),
+          );
+        } else {
+          vi.mocked(getTree).mockImplementationOnce(
+            (id) =>
+              new Promise((resolve) => {
+                finish = () => resolve(records.get(id));
+              }),
+          );
+        }
+      }
+      render(<App />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Backup' }));
+      await waitFor(() => expect(finish).toBeTypeOf('function'));
+      if (destination === 'new') {
+        fireEvent.click(screen.getByRole('button', { name: 'New tree' }));
+        await screen.findByText('My family tree');
+      } else {
+        await openOriginal();
+        if (destination === 'home') {
+          fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+          await screen.findByRole('button', { name: 'Open Family' });
+        }
+      }
+      await act(async () => finish());
+      expect(screen.queryByRole('button', { name: 'Select Backup person' })).toBeNull();
+      if (destination === 'home')
+        expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+      else
+        expect(screen.getByTitle('Rename tree').textContent).toContain(
+          destination === 'new' ? 'My family tree' : 'Family',
+        );
+      if (stage === 'download') {
+        expect(saveTree).not.toHaveBeenCalled();
+        expect(saveDriveLink).not.toHaveBeenCalled();
+      }
+      expect(records.get(original.id)).toEqual(original);
+    },
+  );
   it('discovers metadata without documents, local writes, uploads or interactive authorization', async () => {
     driveState.configured = true;
     vi.mocked(listDriveTrees).mockResolvedValue([file]);
