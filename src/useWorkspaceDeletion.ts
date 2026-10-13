@@ -24,7 +24,7 @@ export function useWorkspaceDeletion({
   onBusy,
 }: {
   operationBusy: { current: boolean };
-  beforeLocalRemoval: (treeId: string) => Promise<() => void>;
+  beforeLocalRemoval: (treeId: string) => Promise<() => Promise<void>>;
   onDriveDeleted: (backupId: string, generation: number) => void;
   onRemoved: (treeId?: string, backupId?: string) => void;
   onBusy: (busy: boolean) => void;
@@ -78,7 +78,7 @@ export function useWorkspaceDeletion({
     setAction(task);
     operationBusy.current = true;
     onBusy(true);
-    let releaseLocal: (() => void) | undefined;
+    let releaseLocal: (() => Promise<void>) | undefined;
     try {
       if (task.progress) {
         if (!task.progress.documentDeleted) await deleteDriveBackup(task.progress);
@@ -98,7 +98,7 @@ export function useWorkspaceDeletion({
       onRemoved(treeId, backupId);
       retries.current.delete(key(entry));
     } finally {
-      releaseLocal?.();
+      await releaseLocal?.();
       operationBusy.current = false;
       onBusy(false);
     }

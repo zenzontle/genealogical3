@@ -170,7 +170,11 @@ export default function App() {
         ++saveCounter.current;
       }
       await saveQueue.current.catch(() => undefined);
-      return () => removingLocal.current.delete(id);
+      return async () => {
+        removingLocal.current.delete(id);
+        // A rollback must persist edits whose autosaves were suppressed during deletion.
+        if (!removedLocal.current.has(id) && treeRef.current?.id === id) await saveNow();
+      };
     },
     onRemoved: (treeId, backupId) => {
       if (treeId) removedLocal.current.add(treeId);

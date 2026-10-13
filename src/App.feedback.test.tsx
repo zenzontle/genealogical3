@@ -791,46 +791,62 @@ describe('local feedback integration', () => {
     );
   });
 
-  it('does not recreate a local tree when a portrait autosave finishes during deletion', async () => {
-    render(<App />);
-    await openOriginal();
-    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
-    let finishPortrait!: (value: string) => void;
-    vi.mocked(portraitData).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishPortrait = resolve;
-        }),
-    );
-    fireEvent.change(screen.getByLabelText('Choose portrait'), {
-      target: { files: [new File(['photo'], 'photo.png', { type: 'image/png' })] },
-    });
-    await waitFor(() => expect(portraitData).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
-    await screen.findByRole('button', { name: 'Delete Family' });
-    let finishDelete!: () => void;
-    vi.mocked(removeWorkspaceStorage).mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finishDelete = () => {
-            records.delete(original.id);
-            resolve();
-          };
-        }),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(removeWorkspaceStorage).toHaveBeenCalledOnce());
-    const writes = vi.mocked(saveTree).mock.calls.length;
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    await act(async () => finishPortrait('data:image/jpeg;base64,processed'));
-    await act(() => vi.advanceTimersByTimeAsync(450));
-    await act(async () => finishDelete());
-    await act(() => vi.advanceTimersByTimeAsync(450));
-    expect(saveTree).toHaveBeenCalledTimes(writes);
-    expect(records.has(original.id)).toBe(false);
-    expect(screen.queryByRole('button', { name: 'Open Family' })).toBeNull();
-  });
+  it.each(['success', 'rollback-pending', 'rollback-suppressed'] as const)(
+    'preserves delayed layout edits when local deletion ends with %s',
+    async (outcome) => {
+      render(<App />);
+      await openOriginal();
+      const finishDrag = canvasEvents.onSelectionDragStop;
+      const moved: PersonNode[] = original.people.map((person) => ({
+        id: person.id,
+        type: 'person',
+        position: { x: person.x + 80, y: person.y + 40 },
+        data: {
+          person,
+          selected: false,
+          homeName: null,
+          isHome: false,
+          onSelect: vi.fn(),
+          onDelete: vi.fn(),
+        },
+      }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('button', { name: 'Delete Family' });
+      let finishDelete!: () => void;
+      vi.mocked(removeWorkspaceStorage).mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finishDelete = () => {
+              if (outcome === 'success') {
+                records.delete(original.id);
+                resolve();
+              } else reject(Error('Deletion rolled back.'));
+            };
+          }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Family' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(removeWorkspaceStorage).toHaveBeenCalledOnce());
+      const writes = vi.mocked(saveTree).mock.calls.length;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      act(() => finishDrag(null, moved));
+      if (outcome !== 'rollback-pending') await act(() => vi.advanceTimersByTimeAsync(450));
+      await act(async () => finishDelete());
+      if (outcome !== 'success') {
+        expect(records.get(original.id)?.people[0].x).toBe(moved[0].position.x);
+        expect(saveTree).toHaveBeenCalledTimes(writes + 1);
+        expect(screen.getByRole('alert').textContent).toContain('Deletion rolled back.');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Open Family' })));
+        expect((await editorSnapshot()).people[0].x).toBe(moved[0].position.x);
+        return;
+      }
+      await act(() => vi.advanceTimersByTimeAsync(450));
+      expect(saveTree).toHaveBeenCalledTimes(writes);
+      expect(records.has(original.id)).toBe(false);
+      expect(screen.queryByRole('button', { name: 'Open Family' })).toBeNull();
+    },
+  );
 
   it('preserves edits made while a portrait processes and shows export retry controls', async () => {
     render(<App />);
