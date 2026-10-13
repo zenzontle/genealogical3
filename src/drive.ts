@@ -1,6 +1,6 @@
 import type { Tree } from './model';
 import { assertValidLifeDates, normalizeHomePerson, validateTree } from './model';
-import { driveAccessToken } from './driveAuth';
+import { driveAccessToken, expireDriveConnection } from './driveAuth';
 import {
   driveFormat,
   embeddedPortrait,
@@ -12,6 +12,7 @@ import {
   type PortraitReference,
 } from './driveDocument';
 export { authorizeDrive, disconnectDrive, driveConfigured, restoreDrive } from './driveAuth';
+export { getDriveConnection, getDriveGeneration, subscribeDriveConnection } from './driveAuth';
 
 const api = 'https://www.googleapis.com/drive/v3/files';
 const uploadApi = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -56,11 +57,13 @@ async function request(url: string, options: RequestInit = {}) {
     token = await driveAccessToken(true);
     response = await send();
   }
-  if (response.status === 401)
+  if (response.status === 401) {
+    expireDriveConnection();
     throw new DriveRequestError(
       401,
-      'Google Drive access expired. Choose a Drive action to reconnect.',
+      'Google Drive access expired. Use Connect Drive in Workspace to reconnect.',
     );
+  }
   if (!response.ok)
     throw new DriveRequestError(
       response.status,

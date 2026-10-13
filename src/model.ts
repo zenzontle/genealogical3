@@ -400,7 +400,7 @@ const isDate = (v: unknown): v is DateValue =>
 export function validateTree(input: unknown): Tree {
   if (isObj(input) && input.format === 'genealogical3-drive')
     throw Error(
-      'This Drive document stores photos separately. Use Open from Drive to retrieve its photos, then export a portable JSON backup.',
+      'This Drive document stores photos separately. Use Google Drive cards in Workspace to retrieve its photos, then export a portable JSON backup.',
     );
   if (!isObj(input) || (input.version !== 1 && input.version !== 2))
     throw Error('Unsupported tree file version.');

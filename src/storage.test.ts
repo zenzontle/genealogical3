@@ -6,6 +6,7 @@ import {
   getDriveLink,
   getTree,
   listTrees,
+  listDriveLinks,
   saveDriveLink,
   saveTree,
 } from './storage';
@@ -70,6 +71,20 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe('home designation in browser storage', () => {
+  it('lists every Drive association in a read-only transaction without writing trees', async () => {
+    const { put, modes } = browserStorage([]);
+    const links = ['first', 'second'].map((treeId) => ({
+      treeId,
+      id: 'same-backup',
+      name: 'Family',
+      modifiedTime: '2026-10-10',
+    }));
+    for (const link of links) await saveDriveLink(link);
+    const writes = modes.length;
+    expect(await listDriveLinks()).toEqual(links);
+    expect(modes.slice(writes)).toEqual(['readonly']);
+    expect(put).not.toHaveBeenCalled();
+  });
   it('preserves both timestamps through repeated local saves and reads', async () => {
     browserStorage([]);
     const tree = { ...makeTree('Saved'), updatedAt: 100, dataUpdatedAt: 80 };

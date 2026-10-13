@@ -464,7 +464,7 @@ describe('separate-photo Drive backups', () => {
     await expect(saveDriveTree(tree)).rejects.toThrow(/processed JPEG/);
     expect(remote.calls).toHaveLength(0);
     const file = await saveDriveTree(family([]));
-    expect(() => validateTree(remote.document(file.id))).toThrow(/Open from Drive/);
+    expect(() => validateTree(remote.document(file.id))).toThrow(/Google Drive cards in Workspace/);
   });
 
   it('limits transfers to three and serializes saves while capturing each snapshot', async () => {

@@ -52,6 +52,64 @@ function message(
 }
 
 describe('Drive authorization lifecycle', () => {
+  it('publishes restoration, explicit connection, expiration and cross-tab disconnect without sharing tokens', async () => {
+    fetchMock.mockResolvedValueOnce(disconnected());
+    const first = await import('./driveAuth');
+    const listener = vi.fn();
+    const unsubscribe = first.subscribeDriveConnection(listener);
+    expect(first.getDriveConnection()).toBe('restoring');
+    await first.restoreDrive();
+    expect(first.getDriveConnection()).toBe('disconnected');
+    const connecting = first.authorizeDrive();
+    expect(first.getDriveConnection()).toBe('connecting');
+    message();
+    await connecting;
+    expect(first.getDriveConnection()).toBe('connected');
+    vi.resetModules();
+    const second = await import('./driveAuth');
+    await second.restoreDrive();
+    await second.disconnectDrive();
+    expect(first.getDriveConnection()).toBe('disconnected');
+    expect(listener).toHaveBeenCalled();
+    const calls = listener.mock.calls.length;
+    unsubscribe();
+    first.expireDriveConnection();
+    expect(listener).toHaveBeenCalledTimes(calls);
+    expect(open).toHaveBeenCalledOnce();
+  });
+  it('restores another tab silently after an explicit connection', async () => {
+    fetchMock.mockResolvedValueOnce(disconnected());
+    const first = await import('./driveAuth');
+    await first.restoreDrive();
+    vi.resetModules();
+    const second = await import('./driveAuth');
+    fetchMock.mockResolvedValueOnce(disconnected());
+    await second.restoreDrive();
+    const connecting = first.authorizeDrive();
+    message();
+    await connecting;
+    await vi.waitFor(() => expect(second.getDriveConnection()).toBe('connected'));
+    expect(open).toHaveBeenCalledOnce();
+    expect([...channels][0].postMessage).toHaveBeenCalledWith('connect');
+  });
+  it('waits for stale renewal before restoring a cross-tab connection', async () => {
+    const auth = await import('./driveAuth');
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = auth.restoreDrive();
+    const canceled = expect(pending).rejects.toThrow(/canceled/);
+    [...channels][0].onmessage?.(new MessageEvent('message', { data: 'connect' }));
+    finish(tokenResponse('stale'));
+    await canceled;
+    await vi.waitFor(() => expect(auth.getDriveConnection()).toBe('connected'));
+    expect(await auth.driveAccessToken()).toBe('token');
+    expect(open).not.toHaveBeenCalled();
+  });
   it('clears other tabs only after successful disconnect and requires explicit reconnection', async () => {
     const firstTab = await import('./driveAuth');
     await firstTab.restoreDrive();

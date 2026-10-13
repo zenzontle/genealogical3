@@ -2,11 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { HomeScreen } from './HomeScreen';
 import { duplicateTree, makePerson, makeTree, type Tree } from './model';
+import type { ComponentProps } from 'react';
 
 function render(
   libraryState: 'loading' | 'ready' | 'error',
   library: Tree[] = [],
   duplicatingTreeId: string | null = null,
+  drive: Partial<ComponentProps<typeof HomeScreen>> = {},
 ) {
   return renderToStaticMarkup(
     <HomeScreen
@@ -20,11 +22,29 @@ function render(
       onOpenTree={vi.fn()}
       onRenameTree={vi.fn()}
       onRemoveTree={vi.fn()}
+      {...drive}
     />,
   );
 }
 
 describe('homepage library hierarchy', () => {
+  it('withholds the empty hero while Drive discovery is pending, and renders local cards', () => {
+    expect(render('ready', [], null, { driveLoading: true })).not.toContain('class="hero"');
+    const html = render('ready', [makeTree('Local')], null, { driveLoading: true });
+    expect(html).toContain('Open Local');
+    expect(html).toContain('Loading Google Drive trees');
+    expect(html).toContain('role="status" aria-busy="true"');
+  });
+  it('counts Drive-only entries when choosing Workspace and keeps Drive errors separate', () => {
+    const file = { id: 'remote', name: 'Remote.genealogical3.json', modifiedTime: '2026-10-10' };
+    const html = render('ready', [], null, { driveFiles: [file] });
+    expect(html).not.toContain('class="hero"');
+    expect(html).toContain('Open Remote');
+    const failure = render('ready', [makeTree('Local')], null, { driveError: 'Drive failed' });
+    expect(failure).toContain('Open Local');
+    expect(failure).toContain('Drive failed');
+    expect(failure).toContain('Retry');
+  });
   it('withholds the hero and empty-library invitation while initial storage is loading', () => {
     const html = render('loading');
     expect(html).toContain('Loading your family trees');

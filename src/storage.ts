@@ -75,6 +75,8 @@ export const deleteTree = (id: string) =>
   transaction<undefined>(STORE, 'readwrite', (store) => store.delete(id));
 export const getDriveLink = (treeId: string) =>
   transaction<DriveLink | undefined>(LINKS, 'readonly', (store) => store.get(treeId));
+export const listDriveLinks = () =>
+  transaction<DriveLink[]>(LINKS, 'readonly', (store) => store.getAll());
 export const saveDriveLink = (link: DriveLink) =>
   transaction<IDBValidKey>(LINKS, 'readwrite', (store) => store.put(link));
 export const deleteDriveLink = (treeId: string) =>
