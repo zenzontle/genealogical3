@@ -712,10 +712,13 @@ export default function App() {
       setDriveBusy(false);
     }
   };
-  const rename = (item: Tree) =>
+  const rename = (item: Tree) => {
+    ++navigation.current;
     setTreeAction({ kind: 'rename', treeId: item.id, name: item.name });
+  };
   const duplicate = async (item: Tree) => {
     if (duplicateBusy.current) return;
+    ++navigation.current;
     duplicateBusy.current = true;
     setDuplicatingTreeId(item.id);
     try {
@@ -730,8 +733,10 @@ export default function App() {
       setDuplicatingTreeId(null);
     }
   };
-  const removeTree = (item: Tree) =>
+  const removeTree = (item: Tree) => {
+    ++navigation.current;
     setTreeAction({ kind: 'delete-tree', treeId: item.id, name: item.name });
+  };
   const submitTreeAction = async (name: string) => {
     const action = treeAction;
     if (!action) return;

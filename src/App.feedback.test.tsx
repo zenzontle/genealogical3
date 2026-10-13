@@ -6,6 +6,7 @@ import App from './App';
 import { makePerson, makeTree, validateTree, type Tree } from './model';
 import {
   deleteTree,
+  duplicateSavedTree,
   getTree,
   listTrees,
   listDriveLinks,
@@ -932,6 +933,15 @@ describe('combined Drive Workspace integration', () => {
     ['download', 'new'],
     ['storage', 'home'],
     ['opening', 'local'],
+    ['download', 'rename'],
+    ['download', 'delete'],
+    ['download', 'duplicate'],
+    ['storage', 'rename'],
+    ['storage', 'delete'],
+    ['storage', 'duplicate'],
+    ['opening', 'rename'],
+    ['opening', 'delete'],
+    ['opening', 'duplicate'],
   ] as const)(
     'keeps newer %s-stage navigation to %s when a restore completes',
     async (stage, destination) => {
@@ -974,6 +984,23 @@ describe('combined Drive Workspace integration', () => {
       if (destination === 'new') {
         fireEvent.click(screen.getByRole('button', { name: 'New tree' }));
         await screen.findByText('My family tree');
+      } else if (destination === 'rename' || destination === 'delete') {
+        fireEvent.click(
+          screen.getByRole('button', {
+            name: `${destination === 'rename' ? 'Rename' : 'Delete'} Family`,
+          }),
+        );
+        await screen.findByRole('dialog', {
+          name: destination === 'rename' ? 'Rename tree' : 'Delete tree?',
+        });
+      } else if (destination === 'duplicate') {
+        const copy = { ...original, id: 'local-copy', name: 'Family copy' };
+        vi.mocked(duplicateSavedTree).mockImplementationOnce(async () => {
+          records.set(copy.id, copy);
+          return copy;
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Duplicate Family' }));
+        await screen.findByRole('button', { name: 'Open Family copy' });
       } else {
         await openOriginal();
         if (destination === 'home') {
@@ -983,12 +1010,25 @@ describe('combined Drive Workspace integration', () => {
       }
       await act(async () => finish());
       expect(screen.queryByRole('button', { name: 'Select Backup person' })).toBeNull();
-      if (destination === 'home')
+      if (
+        destination === 'home' ||
+        destination === 'rename' ||
+        destination === 'delete' ||
+        destination === 'duplicate'
+      )
         expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
       else
         expect(screen.getByTitle('Rename tree').textContent).toContain(
           destination === 'new' ? 'My family tree' : 'Family',
         );
+      if (destination === 'rename' || destination === 'delete')
+        expect(
+          screen.getByRole('dialog', {
+            name: destination === 'rename' ? 'Rename tree' : 'Delete tree?',
+          }),
+        ).toBeTruthy();
+      if (destination === 'duplicate')
+        expect(screen.getByRole('button', { name: 'Open Family copy' })).toBeTruthy();
       if (stage === 'download') {
         expect(saveTree).not.toHaveBeenCalled();
         expect(saveDriveLink).not.toHaveBeenCalled();
