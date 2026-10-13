@@ -8,7 +8,6 @@ import {
   Github,
   Globe,
   Heart,
-  Home,
   Link2,
   Monitor,
   Plus,
@@ -19,7 +18,10 @@ import {
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { SexIcon } from './SexIcon';
-import { TreePreview } from './TreePreview';
+import { WorkspaceCard } from './WorkspaceCard';
+import { workspaceEntries } from './workspaceEntries';
+import type { DriveFile } from './drive';
+import type { DriveLink } from './storage';
 import type { Tree } from './model';
 import type { ReactNode } from 'react';
 
@@ -43,6 +45,15 @@ export function HomeScreen({
   onRemoveTree,
   importBusy = false,
   importFeedback,
+  driveFiles = [],
+  driveLinks = [],
+  driveLoading = false,
+  driveError = '',
+  driveConnected = false,
+  driveBusy = false,
+  driveControls,
+  onRetryDrive = () => {},
+  onRestoreDrive = () => {},
 }: {
   library: Tree[];
   libraryState: 'loading' | 'ready' | 'error';
@@ -56,8 +67,18 @@ export function HomeScreen({
   onRemoveTree: (tree: Tree) => void;
   importBusy?: boolean;
   importFeedback?: ReactNode;
+  driveFiles?: DriveFile[];
+  driveLinks?: DriveLink[];
+  driveLoading?: boolean;
+  driveError?: string;
+  driveConnected?: boolean;
+  driveBusy?: boolean;
+  driveControls?: ReactNode;
+  onRetryDrive?: () => void;
+  onRestoreDrive?: (file: DriveFile) => void;
 }) {
-  const showHero = libraryState === 'ready' && library.length === 0;
+  const entries = workspaceEntries(library, driveLinks, driveFiles);
+  const showHero = libraryState === 'ready' && entries.length === 0 && !driveLoading && !driveError;
   return (
     <div className={`home${showHero ? '' : ' home-workspace'}`}>
       <header id="top" className="site-header" tabIndex={-1}>
@@ -105,6 +126,7 @@ export function HomeScreen({
                     <Upload size={18} aria-hidden="true" /> Import a tree
                   </button>
                 </div>
+                {driveControls}
                 <span>No account needed.</span>
                 {importFeedback}
               </div>
@@ -141,7 +163,7 @@ export function HomeScreen({
           <section className="library-section" aria-labelledby="library-heading">
             <div className="section-intro">
               <div>
-                {library.length > 0 && <p className="eyebrow">YOUR WORKSPACE</p>}
+                {entries.length > 0 && <p className="eyebrow">YOUR WORKSPACE</p>}
                 <h1 id="library-heading" tabIndex={-1} data-dialog-fallback>
                   Your family trees
                 </h1>
@@ -155,7 +177,21 @@ export function HomeScreen({
                 </button>
               </div>
             </div>
+            {driveControls}
             {importFeedback}
+            {driveLoading && (
+              <div className="workspace-drive-status" role="status" aria-busy="true">
+                Loading Google Drive trees…
+              </div>
+            )}
+            {driveError && (
+              <div className="workspace-drive-status" role="alert">
+                <p>{driveError}</p>
+                <button className="button outline" onClick={onRetryDrive}>
+                  Retry
+                </button>
+              </div>
+            )}
             {libraryState === 'loading' ? (
               <div className="library-status" role="status" aria-busy="true">
                 Loading your family trees…
@@ -167,66 +203,23 @@ export function HomeScreen({
                   Retry
                 </button>
               </div>
-            ) : (
-              <div className="tree-grid">
-                {library.map((item) => (
-                  <div className="tree-tile" key={item.id}>
-                    <button
-                      className="tree-open"
-                      disabled={importBusy}
-                      aria-label={`Open ${item.name}`}
-                      onClick={() => onOpenTree(item.id)}
-                    >
-                      <TreePreview tree={item} />
-                      <strong title={item.name}>{item.name}</strong>
-                      {item.homePersonId !== null && (
-                        <span className="library-home">
-                          <Home size={13} aria-hidden="true" />
-                          <span>
-                            Home:{' '}
-                            {item.people.find((p) => p.id === item.homePersonId)?.name ||
-                              'Unnamed person'}
-                          </span>
-                        </span>
-                      )}
-                      <span>
-                        {item.people.length} {item.people.length === 1 ? 'person' : 'people'} ·
-                        Edited {new Date(item.updatedAt).toLocaleDateString()}
-                      </span>
-                      <span className="open-cue">
-                        Open tree <ArrowRight size={15} />
-                      </span>
-                    </button>
-                    <div className="tree-tile-tools">
-                      <button
-                        aria-label={`Duplicate ${item.name}`}
-                        title="Duplicate"
-                        disabled={importBusy || duplicatingTreeId !== null}
-                        onClick={() => onDuplicateTree(item)}
-                      >
-                        {duplicatingTreeId === item.id ? 'Duplicating…' : 'Duplicate'}
-                      </button>
-                      <button
-                        aria-label={`Rename ${item.name}`}
-                        title="Rename"
-                        disabled={importBusy}
-                        onClick={() => onRenameTree(item)}
-                      >
-                        Rename
-                      </button>
-                      <button
-                        aria-label={`Delete ${item.name}`}
-                        title="Delete"
-                        disabled={importBusy}
-                        onClick={() => onRemoveTree(item)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            ) : null}
+            <div className="tree-grid">
+              {entries.map((entry) => (
+                <WorkspaceCard
+                  key={entry.kind === 'local' ? `local-${entry.tree.id}` : `drive-${entry.file.id}`}
+                  entry={entry}
+                  busy={importBusy || (entry.kind === 'drive' && driveBusy)}
+                  duplicatingTreeId={duplicatingTreeId}
+                  canRestore={driveConnected && !driveBusy}
+                  onOpenTree={onOpenTree}
+                  onRestore={onRestoreDrive}
+                  onDuplicateTree={onDuplicateTree}
+                  onRenameTree={onRenameTree}
+                  onRemoveTree={onRemoveTree}
+                />
+              ))}
+            </div>
           </section>
         )}
         <section id="how-it-works" className="how-section">
@@ -321,7 +314,10 @@ export function HomeScreen({
                     <ArrowRight size={20} />
                   </div>
                   <strong>Only when you choose</strong>
-                  <p>Save or open a tree directly with Google Drive.</p>
+                  <p>
+                    Connect to see Drive trees in Workspace. Documents and photos download only when
+                    you open or restore a Drive copy.
+                  </p>
                 </div>
                 <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
                   <Cloud size={28} aria-hidden="true" />
@@ -333,10 +329,12 @@ export function HomeScreen({
                       <div>
                         <strong>Your Google Drive, if you use it</strong>
                         <p>
-                          Connect Google Drive to save or open a tree. Access is limited to files
-                          used with this app. A secure cookie remembers this browser's connection
-                          for up to 30 days, including refreshes and browser restarts. Google may
-                          require you to reconnect sooner.
+                          Connect Google Drive to see its trees in Workspace. Opening a linked tree
+                          resumes your local edits. Use Restore Drive copy to retrieve a separate
+                          backup copy. Access is limited to files used with this app. A secure
+                          cookie remembers this browser's connection for up to 30 days, including
+                          refreshes and browser restarts. Google may require you to reconnect
+                          sooner.
                         </p>
                         <p>
                           Disconnect Drive forgets this browser's connection without deleting files

@@ -1,15 +1,46 @@
 const endpoint = '/api/drive-auth';
-const reconnectMessage = 'Google Drive is not connected. Choose a Drive action to reconnect.';
+const reconnectMessage =
+  'Google Drive is not connected. Use Connect Drive in Workspace to reconnect.';
 let accessToken = '';
 let expiresAt = 0;
 let connection: 'unknown' | 'connected' | 'disconnected' = 'unknown';
 let generation = 0;
-let tokenPromise: Promise<void> | null = null;
+let tokenPromise: Promise<number> | null = null;
 let authorizationPromise: Promise<void> | null = null;
 let disconnectPromise: Promise<void> | null = null;
 let cancelPopup: (() => void) | null = null;
 
 export const driveConfigured = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+export type DriveConnection =
+  | 'unconfigured'
+  | 'restoring'
+  | 'connecting'
+  | 'disconnecting'
+  | 'connected'
+  | 'disconnected'
+  | 'error';
+let status: DriveConnection = driveConfigured ? 'restoring' : 'unconfigured';
+const listeners = new Set<() => void>();
+export const getDriveConnection = () => status;
+export const getDriveGeneration = () => generation;
+export class DriveAuthorizationError extends Error {
+  constructor(
+    message: string,
+    public generation: number,
+  ) {
+    super(message);
+  }
+}
+export function subscribeDriveConnection(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+function publish(next: DriveConnection) {
+  status = next;
+  listeners.forEach((listener) => listener());
+}
 
 const disconnectChannel =
   driveConfigured && typeof window !== 'undefined' && typeof window.BroadcastChannel === 'function'
@@ -22,11 +53,26 @@ function clearAccess(nextConnection: typeof connection) {
   accessToken = '';
   expiresAt = 0;
   connection = nextConnection;
+  publish(nextConnection === 'unknown' ? 'restoring' : nextConnection);
+}
+
+export function expireDriveConnection() {
+  clearAccess('disconnected');
+  disconnectChannel?.postMessage('expired');
 }
 
 if (disconnectChannel) {
   disconnectChannel.onmessage = (event: MessageEvent<unknown>) => {
-    if (event.data === 'disconnect') clearAccess('disconnected');
+    if (event.data === 'disconnect' || event.data === 'expired') clearAccess('disconnected');
+    if (event.data === 'connect' && !authorizationPromise && !disconnectPromise) {
+      const pendingToken = tokenPromise;
+      clearAccess('unknown');
+      const currentGeneration = generation;
+      void (async () => {
+        await pendingToken?.catch(() => undefined);
+        if (currentGeneration === generation) await restoreDrive();
+      })().catch(() => undefined);
+    }
   };
   import.meta.hot?.dispose(() => disconnectChannel.close());
 }
@@ -56,17 +102,16 @@ async function responseError(response: Response): Promise<Error> {
   );
 }
 
-function renewToken(): Promise<void> {
+function renewToken(): Promise<number> {
   if (tokenPromise) return tokenPromise;
   const currentGeneration = generation;
   tokenPromise = (async () => {
     const response = await authRequest('token');
     if (currentGeneration !== generation) throw Error('Google Drive connection was canceled.');
     if (response.status === 401) {
-      accessToken = '';
-      expiresAt = 0;
-      connection = 'disconnected';
-      return;
+      expireDriveConnection();
+      // Identify this expiry even if another session change follows before the caller resumes.
+      return currentGeneration + 1;
     }
     if (!response.ok) throw await responseError(response);
     const token = (await response.json().catch(() => null)) as {
@@ -87,15 +132,27 @@ function renewToken(): Promise<void> {
     accessToken = token.accessToken;
     expiresAt = token.expiresAt;
     connection = 'connected';
-  })().finally(() => {
-    tokenPromise = null;
-  });
+    publish('connected');
+    return currentGeneration;
+  })()
+    .catch((error: unknown) => {
+      if (currentGeneration === generation) {
+        accessToken = '';
+        expiresAt = 0;
+        publish('error');
+      }
+      throw error;
+    })
+    .finally(() => {
+      tokenPromise = null;
+    });
   return tokenPromise;
 }
 
 export async function restoreDrive(): Promise<void> {
   if (!driveConfigured || disconnectPromise) return;
   if (accessToken && Date.now() < expiresAt - 60_000) return;
+  publish('restoring');
   await renewToken();
 }
 
@@ -139,11 +196,14 @@ function connectPopup(): Promise<void> {
     window.addEventListener('message', onMessage);
   }).then(async () => {
     if (currentGeneration !== generation) throw Error('Google Drive connection was canceled.');
-    await renewToken();
+    const tokenGeneration = await renewToken();
+    if (tokenGeneration !== generation) throw Error('Google Drive connection was canceled.');
     if (connection !== 'connected')
-      throw Error(
+      throw new DriveAuthorizationError(
         'Google Drive could not remember this connection. Allow site cookies and reconnect.',
+        tokenGeneration,
       );
+    disconnectChannel?.postMessage('connect');
   });
 }
 
@@ -154,15 +214,19 @@ export function authorizeDrive(): Promise<void> {
     return Promise.reject(Error('Google Drive is disconnecting. Please wait.'));
   if (authorizationPromise) return authorizationPromise;
   if (accessToken && Date.now() < expiresAt - 60_000) return Promise.resolve();
+  publish('connecting');
   authorizationPromise = (
     connection === 'disconnected'
       ? connectPopup()
-      : renewToken().then(() => {
+      : renewToken().then((tokenGeneration) => {
+          if (tokenGeneration !== generation) throw Error('Google Drive connection was canceled.');
           // A new user click is required after renewal discovers an expired/revoked session.
-          if (connection !== 'connected') throw Error(reconnectMessage);
+          if (connection !== 'connected')
+            throw new DriveAuthorizationError(reconnectMessage, tokenGeneration);
         })
   ).finally(() => {
     authorizationPromise = null;
+    if (status === 'connecting') publish(connection === 'connected' ? 'connected' : 'disconnected');
   });
   return authorizationPromise;
 }
@@ -170,6 +234,7 @@ export function authorizeDrive(): Promise<void> {
 export function disconnectDrive(): Promise<void> {
   if (disconnectPromise) return disconnectPromise;
   clearAccess('unknown');
+  publish('disconnecting');
   const pendingToken = tokenPromise;
   disconnectPromise = (async () => {
     // Let this tab's pending renewal settle before completing disconnection.
@@ -177,10 +242,16 @@ export function disconnectDrive(): Promise<void> {
     const response = await authRequest('disconnect');
     if (!response.ok) throw await responseError(response);
     connection = 'disconnected';
+    publish('disconnected');
     disconnectChannel?.postMessage('disconnect');
-  })().finally(() => {
-    disconnectPromise = null;
-  });
+  })()
+    .catch((error: unknown) => {
+      publish('error');
+      throw error;
+    })
+    .finally(() => {
+      disconnectPromise = null;
+    });
   return disconnectPromise;
 }
 

@@ -2,14 +2,16 @@ import { X } from 'lucide-react';
 
 export function DriveActionsDialog({
   configured,
+  canDisconnect,
   busy,
   onAction,
   onDisconnect,
   onClose,
 }: {
   configured: boolean;
+  canDisconnect: boolean;
   busy: boolean;
-  onAction: (action: 'save' | 'copy' | 'open') => void;
+  onAction: (action: 'save' | 'copy') => void;
   onDisconnect: () => void;
   onClose: () => void;
 }) {
@@ -49,12 +51,13 @@ export function DriveActionsDialog({
               longest side, without upscaling. Later saves upload only new or changed photos.
             </p>
             <p>
-              Use Open from Drive to retrieve the document and its private photos. Download JSON
-              from the editor for a portable backup with embedded portraits. Save a copy creates
-              independent photo files. After a successful save, replaced or removed photos go to
-              Drive Trash; older Drive revisions may then have missing photos. Keep each backup's
-              photo folder with its document. Editing across devices at the same time is
-              unsupported.
+              Open a Google Drive card in Workspace to retrieve the document and its private photos.
+              Use Restore Drive copy on a linked card to keep local edits and retry missing
+              portraits. Download JSON from the editor for a portable backup with embedded
+              portraits. Save a copy creates independent photo files. After a successful save,
+              replaced or removed photos go to Drive Trash; older Drive revisions may then have
+              missing photos. Keep each backup's photo folder with its document. Editing across
+              devices at the same time is unsupported.
             </p>
             <div className="drive-action-list">
               <button
@@ -75,18 +78,11 @@ export function DriveActionsDialog({
               >
                 Save a copy
               </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  onClose();
-                  onAction('open');
-                }}
-              >
-                Open from Drive
-              </button>
-              <button disabled={busy} onClick={onDisconnect}>
-                Disconnect Drive
-              </button>
+              {canDisconnect && (
+                <button disabled={busy} onClick={onDisconnect}>
+                  Disconnect Drive
+                </button>
+              )}
             </div>
           </>
         ) : (

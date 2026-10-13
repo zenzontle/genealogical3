@@ -1870,42 +1870,6 @@ h2 {
   margin-top: 1rem;
   width: 100%;
 }
-.drive-file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.drive-file-list button {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  text-align: left;
-  border: 1px solid var(--border);
-  background: var(--surface-raised);
-  border-radius: 6px;
-  padding: 0.8rem;
-  color: var(--text);
-}
-.drive-file-list button span {
-  flex: 1;
-}
-.drive-file-list strong,
-.drive-file-list small {
-  display: block;
-}
-.drive-file-list small {
-  color: var(--text-muted);
-  font-size: 0.68rem;
-  margin-top: 0.2rem;
-}
-.empty-drive {
-  padding: 1.5rem;
-  background: var(--surface-muted);
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  border-radius: 6px;
-  text-align: center;
-}
 @media (max-width: 900px) {
   .privacy-flow {
     grid-template-columns: 1fr;
@@ -2228,4 +2192,18 @@ textarea::placeholder {
   background: var(--surface) !important;
   color: var(--text-muted);
   opacity: 1;
+}
+
+.workspace-drive-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.workspace-drive-status {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
 }

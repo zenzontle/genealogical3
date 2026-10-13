@@ -24,7 +24,6 @@ import {
   PanelRightOpen,
   Plus,
   Redo2,
-  Search,
   Undo2,
   X,
 } from 'lucide-react';
@@ -34,7 +33,7 @@ import { PersonEditor, type ConnectMode } from './PersonEditor';
 import { RelationshipEditor } from './RelationshipEditor';
 import { HomeScreen } from './HomeScreen';
 import { DriveActionsDialog } from './DriveActionsDialog';
-import { DriveTreeDialog } from './DriveTreeDialog';
+import { useDriveWorkspace } from './useDriveWorkspace';
 import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
 import { OperationFeedback } from './OperationFeedback';
@@ -71,6 +70,8 @@ import {
   getDriveLink,
   getTree,
   listTrees,
+  listDriveLinks,
+  type DriveLink,
   saveDriveLink,
   saveTree,
 } from './storage';
@@ -78,10 +79,10 @@ import {
   authorizeDrive,
   disconnectDrive,
   driveConfigured,
-  listDriveTrees,
+  getDriveConnection,
+  getDriveGeneration,
   openDriveTree,
   saveDriveTree,
-  restoreDrive,
   type DriveFile,
   type RestoreWarning,
   type PhotoProgress,
@@ -128,9 +129,10 @@ export default function App() {
   const [photoProgress, setPhotoProgress] = useState<PhotoProgress | null>(null);
   const driveOperationBusy = useRef(false);
   const [driveSavedAt, setDriveSavedAt] = useState('');
-  const [driveFiles, setDriveFiles] = useState<DriveFile[] | null>(null);
+  const [driveLinks, setDriveLinks] = useState<DriveLink[]>([]);
+  const driveWorkspace = useDriveWorkspace(screen === 'home');
+  const driveReady = driveWorkspace.ready;
   const [driveBusy, setDriveBusy] = useState(false);
-  const [driveReady, setDriveReady] = useState(!driveConfigured);
   const [driveActionsOpen, setDriveActionsOpen] = useState(false);
   const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
     null,
@@ -142,6 +144,7 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
+    navigation = useRef(0),
     treeRef = useRef<Tree | null>(null),
     draftTree = useRef(false),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -153,23 +156,6 @@ export default function App() {
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
   useConnectorProximity(canvasRef, screen === 'editor');
-  useEffect(() => {
-    if (!driveConfigured) return;
-    let active = true;
-    void restoreDrive()
-      .catch((error: unknown) => {
-        if (active)
-          setNotice(
-            error instanceof Error ? error.message : 'Could not restore Google Drive access.',
-          );
-      })
-      .finally(() => {
-        if (active) setDriveReady(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -195,8 +181,11 @@ export default function App() {
   }, []);
   const refreshLibrary = useCallback(async () => {
     try {
-      setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
+      const trees = await listTrees();
+      // Keep local trees usable even if reading their associations fails.
+      setLibrary(trees.sort((a, b) => b.updatedAt - a.updatedAt));
       setLibraryState('ready');
+      setDriveLinks(await listDriveLinks());
       return true;
     } catch (error) {
       setLibraryState((previous) => (previous === 'ready' ? previous : 'error'));
@@ -269,6 +258,7 @@ export default function App() {
     [queueSave, refreshLibrary, showError],
   );
   const openTree = async (id: string, draft?: Tree) => {
+    const request = ++navigation.current;
     try {
       if (saveTimer.current && treeRef.current) {
         clearTimeout(saveTimer.current);
@@ -278,6 +268,8 @@ export default function App() {
       await saveQueue.current;
       const found = draft || (await getTree(id));
       if (!found) throw Error('This tree was not found.');
+      const link = draft ? undefined : await getDriveLink(id);
+      if (request !== navigation.current) return false;
       history.current = [];
       future.current = [];
       treeRef.current = found;
@@ -291,15 +283,16 @@ export default function App() {
       setSelectedId(null);
       setSelectedRelationId(null);
       setPendingCenter(null);
-      const link = draft ? undefined : await getDriveLink(id);
       setDriveFile(link ? { id: link.id, name: link.name, modifiedTime: link.modifiedTime } : null);
       setRestoreWarnings(link?.restoreWarnings || []);
       setDriveSavedAt('');
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
       setNotice('');
+      return true;
     } catch (error) {
-      showError(error);
+      if (request === navigation.current) showError(error);
+      return false;
     }
   };
   const createTree = async () => {
@@ -584,15 +577,15 @@ export default function App() {
       showError(error);
     }
   };
-  const doDrive = async (action: 'save' | 'copy' | 'open') => {
+  const doDrive = async (action: 'save' | 'copy') => {
     if (!driveReady || driveOperationBusy.current) return;
-    if (!treeRef.current && action !== 'open') return;
+    if (!treeRef.current) return;
     const snapshot = treeRef.current ? cloneTree(treeRef.current) : null;
     const target = driveFile;
     const warnings = restoreWarnings;
     if (action === 'save' && warnings.length) {
       setNotice(
-        'This local copy has missing portraits. Open the original from Drive again or use Save a copy.',
+        'This local copy has missing portraits. Use Restore Drive copy in Workspace to retry, or use Save a copy.',
       );
       return;
     }
@@ -615,10 +608,6 @@ export default function App() {
     setPhotoProgress(null);
     try {
       await authorizeDrive();
-      if (action === 'open') {
-        setDriveFiles(await listDriveTrees());
-        return;
-      }
       const file = await saveDriveTree(
         snapshot!,
         action === 'save' ? target?.id : undefined,
@@ -646,11 +635,13 @@ export default function App() {
       } catch {
         setNotice(
           [
-            `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Use Open from Drive next time.`,
+            `Saved to Google Drive as ${file.name}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
             ...file.cleanupWarnings,
           ].join(' '),
         );
       }
+      await refreshLibrary();
+      void driveWorkspace.refresh();
     } catch (error) {
       showError(error);
     } finally {
@@ -661,12 +652,17 @@ export default function App() {
   };
   const loadDrive = async (file: DriveFile) => {
     if (driveOperationBusy.current) return;
+    const origin = navigation.current;
     driveOperationBusy.current = true;
     setDriveBusy(true);
     setPhotoProgress(null);
     try {
       await authorizeDrive();
+      const generation = getDriveGeneration();
       const result = await openDriveTree(file.id, setPhotoProgress);
+      if (origin !== navigation.current) return;
+      if (generation !== getDriveGeneration() || getDriveConnection() !== 'connected')
+        throw Error('Google Drive connection changed. Open the Workspace card again to retry.');
       const imported = result.tree;
       const copy = {
         ...imported,
@@ -675,31 +671,54 @@ export default function App() {
         updatedAt: Date.now(),
       };
       // Persist the safety flag before exposing the local copy in the library.
-      await saveDriveLink({ treeId: copy.id, ...file, restoreWarnings: result.restoreWarnings });
+      await saveDriveLink({
+        treeId: copy.id,
+        id: file.id,
+        name: file.name,
+        modifiedTime: file.modifiedTime,
+        restoreWarnings: result.restoreWarnings,
+      });
       await saveTree(copy);
       await refreshLibrary();
-      await openTree(copy.id);
+      if (origin !== navigation.current) return;
+      if (!(await openTree(copy.id))) return;
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
       setDriveSavedAt('');
-      setDriveFiles(null);
       setNotice(
         result.restoreWarnings.length
           ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
           : 'Opened a local working copy. Save to Drive when ready.',
       );
     } catch (error) {
-      showError(error);
+      if (origin === navigation.current) showError(error);
     } finally {
       driveOperationBusy.current = false;
       setDriveBusy(false);
       setPhotoProgress(null);
     }
   };
-  const rename = (item: Tree) =>
+  const forgetDrive = async () => {
+    if (driveOperationBusy.current) return;
+    setDriveBusy(true);
+    try {
+      await disconnectDrive();
+      setDriveSavedAt('');
+      setDriveActionsOpen(false);
+      setNotice('Forgot Google Drive access in this browser. Your local tree is still saved.');
+    } catch (error) {
+      showError(error);
+    } finally {
+      setDriveBusy(false);
+    }
+  };
+  const rename = (item: Tree) => {
+    ++navigation.current;
     setTreeAction({ kind: 'rename', treeId: item.id, name: item.name });
+  };
   const duplicate = async (item: Tree) => {
     if (duplicateBusy.current) return;
+    ++navigation.current;
     duplicateBusy.current = true;
     setDuplicatingTreeId(item.id);
     try {
@@ -714,8 +733,10 @@ export default function App() {
       setDuplicatingTreeId(null);
     }
   };
-  const removeTree = (item: Tree) =>
+  const removeTree = (item: Tree) => {
+    ++navigation.current;
     setTreeAction({ kind: 'delete-tree', treeId: item.id, name: item.name });
+  };
   const submitTreeAction = async (name: string) => {
     const action = treeAction;
     if (!action) return;
@@ -790,6 +811,7 @@ export default function App() {
     await deleteDriveLink(action.treeId);
   };
   const leaveEditor = async () => {
+    ++navigation.current;
     await saveNow();
     setPendingCenter(null);
     setScreen('home');
@@ -854,7 +876,45 @@ export default function App() {
         <HomeScreen
           library={library}
           libraryState={libraryState}
+          driveLinks={driveLinks}
+          driveFiles={driveWorkspace.files}
+          driveLoading={driveWorkspace.loading}
+          driveError={driveWorkspace.error}
+          driveConnected={driveWorkspace.connection === 'connected'}
+          onRetryDrive={() => void driveWorkspace.retry()}
+          onRestoreDrive={loadDrive}
+          driveControls={
+            driveConfigured && (
+              <div className="workspace-drive-controls">
+                <span role="status">
+                  {driveWorkspace.connection === 'connected'
+                    ? 'Google Drive connected'
+                    : driveWorkspace.connection === 'restoring'
+                      ? 'Restoring Google Drive connection…'
+                      : driveWorkspace.connection === 'connecting'
+                        ? 'Connecting Google Drive…'
+                        : driveWorkspace.connection === 'disconnecting'
+                          ? 'Disconnecting Google Drive…'
+                          : 'Google Drive disconnected'}
+                </span>
+                {driveWorkspace.connection === 'connected' ? (
+                  <button className="button outline" disabled={driveBusy} onClick={forgetDrive}>
+                    Disconnect Drive
+                  </button>
+                ) : (
+                  <button
+                    className="button outline"
+                    disabled={driveBusy || !driveReady}
+                    onClick={() => void driveWorkspace.connect()}
+                  >
+                    Connect Drive
+                  </button>
+                )}
+              </div>
+            )
+          }
           importBusy={imports.feedback.status === 'pending'}
+          driveBusy={driveBusy}
           importFeedback={
             <OperationFeedback
               state={imports.feedback}
@@ -972,15 +1032,6 @@ export default function App() {
                   <Plus size={18} />
                 </button>
                 <button
-                  className="icon-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured}
-                  aria-label="Open from Google Drive"
-                  title="Open from Drive"
-                  onClick={() => doDrive('open')}
-                >
-                  <Search size={18} />
-                </button>
-                <button
                   className="button mobile-drive-button"
                   onClick={() => setDriveActionsOpen(true)}
                 >
@@ -1033,8 +1084,8 @@ export default function App() {
               <p>
                 Incomplete Drive copy: portraits could not be restored for{' '}
                 {restoreWarnings.map((warning) => warning.name || warning.personId).join(', ')}.{' '}
-                Overwriting the original backup is blocked. Open it from Drive again to retry, or
-                Save a copy to omit missing portraits.
+                Overwriting the original backup is blocked. Use Restore Drive copy in Workspace to
+                retry, or Save a copy to omit missing portraits.
               </p>
             </div>
           )}
@@ -1306,34 +1357,13 @@ export default function App() {
       {driveActionsOpen && (
         <DriveActionsDialog
           configured={driveConfigured}
+          canDisconnect={
+            driveWorkspace.connection === 'connected' || driveWorkspace.connection === 'error'
+          }
           busy={driveBusy || !driveReady}
           onAction={doDrive}
-          onDisconnect={async () => {
-            setDriveBusy(true);
-            try {
-              await disconnectDrive();
-              setDriveFile(null);
-              setDriveSavedAt('');
-              setDriveFiles(null);
-              setDriveActionsOpen(false);
-              setNotice(
-                'Forgot Google Drive access in this browser. Your local tree is still saved.',
-              );
-            } catch (error) {
-              showError(error);
-            } finally {
-              setDriveBusy(false);
-            }
-          }}
+          onDisconnect={forgetDrive}
           onClose={() => setDriveActionsOpen(false)}
-        />
-      )}{' '}
-      {driveFiles && (
-        <DriveTreeDialog
-          files={driveFiles}
-          busy={driveBusy}
-          onOpen={loadDrive}
-          onClose={() => setDriveFiles(null)}
         />
       )}
     </>

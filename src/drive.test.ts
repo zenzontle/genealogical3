@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makePerson, makeTree, validateTree, type Tree } from './model';
 import { photoDigest, type DriveDocument } from './driveDocument';
 
+const session = vi.hoisted(() => ({ generation: 0 }));
 vi.mock('./driveAuth', () => ({
+  getDriveGeneration: () => session.generation,
   driveAccessToken: vi.fn(async () => 'token'),
   authorizeDrive: vi.fn(),
   disconnectDrive: vi.fn(),
@@ -127,6 +129,7 @@ const deferred = () => {
   return { promise, resolve };
 };
 beforeEach(() => {
+  session.generation = 0;
   vi.mocked(driveAccessToken).mockReset().mockResolvedValue('token');
   vi.stubGlobal(
     'createImageBitmap',
@@ -139,6 +142,125 @@ afterEach(() => {
 });
 
 describe('separate-photo Drive backups', () => {
+  it.each(['copy', 'overwrite'] as const)(
+    'cancels %s saves when the account changes during a portrait upload',
+    async (mode) => {
+      const remote = fakeDrive();
+      const existing = mode === 'overwrite' ? await saveDriveTree(family([1])) : undefined;
+      const previous = existing && remote.document(existing.id);
+      remote.calls.length = 0;
+      const reached = deferred(),
+        gate = deferred();
+      remote.hooks.before = async (call) => {
+        if (call.meta?.mimeType === 'image/jpeg') {
+          reached.resolve();
+          await gate.promise;
+        }
+      };
+      const pending = saveDriveTree(family([2, 3, 4, 5]), existing?.id);
+      const canceled = expect(pending).rejects.toThrow(/connection changed/i);
+      await reached.promise;
+      ++session.generation;
+      vi.mocked(driveAccessToken).mockResolvedValue('other-account');
+      gate.resolve();
+      await canceled;
+      expect(
+        remote.calls.every(
+          (call) =>
+            (call.options.headers as Record<string, string>).Authorization === 'Bearer token',
+        ),
+      ).toBe(true);
+      expect(remote.calls.some((call) => call.meta?.mimeType === 'application/json')).toBe(false);
+      if (existing) expect(remote.document(existing.id)).toEqual(previous);
+      remote.hooks.before = undefined;
+      await saveDriveTree(family([]));
+      expect(
+        remote.calls.some(
+          (call) =>
+            (call.options.headers as Record<string, string>).Authorization ===
+            'Bearer other-account',
+        ),
+      ).toBe(true);
+    },
+  );
+  it('cancels queued saves from the old session before obtaining the new account token', async () => {
+    const remote = fakeDrive(),
+      reached = deferred(),
+      gate = deferred();
+    remote.hooks.before = async (call) => {
+      if (call.url.pathname.endsWith('/generateIds')) {
+        reached.resolve();
+        await gate.promise;
+      }
+    };
+    const first = saveDriveTree(family([]));
+    const firstCanceled = expect(first).rejects.toThrow(/connection changed/i);
+    await reached.promise;
+    const queued = saveDriveTree(family([]));
+    const queuedCanceled = expect(queued).rejects.toThrow(/connection changed/i);
+    const tokens = vi.mocked(driveAccessToken).mock.calls.length;
+    ++session.generation;
+    gate.resolve();
+    const results = await Promise.allSettled([firstCanceled, queuedCanceled]);
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(remote.calls).toHaveLength(1);
+    expect(driveAccessToken).toHaveBeenCalledTimes(tokens);
+  });
+  it('does not send a write with a token acquired across a session change', async () => {
+    const remote = fakeDrive();
+    vi.mocked(driveAccessToken).mockImplementationOnce(async () => {
+      ++session.generation;
+      return 'other-account';
+    });
+    await expect(saveDriveTree(family([]))).rejects.toThrow(/connection changed/i);
+    expect(remote.calls).toHaveLength(0);
+  });
+  it('does not resend a save request across a token-renewal account change', async () => {
+    const remote = fakeDrive();
+    remote.hooks.before = async () => new Response('', { status: 401 });
+    vi.mocked(driveAccessToken)
+      .mockResolvedValueOnce('token')
+      .mockImplementationOnce(async () => {
+        ++session.generation;
+        return 'other-account';
+      });
+    await expect(saveDriveTree(family([]))).rejects.toThrow(/connection changed/i);
+    expect(remote.calls).toHaveLength(1);
+    expect(driveAccessToken).toHaveBeenLastCalledWith(true);
+  });
+  it('does not retry a lost create response in a new account', async () => {
+    const remote = fakeDrive();
+    remote.hooks.after = async () => {
+      ++session.generation;
+      vi.mocked(driveAccessToken).mockResolvedValue('other-account');
+      throw Error('Lost response');
+    };
+    await expect(saveDriveTree(family([]))).rejects.toThrow(/connection changed/i);
+    expect(remote.calls.filter((call) => call.options.method === 'POST')).toHaveLength(1);
+    expect(
+      remote.calls.every(
+        (call) => (call.options.headers as Record<string, string>).Authorization === 'Bearer token',
+      ),
+    ).toBe(true);
+  });
+  it('does not clean up portraits in a newly connected account after an overwrite commits', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    remote.calls.length = 0;
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'PATCH' && call.meta?.mimeType === 'application/json') {
+        ++session.generation;
+        vi.mocked(driveAccessToken).mockResolvedValue('other-account');
+      }
+    };
+    await expect(saveDriveTree(family([]), file.id)).rejects.toThrow(/connection changed/i);
+    expect(remote.trashCalls()).toHaveLength(0);
+    expect(
+      remote.calls.every(
+        (call) => (call.options.headers as Record<string, string>).Authorization === 'Bearer token',
+      ),
+    ).toBe(true);
+  });
   it.each([[1, 2], [1, 1], [], [null]])(
     'round trips processed portraits %j, without recompression',
     async (...values) => {
@@ -464,7 +586,7 @@ describe('separate-photo Drive backups', () => {
     await expect(saveDriveTree(tree)).rejects.toThrow(/processed JPEG/);
     expect(remote.calls).toHaveLength(0);
     const file = await saveDriveTree(family([]));
-    expect(() => validateTree(remote.document(file.id))).toThrow(/Open from Drive/);
+    expect(() => validateTree(remote.document(file.id))).toThrow(/Google Drive cards in Workspace/);
   });
 
   it('limits transfers to three and serializes saves while capturing each snapshot', async () => {
