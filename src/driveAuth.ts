@@ -136,7 +136,11 @@ function renewToken(): Promise<number> {
     return currentGeneration;
   })()
     .catch((error: unknown) => {
-      if (currentGeneration === generation) publish('error');
+      if (currentGeneration === generation) {
+        accessToken = '';
+        expiresAt = 0;
+        publish('error');
+      }
       throw error;
     })
     .finally(() => {

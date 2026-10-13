@@ -413,6 +413,56 @@ describe('Drive authorization lifecycle', () => {
     expect(await auth.driveAccessToken()).toBe('token');
   });
 
+  it.each([
+    ['retry', 'network'],
+    ['retry', 'unavailable'],
+    ['retry', 'malformed'],
+    ['connect', 'network'],
+    ['connect', 'unavailable'],
+    ['connect', 'malformed'],
+  ] as const)(
+    'recovers Workspace %s after a rejected cached token and %s renewal failure',
+    async (action, failure) => {
+      fetchMock.mockImplementation(async (url: string) =>
+        url === '/api/drive-auth/token'
+          ? tokenResponse('replacement')
+          : new Response(JSON.stringify({ files: [] })),
+      );
+      fetchMock.mockResolvedValueOnce(tokenResponse('rejected'));
+      fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }));
+      if (failure === 'network') fetchMock.mockRejectedValueOnce(Error('offline'));
+      else
+        fetchMock.mockResolvedValueOnce(
+          failure === 'unavailable'
+            ? new Response('{}', { status: 503 })
+            : new Response(JSON.stringify({ accessToken: 'invalid', expiresAt: 'invalid' })),
+        );
+      const auth = await import('./driveAuth');
+      const { useDriveWorkspace } = await import('./useDriveWorkspace');
+      const { result } = renderHook(() => useDriveWorkspace(true));
+      await waitFor(() => expect(result.current.connection).toBe('error'));
+      expect(result.current.error).toMatch(/retry/i);
+      expect(result.current.loading).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const generation = auth.getDriveGeneration();
+
+      await act(() => result.current[action]());
+      await waitFor(() => expect(result.current.connection).toBe('connected'));
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.error).toBe('');
+      expect(await auth.driveAccessToken()).toBe('replacement');
+      expect(auth.getDriveGeneration()).toBe(generation);
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      const requests = fetchMock.mock.calls.filter(([url]) =>
+        String(url).startsWith('https://www.googleapis.com/'),
+      );
+      expect(requests).toHaveLength(2);
+      expect(requests[0][1].headers.Authorization).toBe('Bearer rejected');
+      expect(requests[1][1].headers.Authorization).toBe('Bearer replacement');
+      expect(open).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['blocked', 'closed', 'denied', 'timeout'])(
     'handles a %s popup without restoring access',
     async (failure) => {
