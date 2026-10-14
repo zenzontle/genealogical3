@@ -298,7 +298,7 @@ const editorSnapshot = async () => {
 
 describe('operation toast integration', () => {
   it.each(['JSON', 'PNG'] as const)(
-    'shows %s progress, failure, retry and timed success in the toast stack',
+    'withholds %s progress toasts and shows failure, retry and timed completion',
     async (format) => {
       render(<App />);
       await openOriginal();
@@ -318,9 +318,8 @@ describe('operation toast integration', () => {
           .mockResolvedValue(undefined);
       }
       fireEvent.click(screen.getByRole('button', { name: `Export ${format}` }));
-      const pending = screen.getByText(`Preparing ${format}…`);
-      expect(pending.closest('.toast-stack')).toBeTruthy();
-      expect(pending.closest('.toast')?.querySelector('button')).toBeNull();
+      expect(screen.queryByText(`Preparing ${format}…`)).toBeNull();
+      expect(screen.queryByText(`${format} export completed.`)).toBeNull();
       for (const name of ['Export JSON', 'Export PNG', 'Download a backup']) {
         expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true);
       }
@@ -333,7 +332,7 @@ describe('operation toast integration', () => {
         target: { value: 'Edited after failure' },
       });
       fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-      const success = await screen.findByText(`${format} download started.`);
+      const success = await screen.findByText(`${format} export completed.`);
       expect(success.closest('.toast-stack')).toBeTruthy();
       expect(success.closest('[role="status"]')).toBeTruthy();
       const exporter = format === 'JSON' ? exportJson : exportPng;
@@ -346,9 +345,9 @@ describe('operation toast integration', () => {
         fireEvent.click(screen.getByRole('button', { name: `Export ${format}` })),
       );
       await act(() => vi.advanceTimersByTimeAsync(4999));
-      expect(screen.getByText(`${format} download started.`)).toBeTruthy();
+      expect(screen.getByText(`${format} export completed.`)).toBeTruthy();
       await act(() => vi.advanceTimersByTimeAsync(1));
-      expect(screen.queryByText(`${format} download started.`)).toBeNull();
+      expect(screen.queryByText(`${format} export completed.`)).toBeNull();
     },
   );
 
@@ -1324,7 +1323,7 @@ describe('local feedback integration', () => {
     expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', true);
     await screen.findByText('Could not render the PNG.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await screen.findByText('PNG download started.');
+    await screen.findByText('PNG export completed.');
     expect(vi.mocked(exportPng).mock.calls[1][0].people[0].nickname).toBe('Updated nickname');
     expect(vi.mocked(exportPng).mock.calls[1][0].people[0].portrait).toBe(
       'data:image/jpeg;base64,photo',

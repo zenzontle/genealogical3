@@ -182,11 +182,6 @@ export function HomeScreen({
               </div>
             </div>
             {driveControls}
-            {driveLoading && (
-              <div className="workspace-drive-status" role="status" aria-busy="true">
-                Loading Google Drive trees…
-              </div>
-            )}
             {driveError && (
               <div className="workspace-drive-status" role="alert">
                 <p>{driveError}</p>

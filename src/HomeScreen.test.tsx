@@ -32,8 +32,7 @@ describe('homepage library hierarchy', () => {
     expect(render('ready', [], null, { driveLoading: true })).not.toContain('class="hero"');
     const html = render('ready', [makeTree('Local')], null, { driveLoading: true });
     expect(html).toContain('Open Local');
-    expect(html).toContain('Loading Google Drive trees');
-    expect(html).toContain('role="status" aria-busy="true"');
+    expect(html).not.toContain('Loading Google Drive trees');
   });
   it('counts Drive-only entries when choosing Workspace and keeps Drive errors separate', () => {
     const file = { id: 'remote', name: 'Remote.genealogical3.json', modifiedTime: '2026-10-10' };

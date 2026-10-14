@@ -30,7 +30,7 @@ export function useTreeExport(treeId: string | undefined, getTree: () => Tree | 
       if (format === 'JSON') exportJson(tree);
       else await exportPng(tree);
       if (token === request.current)
-        setFeedback({ status: 'success', message: `${format} download started.` });
+        setFeedback({ status: 'success', message: `${format} export completed.` });
     } catch (error) {
       if (token === request.current) setFeedback({ status: 'error', message: errorMessage(error) });
     } finally {
