@@ -1474,7 +1474,7 @@ export default function App() {
         <OperationFeedback
           presentation="toast"
           autoDismissMs={5000}
-          state={exports.feedback}
+          state={exports.feedback.status === 'pending' ? { status: 'idle' } : exports.feedback}
           onDismiss={exports.dismiss}
           action={
             exports.feedback.status === 'error'

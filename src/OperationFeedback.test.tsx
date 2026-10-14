@@ -11,7 +11,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const success: FeedbackState = { status: 'success', message: 'JSON download started.' };
+const success: FeedbackState = { status: 'success', message: 'JSON export completed.' };
 const advance = (ms: number) => act(() => vi.advanceTimersByTime(ms));
 
 describe('operation feedback presentation and timing', () => {

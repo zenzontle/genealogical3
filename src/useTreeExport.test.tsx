@@ -44,7 +44,33 @@ describe('export feedback', () => {
     expect(exportJson).toHaveBeenCalledOnce();
     expect(result.current.feedback).toEqual({
       status: 'success',
-      message: 'JSON download started.',
+      message: 'JSON export completed.',
+    });
+  });
+
+  it('waits for PNG generation to finish before reporting completion', async () => {
+    let finish!: () => void;
+    vi.mocked(exportPng).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const tree = makeTree();
+    const { result } = renderHook(() => useTreeExport(tree.id, () => tree));
+    let exporting!: Promise<void>;
+    await act(async () => {
+      exporting = result.current.run('PNG');
+    });
+    expect(exportPng).toHaveBeenCalledWith(tree);
+    expect(result.current.feedback.status).toBe('pending');
+    await act(async () => {
+      finish();
+      await exporting;
+    });
+    expect(result.current.feedback).toEqual({
+      status: 'success',
+      message: 'PNG export completed.',
     });
   });
 
@@ -62,7 +88,7 @@ describe('export feedback', () => {
     expect(exportPng).toHaveBeenLastCalledWith(tree);
     expect(result.current.feedback).toEqual({
       status: 'success',
-      message: 'PNG download started.',
+      message: 'PNG export completed.',
     });
   });
 
