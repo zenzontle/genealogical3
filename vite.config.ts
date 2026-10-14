@@ -62,6 +62,12 @@ export default defineConfig(({ mode }) => {
           privacyPolicy: policyPath,
           termsOfService: termsPath,
         },
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
+            'flow-vendor': ['@xyflow/react'],
+          },
+        },
       },
     },
   };
