@@ -244,7 +244,10 @@ export class DriveSyncCoordinator {
       const tree = await this.d.getTree(id),
         link = await this.d.getDriveLink(id);
       if (!tree || (!link && !manual)) return {};
-      if ((expectedBackupId && link?.id !== expectedBackupId) || (reviewed && !link))
+      if (
+        (expectedBackupId !== undefined && (link?.id ?? null) !== expectedBackupId) ||
+        (reviewed && !link)
+      )
         throw Error(
           'The Drive association changed or its backup was deleted. Reopen the tree in Workspace before saving.',
         );
@@ -268,13 +271,15 @@ export class DriveSyncCoordinator {
       )
         return {};
       if (this.edits.has(id)) return { wait: 450 };
+      const lastAttempt = await this.d.getLastDriveAttempt();
+      const now = this.d.now();
       const due = Math.max(
-        (await this.d.getLastDriveAttempt()) + 10_000,
+        lastAttempt > now ? 0 : lastAttempt + 10_000,
         link?.sync?.retryAt || 0,
         manual || bypassDebounce ? 0 : (link?.sync?.editedAt || 0) + 3000,
       );
-      if (due > this.d.now()) return { wait: due - this.d.now() };
-      await this.d.setLastDriveAttempt(this.d.now());
+      if (due > now) return { wait: due - now };
+      await this.d.setLastDriveAttempt(now);
       this.activeId = id;
       await this.refresh();
       let baseline = link?.sync?.revision;
@@ -484,7 +489,9 @@ export class DriveSyncCoordinator {
   ) {
     const generation = this.d.generation();
     const intendedBackup =
-      expectedBackupId === undefined ? (await this.d.getDriveLink(id))?.id : expectedBackupId;
+      expectedBackupId === undefined
+        ? ((await this.d.getDriveLink(id))?.id ?? null)
+        : expectedBackupId;
     for (;;) {
       if (!this.d.online() || this.d.connection() !== 'connected')
         throw Error('Connect Drive and go online to sync. Your local changes remain saved.');

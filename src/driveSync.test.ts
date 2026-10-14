@@ -227,6 +227,34 @@ describe('durable automatic Drive queue', () => {
     await tick(1);
     expect(h.save).toHaveBeenCalledTimes(2);
   });
+  it('expires a future throttle timestamp after clock rollback and throttles subsequent automatic attempts', async () => {
+    const h = harness();
+    h.store.last = Date.now();
+    vi.setSystemTime(Date.now() - 30_000);
+    await h.coordinator.refresh();
+    await h.edit('After rollback');
+    await tick(3000);
+    expect(h.save).toHaveBeenCalledOnce();
+    expect(h.store.last).toBe(Date.now());
+    await h.edit('Next edit');
+    await tick(9999);
+    expect(h.save).toHaveBeenCalledOnce();
+    await tick(1);
+    expect(h.save).toHaveBeenCalledTimes(2);
+  });
+  it('allows manual sync immediately after a persisted attempt becomes future-dated', async () => {
+    const h = harness();
+    await h.coordinator.refresh();
+    await h.edit();
+    h.store.last = Date.now();
+    vi.setSystemTime(Date.now() - 30_000);
+    const pending = h.coordinator.manualSave(h.tree.id);
+    await tick(0);
+    expect(h.save).toHaveBeenCalledOnce();
+    await pending;
+    expect(h.store.last).toBe(Date.now());
+    expect(h.coordinator.hasPending()).toBe(false);
+  });
   it('keeps newer edits pending when an older upload finishes', async () => {
     const h = harness();
     let finish!: () => void;
@@ -265,16 +293,19 @@ describe('durable automatic Drive queue', () => {
     await manual;
     expect(h.save).toHaveBeenCalledOnce();
   });
-  it('links a local duplicate only after a successful manual save', async () => {
-    const h = harness();
-    h.store.links.clear();
-    await h.coordinator.refresh();
-    await tick(10000);
-    expect(h.save).not.toHaveBeenCalled();
-    await h.coordinator.manualSave(h.tree.id);
-    expect(h.store.links.get(h.tree.id)?.id).toBe('new-backup');
-    expect(h.coordinator.hasPending()).toBe(false);
-  });
+  it.each([undefined, null])(
+    'links a local duplicate only after a successful manual save with expectation %s',
+    async (expectedBackupId) => {
+      const h = harness();
+      h.store.links.clear();
+      await h.coordinator.refresh();
+      await tick(10000);
+      expect(h.save).not.toHaveBeenCalled();
+      await h.coordinator.manualSave(h.tree.id, undefined, undefined, expectedBackupId);
+      expect(h.store.links.get(h.tree.id)?.id).toBe('new-backup');
+      expect(h.coordinator.hasPending()).toBe(false);
+    },
+  );
   it('retains offline edits through coordinator recreation and resumes without authorization', async () => {
     const h = harness();
     h.offline();
@@ -575,6 +606,47 @@ describe('conflict review and safe replacement', () => {
 });
 
 describe('sync recovery boundaries', () => {
+  it.each([
+    ['lock', null],
+    ['lock', undefined],
+    ['throttle', null],
+    ['throttle', undefined],
+  ] as const)(
+    'rejects an unlinked save when an association appears while waiting for %s with expectation %s',
+    async (waitingFor, expectedBackupId) => {
+      const h = harness();
+      const link = h.store.links.get(h.tree.id)!;
+      h.store.links.clear();
+      let release!: () => void;
+      if (waitingFor === 'lock')
+        h.store.operations = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      else h.store.last = Date.now();
+      await h.coordinator.refresh();
+      const pending = h.coordinator
+        .manualSave(h.tree.id, undefined, undefined, expectedBackupId)
+        .catch((error: unknown) => error);
+      await tick(0);
+      h.store.links.set(h.tree.id, link);
+      if (waitingFor === 'lock') release();
+      await tick(waitingFor === 'lock' ? 0 : 10000);
+      const result = await pending;
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toMatch(/association changed/);
+      expect(h.inspect).not.toHaveBeenCalled();
+      expect(h.save).not.toHaveBeenCalled();
+      expect(h.store.links.get(h.tree.id)).toEqual(link);
+    },
+  );
+  it('rejects a null backup expectation when a link appeared during authorization', async () => {
+    const h = harness();
+    await expect(h.coordinator.manualSave(h.tree.id, undefined, undefined, null)).rejects.toThrow(
+      /association changed/,
+    );
+    expect(h.inspect).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
   it('cancels a queued manual sync when deletion removes the intended association', async () => {
     const h = harness();
     let release!: () => void;
