@@ -823,6 +823,28 @@ describe('local feedback integration', () => {
     expect((await editorSnapshot()).dataUpdatedAt).toBe(expected);
   });
 
+  it('views a stored photo without editing data or creating undo entries', async () => {
+    original.people[0].portrait = 'data:image/jpeg;base64,stored-photo';
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    const before = await editorSnapshot();
+    const saves = vi.mocked(saveTree).mock.calls.length;
+    const edits = vi.mocked(driveSync.noteEdit).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'View photo' }));
+    expect(screen.getByRole('dialog', { name: 'Photo of Alex' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Photo of Alex' }).getAttribute('src')).toBe(
+      original.people[0].portrait,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    expect(await editorSnapshot()).toEqual(before);
+    expect(saveTree).toHaveBeenCalledTimes(saves);
+    expect(driveSync.noteEdit).toHaveBeenCalledTimes(edits);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Redo' })).toHaveProperty('disabled', true);
+    expect(portraitData).not.toHaveBeenCalled();
+  });
+
   it('tracks home, relationships and portraits and preserves repeated values', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
     render(<App />);
@@ -864,8 +886,11 @@ describe('local feedback integration', () => {
     };
     await upload();
     expect((await editorSnapshot()).dataUpdatedAt).toBe(++expected);
+    fireEvent.click(screen.getByRole('button', { name: 'View photo' }));
     await upload();
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
     expect((await editorSnapshot()).dataUpdatedAt).toBe(expected);
+    fireEvent.click(screen.getByRole('button', { name: 'View photo' }));
     await expectEdit(() => fireEvent.click(screen.getByRole('button', { name: 'Remove photo' })));
     await expectEdit(() =>
       fireEvent.click(screen.getByRole('button', { name: 'Remove relationship with Taylor' })),
