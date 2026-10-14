@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ImagePlus } from 'lucide-react';
+import { Eye, ImagePlus } from 'lucide-react';
 import type { Person } from './model';
 import { portraitData } from './media';
 import { OperationFeedback } from './OperationFeedback';
+import { LocalDialog } from './LocalDialog';
 import { afterPaint, errorMessage, type FeedbackState } from './feedback';
 
 export function PortraitUpload({
@@ -18,12 +19,15 @@ export function PortraitUpload({
     busy = useRef(false);
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
   const [canRetry, setCanRetry] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   useEffect(() => {
     const counter = request;
     counter.current++;
     busy.current = false;
     file.current = null;
     setFeedback({ status: 'idle' });
+    setCanRetry(false);
+    setViewerOpen(false);
     return () => {
       counter.current++;
     };
@@ -58,15 +62,46 @@ export function PortraitUpload({
     file.current = null;
     setFeedback({ status: 'idle' });
   };
+  const picker = (
+    <input
+      ref={input}
+      className="sr-only"
+      tabIndex={-1}
+      type="file"
+      accept="image/jpeg,image/png,image/webp"
+      aria-label="Choose portrait"
+      disabled={feedback.status === 'pending'}
+      onChange={(event) => {
+        const selected = event.target.files?.[0];
+        event.currentTarget.value = '';
+        if (selected) void process(selected);
+      }}
+    />
+  );
+  const status = (
+    <OperationFeedback
+      state={feedback}
+      onDismiss={dismiss}
+      action={
+        feedback.status === 'error'
+          ? {
+              label: canRetry ? 'Retry' : 'Choose another photo',
+              onClick: () =>
+                canRetry && file.current ? void process(file.current) : input.current?.click(),
+            }
+          : undefined
+      }
+    />
+  );
   return (
     <div className="portrait-upload">
       <button
         type="button"
         className="portrait-preview"
-        disabled={feedback.status === 'pending'}
-        aria-label={person.portrait ? 'Change photo' : 'Add photo'}
-        title={person.portrait ? 'Change photo' : 'Add photo'}
-        onClick={() => input.current?.click()}
+        disabled={!person.portrait && feedback.status === 'pending'}
+        aria-label={person.portrait ? 'View photo' : 'Add photo'}
+        title={person.portrait ? 'View photo' : 'Add photo'}
+        onClick={() => (person.portrait ? setViewerOpen(true) : input.current?.click())}
       >
         {person.portrait ? (
           <img src={person.portrait} alt="Portrait" />
@@ -74,53 +109,55 @@ export function PortraitUpload({
           <span>{(person.name[0] || '?').toUpperCase()}</span>
         )}
         <span className="portrait-upload-icon">
-          <ImagePlus size={16} />
+          {person.portrait ? <Eye size={16} /> : <ImagePlus size={16} />}
         </span>
       </button>
       <div className="portrait-upload-details">
-        <input
-          ref={input}
-          className="sr-only"
-          tabIndex={-1}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          aria-label="Choose portrait"
-          disabled={feedback.status === 'pending'}
-          onChange={(event) => {
-            const selected = event.target.files?.[0];
-            event.currentTarget.value = '';
-            if (selected) void process(selected);
-          }}
-        />
         <p className="tiny">JPEG, PNG or WebP · processed locally</p>
-        {person.portrait && (
-          <button
-            type="button"
-            className="text-button"
-            onClick={() => {
-              request.current++;
-              busy.current = false;
-              dismiss();
-              onChange(null);
-            }}
-          >
-            Remove photo
-          </button>
-        )}
-        <OperationFeedback
-          state={feedback}
-          onDismiss={dismiss}
-          action={
-            feedback.status === 'error'
-              ? {
-                  label: canRetry ? 'Retry' : 'Choose another photo',
-                  onClick: () =>
-                    canRetry && file.current ? void process(file.current) : input.current?.click(),
-                }
-              : undefined
-          }
-        />
+        {!viewerOpen && picker}
+        {!viewerOpen && status}
       </div>
+      {viewerOpen && person.portrait && (
+        <LocalDialog
+          className="portrait-viewer"
+          title={`Photo of ${person.name || 'Unnamed person'}`}
+          description="JPEG, PNG or WebP · processed locally"
+          busy={false}
+          onClose={() => setViewerOpen(false)}
+        >
+          <img
+            className="portrait-viewer-image"
+            src={person.portrait}
+            alt={`Photo of ${person.name || 'Unnamed person'}`}
+          />
+          {picker}
+          <div className="dialog-actions">
+            <button
+              type="button"
+              className="button"
+              data-autofocus
+              disabled={feedback.status === 'pending'}
+              onClick={() => input.current?.click()}
+            >
+              Change photo
+            </button>
+            <button
+              type="button"
+              className="button danger"
+              onClick={() => {
+                request.current++;
+                busy.current = false;
+                dismiss();
+                setViewerOpen(false);
+                onChange(null);
+              }}
+            >
+              Remove photo
+            </button>
+          </div>
+          {status}
+        </LocalDialog>
+      )}
     </div>
   );
 }

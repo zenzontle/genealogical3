@@ -12,6 +12,8 @@ Choose **Duplicate** to save an independent local `(copy)` with the same people,
 
 Local rename and delete actions use keyboard-accessible dialogs. Rename failures retain the entered name for retry; deleting a person and their relationships can be undone. JSON imports show reading, validation, saving, and library-refresh progress in the bottom-centered toast stack alongside general notices, then stay in the library with an **Open tree** action. Retrying a partially completed import reuses its saved copy. JSON/PNG exports show progress, success, and recovery actions in the same toast stack. Portrait processing shows inline feedback beside its controls. Invalid files offer a new file selection; processing and storage failures offer **Retry**. Export success means the browser download has started; its toast dismisses automatically after five seconds, with the countdown paused while hovered or keyboard-focused. Portrait feedback, export errors, and import success remain until dismissed or replaced by another attempt.
 
+In person details, choose **Add photo** to select an image. An existing thumbnail opens **View photo**, showing the entire stored compressed image with its proportions preserved. The dialog offers **Change photo** and **Remove photo** with inline processing and retry feedback. Replacing a photo keeps the viewer open; removing it closes the viewer. Close with the close button or Escape, including while processing, to return focus to the thumbnail. Viewing alone makes no edits or undo entries.
+
 ## Run locally
 
 ```sh

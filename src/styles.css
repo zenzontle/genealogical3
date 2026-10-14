@@ -1793,6 +1793,35 @@ h2 {
   flex: 1;
   min-width: 0;
 }
+.portrait-viewer {
+  width: min(640px, calc(100vw - 2rem));
+}
+.portrait-viewer[open] {
+  display: flex;
+  flex-direction: column;
+}
+.portrait-viewer > :not(.portrait-viewer-image) {
+  flex-shrink: 0;
+}
+.portrait-viewer .modal-heading {
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.portrait-viewer .modal-heading .icon-button {
+  flex: none;
+}
+.portrait-viewer h2 {
+  overflow-wrap: anywhere;
+}
+.portrait-viewer-image {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  max-height: min(512px, 55dvh);
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
 .busy-icon {
   animation: feedback-spin 1s linear infinite;
 }
