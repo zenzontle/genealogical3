@@ -12,6 +12,8 @@ import {
   listTrees,
   listDriveLinks,
   saveTree,
+  storedTreeData,
+  TreeChangedError,
   getDriveLink,
   saveDriveLink,
   type DriveLink,
@@ -302,6 +304,91 @@ describe('cross-tab editor replacements', () => {
       dataUpdatedAt: timestamp,
     };
   };
+  it('clears a cross-tab unlink even if an older association refresh finishes later, allowing a new backup', async () => {
+    driveState.configured = true;
+    const oldLink = { treeId: original.id, id: 'deleted-backup', name: 'Family', modifiedTime: '' };
+    links.set(original.id, oldLink);
+    render(<App />);
+    await openOriginal();
+    let finishOlderRefresh!: (value: DriveLink[]) => void;
+    const refreshes = vi.mocked(listDriveLinks).mock.calls.length;
+    vi.mocked(listDriveLinks).mockReturnValueOnce(
+      new Promise<DriveLink[]>((resolve) => {
+        finishOlderRefresh = resolve;
+      }),
+    );
+    act(() => window.dispatchEvent(new Event('tree-storage-changed')));
+    await waitFor(() => expect(listDriveLinks).toHaveBeenCalledTimes(refreshes + 1));
+    links.delete(original.id);
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => finishOlderRefresh([oldLink]));
+    const save = vi.mocked(driveSync.manualSave).getMockImplementation()!;
+    vi.mocked(driveSync.manualSave).mockImplementationOnce(
+      async (id, progress, reviewed, expectedBackupId) => {
+        if (expectedBackupId && links.get(id)?.id !== expectedBackupId)
+          throw Error('The Drive association changed.');
+        return save(id, progress, reviewed, expectedBackupId);
+      },
+    );
+    const file = {
+      id: 'new-backup',
+      name: 'New backup',
+      modifiedTime: '',
+      revision: 'new-revision',
+      cleanupWarnings: [],
+    };
+    vi.mocked(saveDriveTree).mockResolvedValueOnce(file);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+    await screen.findByText('Saved to Google Drive as New backup.');
+    expect(driveSync.manualSave).toHaveBeenLastCalledWith(
+      original.id,
+      expect.any(Function),
+      undefined,
+      null,
+    );
+    expect(links.get(original.id)?.id).toBe(file.id);
+    expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+  });
+  it.each(['Workspace', 'another editor'] as const)(
+    'renames an externally replaced inactive tree from %s using its freshly read version',
+    async (location) => {
+      const other = { ...original, id: 'other', name: 'Other family' };
+      records.set(other.id, other);
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('heading', { name: 'Your family trees' });
+      if (location === 'another editor') {
+        fireEvent.click(screen.getByRole('button', { name: 'Open Other family' }));
+        await screen.findByRole('button', { name: 'Select Alex' });
+      }
+      const replacement = driveVersion();
+      records.set(original.id, replacement);
+      await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+      if (location === 'another editor') {
+        fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+        await screen.findByRole('heading', { name: 'Your family trees' });
+      }
+      vi.mocked(saveTree).mockImplementation(async (value, expected) => {
+        if (expected && storedTreeData(expected) !== storedTreeData(records.get(value.id)!))
+          throw new TreeChangedError();
+        records.set(value.id, value);
+        return value.id;
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Rename Drive family' }));
+      fireEvent.change(screen.getByLabelText('Tree name'), {
+        target: { value: 'Renamed Drive family' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(records.get(original.id)?.name).toBe('Renamed Drive family');
+      expect(records.get(original.id)?.people).toEqual(replacement.people);
+      expect(saveTree).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: original.id, name: 'Renamed Drive family' }),
+        replacement,
+      );
+    },
+  );
   it.each(['new timestamp', 'same timestamp'] as const)(
     'blocks persistence during a cross-tab replacement with %s and reopens the stored version',
     async (timestamp) => {
@@ -527,7 +614,8 @@ describe('local feedback integration', () => {
     expect(added.people).toHaveLength(3);
     expect(added.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    const create = await screen.findByRole('button', { name: 'New tree' });
+    await act(async () => fireEvent.click(create));
     await screen.findByText('Make a change to start saving');
     const draft = await editorSnapshot();
     expect(draft.updatedAt).toBe(draft.dataUpdatedAt);

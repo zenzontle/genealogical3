@@ -157,6 +157,7 @@ export default function App() {
     draftTree = useRef(false),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     saveCounter = useRef(0),
+    libraryRefresh = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
     storageRefresh = useRef<Promise<void>>(Promise.resolve()),
     persistedTrees = useRef(new Map<string, Tree>()),
@@ -229,14 +230,25 @@ export default function App() {
     setNotice(error instanceof Error ? error.message : 'Something went wrong.');
   }, []);
   const refreshLibrary = useCallback(async () => {
+    const request = ++libraryRefresh.current;
     try {
       const trees = await listTrees();
+      if (request !== libraryRefresh.current) return false;
       // Keep local trees usable even if reading their associations fails.
       setLibrary(trees.sort((a, b) => b.updatedAt - a.updatedAt));
       setLibraryState('ready');
-      setDriveLinks(await listDriveLinks());
+      const links = await listDriveLinks();
+      if (request !== libraryRefresh.current) return false;
+      setDriveLinks(links);
+      const active = treeRef.current;
+      if (active && !draftTree.current) {
+        const link = links.find((item) => item.treeId === active.id);
+        setDriveFile(link || null);
+        setRestoreWarnings(link?.restoreWarnings || []);
+      }
       return true;
     } catch (error) {
+      if (request !== libraryRefresh.current) return false;
       setLibraryState((previous) => (previous === 'ready' ? previous : 'error'));
       showError(error);
       return false;
@@ -295,7 +307,7 @@ export default function App() {
       window.removeEventListener('tree-storage-refreshed', refreshFromAnotherTab);
     };
   }, [refreshLibrary, showError]);
-  const queueSave = useCallback((value: Tree) => {
+  const queueSave = useCallback((value: Tree, expected?: Tree) => {
     const epoch = saveEpochs.current.get(value.id) || 0;
     const queued = saveQueue.current
       .catch(() => undefined)
@@ -307,7 +319,7 @@ export default function App() {
         } while (checked !== storageRefresh.current);
         if ((saveEpochs.current.get(value.id) || 0) !== epoch) throw new TreeChangedError();
         if (removingLocal.current.has(value.id) || removedLocal.current.has(value.id)) return;
-        const saved = await saveTree(value, persistedTrees.current.get(value.id));
+        const saved = await saveTree(value, expected ?? persistedTrees.current.get(value.id));
         if ((saveEpochs.current.get(value.id) || 0) === epoch)
           persistedTrees.current.set(value.id, value);
         return saved;
@@ -891,13 +903,13 @@ export default function App() {
     // A queued autosave must finish before a rename or deletion can replace its result.
     await saveQueue.current.catch(() => undefined);
     if (action.kind === 'rename') {
-      const current =
-        treeRef.current?.id === action.treeId ? treeRef.current : await getTree(action.treeId);
+      const currentIsActive = treeRef.current?.id === action.treeId;
+      const current = currentIsActive ? treeRef.current : await getTree(action.treeId);
       if (!current) throw Error('This tree was not found.');
       if (name !== current.name) {
         let updated = timestampDataChange({ ...current, name }, current);
         try {
-          await queueSave(updated);
+          await queueSave(updated, currentIsActive ? undefined : current);
         } catch (error) {
           if (treeRef.current?.id === action.treeId) setSaveState('error');
           throw error;
