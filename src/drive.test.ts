@@ -176,6 +176,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('still cancels Drive operations when the session changes while waiting for another tab', async () => {
+  const run = vi.fn(async () => {});
+  vi.stubGlobal('navigator', {
+    locks: {
+      request: vi.fn(async (_name: string, callback: () => Promise<void>) => {
+        ++session.generation;
+        return callback();
+      }),
+    },
+  });
+  await expect(queueDriveOperation(session.generation, run)).rejects.toThrow(/connection changed/i);
+  expect(run).not.toHaveBeenCalled();
+});
+
 describe('permanent Drive deletion', () => {
   it.each([false, true])(
     'retains the folder and invisible unrelated contents, including Trash: %s',

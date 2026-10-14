@@ -92,7 +92,7 @@ function harness(shared?: Store) {
     generation: () => generation,
     online: () => online,
     now: () => Date.now(),
-    lock: <T>(_generation: number, work: () => Promise<T>) => {
+    lock: <T>(_generation: number | undefined, work: () => Promise<T>) => {
       const queued = store.operations.then(work);
       store.operations = queued.catch(() => undefined);
       return queued;

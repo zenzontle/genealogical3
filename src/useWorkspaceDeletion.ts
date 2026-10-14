@@ -97,7 +97,7 @@ export function useWorkspaceDeletion({
       };
       // Keep association removal inside the same cross-tab lock as uploads/deletion.
       if (task.progress) await deleteDriveBackup(task.progress, cleanup);
-      else await queueDriveOperation(getDriveGeneration(), cleanup);
+      else await queueDriveOperation(undefined, cleanup);
       onRemoved(treeId, backupId);
       retries.current.delete(key(entry));
     } finally {

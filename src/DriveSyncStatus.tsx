@@ -17,7 +17,7 @@ export function DriveSyncStatus({
         <button className="button outline" onClick={onReview}>
           Review conflict
         </button>
-      ) : view?.status === 'needs attention' ? (
+      ) : view?.status === 'needs attention' && !view.link.restoreWarnings?.length ? (
         <button className="button outline" onClick={onRetry}>
           Retry
         </button>

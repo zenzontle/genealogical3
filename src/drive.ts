@@ -615,15 +615,19 @@ async function saveSnapshot(
 }
 let operations: Promise<unknown> = Promise.resolve();
 const deletedBackups = new Set<string>();
-export function queueDriveOperation<T>(generation: number, run: () => Promise<T>): Promise<T> {
+/** Local cleanup passes undefined to share the lock independently of the Drive session. */
+export function queueDriveOperation<T>(
+  generation: number | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
   const operation = operations
     .catch(() => undefined)
     .then(async () => {
-      assertGeneration(generation);
+      if (generation !== undefined) assertGeneration(generation);
       // Share the existing save lock with downloads and permanent deletion, including other tabs.
       if (globalThis.navigator?.locks)
         return navigator.locks.request('genealogical3-drive-save', () => {
-          assertGeneration(generation);
+          if (generation !== undefined) assertGeneration(generation);
           return run();
         });
       return run();
