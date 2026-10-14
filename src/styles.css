@@ -2241,3 +2241,27 @@ textarea::placeholder {
   margin-bottom: 1rem;
   color: var(--text-muted);
 }
+
+.drive-sync-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.drive-sync-status .button {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+}
+.editor-drive-status {
+  padding: 0.35rem 1rem;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+.tree-tile > .drive-sync-status {
+  padding: 0.5rem 1rem;
+}
+.local-dialog dd {
+  margin: 0.25rem 0 1rem;
+}

@@ -1,4 +1,14 @@
+import { retryAfterDelay } from './retryAfter';
 const endpoint = '/api/drive-auth';
+export class DriveAuthenticationError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public retryAfter = 0,
+  ) {
+    super(message);
+  }
+}
 const reconnectMessage =
   'Google Drive is not connected. Use Connect Drive in Workspace to reconnect.';
 let accessToken = '';
@@ -87,7 +97,8 @@ async function authRequest(action: 'token' | 'disconnect'): Promise<Response> {
       signal: AbortSignal.timeout(20_000),
     });
   } catch {
-    throw Error(
+    throw new DriveAuthenticationError(
+      0,
       'Could not reach Google Drive authentication. Please retry. Your local tree is unchanged.',
     );
   }
@@ -95,10 +106,13 @@ async function authRequest(action: 'token' | 'disconnect'): Promise<Response> {
 
 async function responseError(response: Response): Promise<Error> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  return Error(
+  const retryAfter = retryAfterDelay(response.headers.get('Retry-After'));
+  return new DriveAuthenticationError(
+    response.status,
     typeof body?.error === 'string'
       ? body.error
       : 'Google Drive authentication failed. Please retry.',
+    retryAfter,
   );
 }
 

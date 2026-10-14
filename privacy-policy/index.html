@@ -155,9 +155,10 @@
         connection. The app requests the
         <code>https://www.googleapis.com/auth/drive.file</code> permission, which limits access to
         files created by or authorized for this app rather than your entire Drive. GENEalogical3
-        lists its tree files using file identifiers, names, and modification times, reads a tree
-        file you choose to open, and creates or updates a tree file when you choose to save. Saved
-        backups contain the tree data described above, including notes and portraits. When you
+        lists its tree files using file identifiers, names, and modification times, reads tree files
+        to open them, compare linked backups, or resolve conflicts, and creates a backup when you
+        choose Save to Drive. Already-linked trees automatically upload data edits while connected.
+        Saved backups contain the tree data described above, including notes and portraits. When you
         confirm Drive deletion in Workspace, the app permanently deletes the chosen backup document
         and its associated app-owned portrait files, including superseded portraits in Drive Trash.
         This does not move the files to Trash and cannot be undone. Photo-folder containers and
@@ -165,9 +166,12 @@
       </p>
       <p>
         Transfers occur directly between your browser and Google over HTTPS. Opening a Drive tree
-        creates a local working copy; local edits do not automatically sync to Drive. Updating an
-        associated Drive file requires confirmation. Its identifier, name, and modification time are
-        stored locally to associate it with your tree.
+        creates a local working copy whose data edits automatically sync while connected. Unlinked
+        trees upload only after you choose Save to Drive. File identifiers, names, modification
+        times, revisions, acknowledged data timestamps, pending upload identities, and retry state
+        are stored locally. Conflicts pause sync for review; replacing a reviewed version requires
+        confirmation. Offline or disconnected changes stay pending until connectivity and access
+        return.
       </p>
       <p>
         A GENEalogical3 authentication service hosted on Vercel exchanges Google's authorization
@@ -188,7 +192,8 @@
         >, including its Limited Use requirements. Google user data is used only for the Drive
         features described here. It is not sold, used for advertising, transferred to data brokers,
         or used to train AI models. The developer does not receive or read your Drive files through
-        the app. Files are transferred to Google only as part of the Drive actions you request.
+        the app. Files are transferred to Google for requested Drive actions and automatic backups
+        of already-linked trees.
       </p>
 
       <h2>Website analytics</h2>

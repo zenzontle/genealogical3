@@ -7,12 +7,14 @@ export function LocalDialog({
   busy,
   onClose,
   children,
+  hideClose = false,
 }: {
   title: string;
   description: string;
   busy: boolean;
   onClose: () => void;
   children: ReactNode;
+  hideClose?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId(),
@@ -77,15 +79,17 @@ export function LocalDialog({
     >
       <div className="modal-heading">
         <h2 id={titleId}>{title}</h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Close dialog"
-          disabled={busy}
-          onClick={onClose}
-        >
-          <X size={19} />
-        </button>
+        {!hideClose && (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Close dialog"
+            disabled={busy}
+            onClick={onClose}
+          >
+            <X size={19} />
+          </button>
+        )}
       </div>
       <p id={descriptionId}>{description}</p>
       {children}

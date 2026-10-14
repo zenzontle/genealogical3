@@ -3,7 +3,9 @@ import { makePerson, makeTree, validateTree, type Tree } from './model';
 import { photoDigest, type DriveDocument } from './driveDocument';
 
 const session = vi.hoisted(() => ({ generation: 0 }));
-vi.mock('./driveAuth', () => ({
+vi.mock('./driveAuth', async (original) => ({
+  DriveAuthenticationError: (await original<typeof import('./driveAuth')>())
+    .DriveAuthenticationError,
   getDriveGeneration: () => session.generation,
   driveAccessToken: vi.fn(async () => 'token'),
   authorizeDrive: vi.fn(),
@@ -20,6 +22,9 @@ import {
   openDriveTree,
   saveDriveTree,
   type PhotoProgress,
+  DriveRequestError,
+  queueDriveOperation,
+  verifyDriveRestoreLocked,
 } from './drive';
 
 const jpeg = (value = 1) => Uint8Array.from([0xff, 0xd8, value, 0xff, 0xd9]);
@@ -171,7 +176,90 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('still cancels Drive operations when the session changes while waiting for another tab', async () => {
+  const run = vi.fn(async () => {});
+  vi.stubGlobal('navigator', {
+    locks: {
+      request: vi.fn(async (_name: string, callback: () => Promise<void>) => {
+        ++session.generation;
+        return callback();
+      }),
+    },
+  });
+  await expect(queueDriveOperation(session.generation, run)).rejects.toThrow(/connection changed/i);
+  expect(run).not.toHaveBeenCalled();
+});
+
 describe('permanent Drive deletion', () => {
+  it.each(['operation queue', 'another tab'] as const)(
+    'finishes browser cleanup after a session change while waiting for %s',
+    async (waitingFor) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([]));
+      const progress = createDriveDeletion(file.id);
+      const cleanup = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(Error('Browser cleanup failed'))
+        .mockResolvedValue(undefined);
+      await expect(deleteDriveBackup(progress, cleanup)).rejects.toThrow(/Browser cleanup failed/);
+      expect(progress.documentDeleted).toBe(true);
+      expect(remote.files.has(file.id)).toBe(false);
+      remote.calls.length = 0;
+      const tokens = vi.mocked(driveAccessToken).mock.calls.length;
+      const gate = deferred(),
+        reached = deferred();
+      let held: Promise<void> | undefined;
+      if (waitingFor === 'operation queue') {
+        held = queueDriveOperation(session.generation, async () => {
+          reached.resolve();
+          await gate.promise;
+        });
+        await reached.promise;
+      } else {
+        vi.stubGlobal('navigator', {
+          locks: {
+            request: vi.fn(async (name: string, run: () => Promise<void>) => {
+              expect(name).toBe('genealogical3-drive-save');
+              reached.resolve();
+              await gate.promise;
+              return run();
+            }),
+          },
+        });
+      }
+      const pending = deleteDriveBackup(progress, cleanup);
+      const completed = expect(pending).resolves.toBeUndefined();
+      if (waitingFor === 'another tab') await reached.promise;
+      expect(cleanup).toHaveBeenCalledOnce();
+      ++session.generation;
+      gate.resolve();
+      await Promise.all([held, completed]);
+      expect(cleanup).toHaveBeenCalledTimes(2);
+      expect(remote.calls).toHaveLength(0);
+      expect(driveAccessToken).toHaveBeenCalledTimes(tokens);
+    },
+  );
+  it('reports only remaining browser cleanup after the document and portraits are deleted', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const progress = createDriveDeletion(file.id);
+    let failure: unknown;
+    try {
+      await deleteDriveBackup(progress, async () => {
+        throw Error('Browser cleanup failed');
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(progress.documentDeleted).toBe(true);
+    expect(remote.files.has(file.id)).toBe(false);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('permanently deleted');
+    expect((failure as Error).message).toContain('Retry to finish browser cleanup');
+    expect((failure as Error).message).not.toMatch(
+      /has not been confirmed deleted|No files have been confirmed deleted/,
+    );
+  });
   it.each([false, true])(
     'retains the folder and invisible unrelated contents, including Trash: %s',
     async (trashed) => {
@@ -404,6 +492,96 @@ describe('permanent Drive deletion', () => {
 });
 
 describe('separate-photo Drive backups', () => {
+  it('prevents a restored association from being committed after another tab deletes its backup', async () => {
+    fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const restored = await openDriveTree(file.id);
+    await deleteDriveBackup(createDriveDeletion(file.id));
+    let committed = false;
+    await expect(
+      queueDriveOperation(session.generation, async () => {
+        await verifyDriveRestoreLocked(file.id, session.generation, restored);
+        committed = true;
+      }),
+    ).rejects.toThrow(/404/);
+    expect(committed).toBe(false);
+  });
+  it('revalidates downloaded revisions and ownership before committing a local association', async () => {
+    const remote = fakeDrive(),
+      file = await saveDriveTree(family([1])),
+      restored = await openDriveTree(file.id);
+    const doc = remote.document(file.id);
+    doc.revision = 'changed-after-download';
+    remote.setDocument(file.id, doc);
+    await expect(verifyDriveRestoreLocked(file.id, session.generation, restored)).rejects.toThrow(
+      /Drive version changed/,
+    );
+    remote.files.get(file.id)!.appProperties.app = 'another-app';
+    await expect(verifyDriveRestoreLocked(file.id, session.generation, restored)).rejects.toThrow(
+      /ownership changed/,
+    );
+  });
+  it('updates by stored ID without looking for a containing library folder', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    const start = remote.calls.length;
+    await saveDriveTree({ ...tree, name: 'Updated' }, file.id, undefined, {
+      expectedRevision: file.revision,
+    });
+    expect(
+      remote.calls
+        .slice(start)
+        .some((call) => call.url.searchParams.get('q')?.includes("name = 'genealogical3'")),
+    ).toBe(false);
+  });
+  it('checks the acknowledged revision before uploading any portraits', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree),
+      doc = remote.document(file.id);
+    doc.revision = 'other-version';
+    remote.setDocument(file.id, doc);
+    const uploads = remote.photoUploads().length;
+    await expect(
+      saveDriveTree(family([2]), file.id, undefined, { expectedRevision: file.revision }),
+    ).rejects.toThrow(/Drive version changed/);
+    expect(remote.photoUploads()).toHaveLength(uploads);
+  });
+  it('rechecks revision after portrait uploads immediately before replacing the document', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'POST' && call.meta?.appProperties?.kind === 'portrait') {
+        const doc = remote.document(file.id);
+        doc.revision = 'changed-during-upload';
+        remote.setDocument(file.id, doc);
+      }
+    };
+    tree.people[0].portrait = portrait(2);
+    await expect(
+      saveDriveTree(tree, file.id, undefined, { expectedRevision: file.revision }),
+    ).rejects.toThrow(/Drive version changed/);
+    expect(remote.document(file.id).revision).toBe('changed-during-upload');
+    expect(remote.trashCalls()).toHaveLength(0);
+  });
+  it.each(['userRateLimitExceeded', 'insufficientFilePermissions'])(
+    'parses Google 403 reason %s and Retry-After',
+    async (reason) => {
+      const remote = fakeDrive();
+      remote.hooks.before = async () =>
+        new Response(JSON.stringify({ error: { errors: [{ reason }] } }), {
+          status: 403,
+          headers: { 'Retry-After': '120' },
+        });
+      const error = await saveDriveTree(family()).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(DriveRequestError);
+      expect((error as DriveRequestError).reasons).toEqual([reason]);
+      expect((error as DriveRequestError).retryAfter).toBe(120000);
+      expect((error as DriveRequestError).retryable).toBe(reason === 'userRateLimitExceeded');
+    },
+  );
   it('renames an existing document to the shared backup ID when overwriting, and gives copies their own ID', async () => {
     const remote = fakeDrive();
     const tree = family([]);
@@ -579,7 +757,7 @@ describe('separate-photo Drive backups', () => {
         expect(image.appProperties.backupId).toBe(file.id);
       }
       const result = await openDriveTree(file.id, (p) => progress.push(p));
-      expect(result).toEqual({ tree, restoreWarnings: [] });
+      expect(result).toEqual({ tree, restoreWarnings: [], revision: file.revision });
       expect(tree).toEqual(original);
       expect(progress).toContainEqual({
         direction: 'upload',
@@ -670,7 +848,7 @@ describe('separate-photo Drive backups', () => {
   });
 
   it.each(['photos', 'portrait', 'tree', 'library'])(
-    'retries a lost %s create response with the same pre-generated ID',
+    'verifies a lost %s create response without retrying the write',
     async (kind) => {
       const remote = fakeDrive();
       let lost = false;
@@ -687,8 +865,13 @@ describe('separate-photo Drive backups', () => {
       const creates = remote.calls.filter(
         (call) => call.options.method === 'POST' && call.meta?.appProperties?.kind === kind,
       );
-      expect(creates).toHaveLength(2);
-      expect(creates[0].meta?.id).toBe(creates[1].meta?.id);
+      expect(creates).toHaveLength(1);
+      expect(
+        remote.calls.some(
+          (call) =>
+            !call.options.method && call.url.pathname.endsWith(`/files/${creates[0].meta?.id}`),
+        ),
+      ).toBe(true);
       expect([...remote.files.values()].filter((f) => f.appProperties.kind === kind)).toHaveLength(
         1,
       );
@@ -722,8 +905,7 @@ describe('separate-photo Drive backups', () => {
       }
     };
     tree.people[0].portrait = null;
-    const result = await saveDriveTree(tree, file.id);
-    expect(result.cleanupWarnings[0]).toMatch(/another save/);
+    await expect(saveDriveTree(tree, file.id)).rejects.toThrow(/Drive version changed/);
     expect(remote.trashCalls()).toHaveLength(0);
   });
 
@@ -743,7 +925,7 @@ describe('separate-photo Drive backups', () => {
     // A cross-backup image in the folder is also excluded by ownership checks.
     remote.files.get(other.imageFileId)!.parents.push(doc.photoFolderId);
     tree.people[0].portrait = null;
-    await saveDriveTree(tree, first.id);
+    await expect(saveDriveTree(tree, first.id)).rejects.toThrow(/missing portraits/);
     expect(remote.trashCalls()).toHaveLength(0);
     expect(remote.files.get(other.imageFileId)!.trashed).toBeUndefined();
     expect(ownPhoto.trashed).toBeUndefined();
@@ -787,11 +969,15 @@ describe('separate-photo Drive backups', () => {
           return { width: 128, height: 256, close: vi.fn() } as unknown as ImageBitmap;
         });
       else
-        vi.mocked(createImageBitmap).mockResolvedValueOnce({
-          width: 513,
-          height: 200,
-          close: vi.fn(),
-        } as unknown as ImageBitmap);
+        // Parallel downloads may decode in either order; target the JPEG used by the first two people.
+        vi.mocked(createImageBitmap).mockImplementation(
+          async (source) =>
+            ({
+              width: new Uint8Array(await (source as Blob).arrayBuffer())[2] === 1 ? 513 : 128,
+              height: 200,
+              close: vi.fn(),
+            }) as unknown as ImageBitmap,
+        );
       const result = await openDriveTree(file.id);
       expect(result.restoreWarnings.map((w) => w.personId)).toEqual(
         tree.people.slice(0, 2).map((p) => p.id),
@@ -858,7 +1044,10 @@ describe('separate-photo Drive backups', () => {
       remote.setDocument(file.id, doc);
       const start = remote.calls.length;
       await expect(openDriveTree(file.id)).rejects.toThrow(/Invalid/);
-      expect(remote.calls.slice(start)).toHaveLength(1);
+      expect(remote.calls.slice(start)).toHaveLength(2);
+      expect(
+        remote.calls.slice(start).every((call) => call.url.pathname.endsWith(`/files/${file.id}`)),
+      ).toBe(true);
     },
   );
 
@@ -992,7 +1181,17 @@ describe('Drive picker', () => {
       appProperties: { app: 'GENEalogical3', format: 'tree-v1' },
       content: new TextEncoder().encode(JSON.stringify(tree)),
     });
-    expect((await openDriveTree('legacy')).tree).toEqual(tree);
-    await expect(saveDriveTree(tree, 'legacy')).rejects.toThrow(/Save a copy/);
+    const restored = await openDriveTree('legacy');
+    expect(restored.tree).toEqual(tree);
+    await verifyDriveRestoreLocked('legacy', session.generation, restored);
+    remote.files.get('legacy')!.content = new TextEncoder().encode(
+      JSON.stringify({ ...tree, name: 'Changed legacy tree' }),
+    );
+    await expect(verifyDriveRestoreLocked('legacy', session.generation, restored)).rejects.toThrow(
+      /Drive version changed/,
+    );
+    await expect(saveDriveTree(tree, 'legacy')).rejects.toThrow(
+      /Duplicate your local tree in Workspace/,
+    );
   });
 });

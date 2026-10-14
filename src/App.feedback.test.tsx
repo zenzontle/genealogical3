@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { driveSync } from './driveSync';
 import { makePerson, makeTree, validateTree, type Tree } from './model';
 import {
   removeWorkspaceStorage,
@@ -11,6 +12,8 @@ import {
   listTrees,
   listDriveLinks,
   saveTree,
+  storedTreeData,
+  TreeChangedError,
   getDriveLink,
   saveDriveLink,
   type DriveLink,
@@ -54,7 +57,50 @@ type CanvasEvents = {
 };
 let canvasEvents: CanvasEvents;
 
-vi.mock('./storage', () => ({
+const syncState = vi.hoisted(() => ({ views: {} }));
+vi.mock('./driveSync', () => ({
+  driveSync: {
+    subscribe: () => () => {},
+    snapshot: () => syncState.views,
+    start: () => () => {},
+    noteEdit: vi.fn(),
+    discardEdits: vi.fn(async () => {}),
+    hasPending: () => false,
+    flush: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
+    useDrive: vi.fn(),
+    manualSave: vi.fn(async (id: string, progress: import('./drive').ProgressCallback) => {
+      const tree = await getTree(id);
+      const link = await getDriveLink(id);
+      const file = await saveDriveTree(tree!, link?.id, progress);
+      try {
+        await saveDriveLink({
+          treeId: id,
+          id: file.id,
+          name: file.name,
+          description: file.description,
+          modifiedTime: file.modifiedTime,
+          sync: {
+            acknowledgedDataUpdatedAt: tree!.dataUpdatedAt,
+            revision: file.revision,
+            pending: false,
+          },
+        });
+      } catch {
+        throw Error(
+          [
+            `Saved to Google Drive as ${file.description || file.name}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
+            ...file.cleanupWarnings,
+          ].join(' '),
+        );
+      }
+      return file;
+    }),
+  },
+}));
+vi.mock('./storage', async (original) => ({
+  storedTreeData: (await original<typeof import('./storage')>()).storedTreeData,
+  TreeChangedError: (await original<typeof import('./storage')>()).TreeChangedError,
   listTrees: vi.fn(),
   listDriveLinks: vi.fn(),
   getTree: vi.fn(),
@@ -64,6 +110,13 @@ vi.mock('./storage', () => ({
   deleteDriveLink: vi.fn(),
   saveDriveLink: vi.fn(),
   duplicateSavedTree: vi.fn(),
+  updateLinkedTree: vi.fn(
+    async (_id: string, update: Parameters<typeof import('./storage').updateLinkedTree>[1]) => {
+      const next = update(undefined, undefined);
+      if (next.link) await saveDriveLink(next.link);
+      if (next.tree) await saveTree(next.tree);
+    },
+  ),
 }));
 vi.mock('./drive', () => ({
   get driveConfigured() {
@@ -80,6 +133,7 @@ vi.mock('./drive', () => ({
   restoreDrive: vi.fn(),
   listDriveTrees: vi.fn(),
   openDriveTree: vi.fn(),
+  verifyDriveRestoreLocked: vi.fn(),
   saveDriveTree: vi.fn(),
   createDriveDeletion: (id: string) => ({
     id,
@@ -89,6 +143,7 @@ vi.mock('./drive', () => ({
     documentAttempted: false,
   }),
   deleteDriveBackup: vi.fn(),
+  queueDriveOperation: async (_generation: number, run: () => Promise<unknown>) => run(),
 }));
 vi.mock('./media', () => ({ exportJson: vi.fn(), exportPng: vi.fn(), portraitData: vi.fn() }));
 vi.mock('./feedback', async (original) => ({
@@ -196,7 +251,9 @@ beforeEach(() => {
   };
   records = new Map([[original.id, original]]);
   vi.mocked(listTrees).mockImplementation(async () => [...records.values()]);
-  vi.mocked(getTree).mockImplementation(async (id) => records.get(id));
+  vi.mocked(getTree)
+    .mockReset()
+    .mockImplementation(async (id) => records.get(id));
   vi.mocked(saveTree).mockImplementation(async (tree) => {
     records.set(tree.id, tree);
     return tree.id;
@@ -212,8 +269,9 @@ beforeEach(() => {
     });
   vi.mocked(deleteDriveBackup)
     .mockReset()
-    .mockImplementation(async (progress) => {
+    .mockImplementation(async (progress, afterDelete) => {
       progress.documentDeleted = true;
+      await afterDelete?.();
     });
 });
 afterEach(() => {
@@ -233,6 +291,240 @@ const editorSnapshot = async () => {
   expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
   return vi.mocked(exportJson).mock.calls.at(-1)![0];
 };
+
+describe('cross-tab editor replacements', () => {
+  const driveVersion = (timestamp = original.dataUpdatedAt + 1): Tree => {
+    const person = makePerson('Remote person');
+    return {
+      ...original,
+      name: 'Drive family',
+      people: [person],
+      relations: [],
+      homePersonId: person.id,
+      dataUpdatedAt: timestamp,
+    };
+  };
+  it('clears a cross-tab unlink even if an older association refresh finishes later, allowing a new backup', async () => {
+    driveState.configured = true;
+    const oldLink = { treeId: original.id, id: 'deleted-backup', name: 'Family', modifiedTime: '' };
+    links.set(original.id, oldLink);
+    render(<App />);
+    await openOriginal();
+    let finishOlderRefresh!: (value: DriveLink[]) => void;
+    const refreshes = vi.mocked(listDriveLinks).mock.calls.length;
+    vi.mocked(listDriveLinks).mockReturnValueOnce(
+      new Promise<DriveLink[]>((resolve) => {
+        finishOlderRefresh = resolve;
+      }),
+    );
+    act(() => window.dispatchEvent(new Event('tree-storage-changed')));
+    await waitFor(() => expect(listDriveLinks).toHaveBeenCalledTimes(refreshes + 1));
+    links.delete(original.id);
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => finishOlderRefresh([oldLink]));
+    const save = vi.mocked(driveSync.manualSave).getMockImplementation()!;
+    vi.mocked(driveSync.manualSave).mockImplementationOnce(
+      async (id, progress, reviewed, expectedBackupId) => {
+        if (expectedBackupId && links.get(id)?.id !== expectedBackupId)
+          throw Error('The Drive association changed.');
+        return save(id, progress, reviewed, expectedBackupId);
+      },
+    );
+    const file = {
+      id: 'new-backup',
+      name: 'New backup',
+      modifiedTime: '',
+      revision: 'new-revision',
+      cleanupWarnings: [],
+    };
+    vi.mocked(saveDriveTree).mockResolvedValueOnce(file);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
+    await screen.findByText('Saved to Google Drive as New backup.');
+    expect(driveSync.manualSave).toHaveBeenLastCalledWith(
+      original.id,
+      expect.any(Function),
+      undefined,
+      null,
+    );
+    expect(links.get(original.id)?.id).toBe(file.id);
+    expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+  });
+  it.each(['Workspace', 'another editor'] as const)(
+    'renames an externally replaced inactive tree from %s using its freshly read version',
+    async (location) => {
+      const other = { ...original, id: 'other', name: 'Other family' };
+      records.set(other.id, other);
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('heading', { name: 'Your family trees' });
+      if (location === 'another editor') {
+        fireEvent.click(screen.getByRole('button', { name: 'Open Other family' }));
+        await screen.findByRole('button', { name: 'Select Alex' });
+      }
+      const replacement = driveVersion();
+      records.set(original.id, replacement);
+      await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+      if (location === 'another editor') {
+        fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+        await screen.findByRole('heading', { name: 'Your family trees' });
+      }
+      vi.mocked(saveTree).mockImplementation(async (value, expected) => {
+        if (expected && storedTreeData(expected) !== storedTreeData(records.get(value.id)!))
+          throw new TreeChangedError();
+        records.set(value.id, value);
+        return value.id;
+      });
+      fireEvent.click(await screen.findByRole('button', { name: 'Rename Drive family' }));
+      fireEvent.change(screen.getByLabelText('Tree name'), {
+        target: { value: 'Renamed Drive family' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Save name' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(records.get(original.id)?.name).toBe('Renamed Drive family');
+      expect(records.get(original.id)?.people).toEqual(replacement.people);
+      expect(saveTree).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: original.id, name: 'Renamed Drive family' }),
+        replacement,
+      );
+    },
+  );
+  it.each(['new timestamp', 'same timestamp'] as const)(
+    'blocks persistence during a cross-tab replacement with %s and reopens the stored version',
+    async (timestamp) => {
+      render(<App />);
+      await openOriginal();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      act(() => canvasEvents.onMoveEnd(null, { x: 10, y: 20, zoom: 1.5 }));
+      const replacement = driveVersion(
+        timestamp === 'same timestamp' ? original.dataUpdatedAt : undefined,
+      );
+      records.set(original.id, replacement);
+      let finishRead!: (tree: Tree) => void;
+      vi.mocked(getTree).mockReturnValueOnce(
+        new Promise<Tree>((resolve) => {
+          finishRead = resolve;
+        }),
+      );
+      act(() => window.dispatchEvent(new Event('tree-storage-refreshed')));
+      act(() => window.dispatchEvent(new Event('pagehide')));
+      await act(() => vi.advanceTimersByTimeAsync(450));
+      expect(saveTree).not.toHaveBeenCalled();
+      await act(async () => finishRead(replacement));
+      expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+      expect(records.get(original.id)).toEqual(replacement);
+      expect(driveSync.discardEdits).toHaveBeenCalledWith(original.id);
+      vi.useRealTimers();
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Drive family' }));
+      await screen.findByRole('button', { name: 'Select Remote person' });
+      expect(await editorSnapshot()).toEqual(replacement);
+      expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+      act(() => canvasEvents.onMoveEnd(null, { x: 40, y: 50, zoom: 1.2 }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('heading', { name: 'Your family trees' });
+      expect(records.get(original.id)).toEqual({
+        ...replacement,
+        updatedAt: expect.any(Number),
+        viewport: { x: 40, y: 50, zoom: 1.2 },
+      });
+    },
+  );
+  it('cancels an older data snapshot queued behind a completed local write', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    let finishSave!: () => void;
+    vi.mocked(saveTree).mockImplementationOnce(async (value) => {
+      records.set(value.id, value);
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      return value.id;
+    });
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'First edit' } });
+    await waitFor(() => expect(saveTree).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Queued edit' } });
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => finishSave());
+    expect(saveTree).toHaveBeenCalledOnce();
+    expect(records.get(original.id)).toEqual(replacement);
+    expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+  });
+  it('preserves editor state and pending navigation for unrelated storage changes', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Local edit' } });
+    await waitFor(() => expect(records.get(original.id)?.people[0].nickname).toBe('Local edit'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    act(() => canvasEvents.onMoveEnd(null, { x: 12, y: 34, zoom: 1.1 }));
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    expect(screen.queryByRole('heading', { name: 'Your family trees' })).toBeNull();
+    expect(screen.getByLabelText('Nickname')).toHaveProperty('value', 'Local edit');
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', false);
+    await act(() => vi.advanceTimersByTimeAsync(450));
+    expect(records.get(original.id)?.viewport).toEqual({ x: 12, y: 34, zoom: 1.1 });
+    expect(records.get(original.id)?.people[0].nickname).toBe('Local edit');
+    expect(driveSync.discardEdits).not.toHaveBeenCalled();
+  });
+  it('keeps the first save of a new draft independent of unrelated cross-tab changes', async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    await screen.findByRole('button', { name: 'Add person' });
+    let finishSave!: () => void;
+    vi.mocked(saveTree).mockImplementationOnce(async (value) => {
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      records.set(value.id, value);
+      return value.id;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    await waitFor(() => expect(saveTree).toHaveBeenCalledOnce());
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    expect(screen.getByRole('button', { name: 'Add person' })).toBeTruthy();
+    await act(async () => finishSave());
+    expect(driveSync.discardEdits).not.toHaveBeenCalled();
+    expect(
+      [...records.values()].find((value) => value.name === 'My family tree')?.people,
+    ).toHaveLength(1);
+  });
+  it('keeps navigation to Workspace safe while a cross-tab read is pending', async () => {
+    const other = { ...original, id: 'other', name: 'Other family' };
+    records.set(other.id, other);
+    render(<App />);
+    await openOriginal();
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    let finishRead!: (tree: Tree) => void;
+    vi.mocked(getTree).mockReturnValueOnce(
+      new Promise<Tree>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    act(() => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await act(async () => finishRead(replacement));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Other family' }));
+    await screen.findByRole('button', { name: 'Select Alex' });
+    expect((await editorSnapshot()).id).toBe(other.id);
+    expect(records.get(original.id)).toEqual(replacement);
+  });
+  it('prevents stale persistence if reading the cross-tab update fails', async () => {
+    render(<App />);
+    await openOriginal();
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    vi.mocked(getTree).mockRejectedValueOnce(Error('Storage unavailable'));
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(saveTree).not.toHaveBeenCalled();
+    expect(records.get(original.id)).toEqual(replacement);
+    expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+  });
+});
 
 describe('local feedback integration', () => {
   it('rejects exhausted edits and person creation while preserving navigation, history and valid backups', async () => {
@@ -322,7 +614,8 @@ describe('local feedback integration', () => {
     expect(added.people).toHaveLength(3);
     expect(added.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    const create = await screen.findByRole('button', { name: 'New tree' });
+    await act(async () => fireEvent.click(create));
     await screen.findByText('Make a change to start saving');
     const draft = await editorSnapshot();
     expect(draft.updatedAt).toBe(draft.dataUpdatedAt);
@@ -571,11 +864,13 @@ describe('local feedback integration', () => {
       id: 'file',
       name: 'Family.json',
       modifiedTime: '2026-10-11',
+      revision: 'saved-revision',
       cleanupWarnings: [],
     });
     fireEvent.click(save);
     expect(saveDriveTree).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+    await waitFor(() => expect(authorizeDrive).toHaveBeenCalled());
     await act(async () => authorize());
     await screen.findByText('Saved to Google Drive as Family.json.');
     expect(saveDriveTree).toHaveBeenCalledWith(original, undefined, expect.any(Function));
@@ -715,8 +1010,7 @@ describe('local feedback integration', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(screen.getByTitle('Rename tree').textContent).toContain('Renamed family');
       expect(screen.getByAltText('Portrait')).toHaveProperty('src', portrait);
-      expect(screen.getByText('Saving locally…')).toBeTruthy();
-      await act(() => vi.advanceTimersByTimeAsync(450));
+      await act(() => vi.advanceTimersByTimeAsync(0));
       expect(records.get(original.id)?.name).toBe('Renamed family');
       expect(records.get(original.id)?.people[0].portrait).toBe(portrait);
       expect(records.get(original.id)?.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
@@ -892,6 +1186,7 @@ describe('Drive portrait feedback and associations', () => {
         name: 'remote-1.json',
         description: 'García family',
         modifiedTime: '',
+        revision: 'saved-revision',
         cleanupWarnings: ['Photo cleanup could not be completed.'],
       };
       vi.mocked(saveDriveTree).mockResolvedValueOnce(file);
@@ -911,28 +1206,23 @@ describe('Drive portrait feedback and associations', () => {
     { name: 'remote-1.json', description: 'Saved family', label: 'Saved family' },
     { name: 'Old family.genealogical3.json', description: undefined, label: 'Old family' },
   ])(
-    'identifies the overwrite target as $label and respects cancellation',
+    'routes a manual save to its linked file $label without the obsolete overwrite prompt',
     async ({ name, description, label }) => {
       driveState.configured = true;
       const backup = { id: 'remote-1', name, description, modifiedTime: '' };
       links.set(original.id, { treeId: original.id, ...backup });
-      const confirm = vi
-        .spyOn(window, 'confirm')
-        .mockReturnValueOnce(false)
-        .mockReturnValueOnce(true);
-      vi.mocked(saveDriveTree).mockResolvedValueOnce({ ...backup, cleanupWarnings: [] });
+      const confirm = vi.spyOn(window, 'confirm');
+      vi.mocked(saveDriveTree).mockResolvedValueOnce({
+        ...backup,
+        revision: 'saved-revision',
+        cleanupWarnings: [],
+      });
       render(<App />);
       await openOriginal();
       fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-      expect(confirm).toHaveBeenCalledWith(
-        `Replace "${label}" in Google Drive with the current tree?`,
-      );
-      expect(saveDriveTree).not.toHaveBeenCalled();
-      expect(authorizeDrive).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
       await screen.findByText(`Saved to Google Drive as ${label}.`);
       expect(saveDriveTree).toHaveBeenCalledWith(original, backup.id, expect.any(Function));
-      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(confirm).not.toHaveBeenCalled();
     },
   );
   it('associates a pending save with its captured tree after switching during authorization and transfer', async () => {
@@ -966,6 +1256,7 @@ describe('Drive portrait feedback and associations', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Open Other family' }));
     await screen.findByRole('button', { name: 'Select Morgan' });
+    await waitFor(() => expect(authorizeDrive).toHaveBeenCalled());
     await act(async () => authorize());
     await screen.findByText('Uploading photos: 1 of 2');
     expect(saveDriveTree).toHaveBeenCalledWith(original, 'original-drive', expect.any(Function));
@@ -975,6 +1266,7 @@ describe('Drive portrait feedback and associations', () => {
         id: 'original-drive',
         name: 'Original.json',
         modifiedTime: '',
+        revision: 'saved-revision',
         cleanupWarnings: ['Photo cleanup could not be completed.'],
       }),
     );
@@ -982,11 +1274,11 @@ describe('Drive portrait feedback and associations', () => {
     expect(saveDriveLink).toHaveBeenCalledWith(
       expect.objectContaining({ treeId: original.id, id: 'original-drive' }),
     );
-    expect(screen.getByText('Drive not saved')).toBeTruthy();
+    expect(screen.getByText('Drive not linked')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Select Morgan' })).toBeTruthy();
   });
 
-  it('persists incomplete restore warnings through reload, blocks overwrite, and confirms an independent copy', async () => {
+  it('persists incomplete restore warnings through reload and directs recovery to Workspace duplication', async () => {
     driveState.configured = true;
     const file = {
       id: 'source-drive',
@@ -1021,26 +1313,9 @@ describe('Drive portrait feedback and associations', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
     await screen.findByText(/This local copy has missing portraits/);
     expect(saveDriveTree).toHaveBeenCalledTimes(before);
-    const confirm = vi
-      .spyOn(window, 'confirm')
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining('Missing portraits will be omitted'),
-    );
-    expect(saveDriveTree).toHaveBeenCalledTimes(before);
-    vi.mocked(saveDriveTree).mockResolvedValueOnce({
-      ...file,
-      id: 'independent-drive',
-      cleanupWarnings: [],
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save a copy to Google Drive' }));
-    await screen.findByText('Saved to Google Drive as Saved family.');
-    expect(vi.mocked(saveDriveTree).mock.calls.at(-1)?.[1]).toBeUndefined();
-    expect(links.get(copyId)?.id).toBe('independent-drive');
-    expect(links.get(copyId)?.restoreWarnings).toEqual([]);
-    expect(screen.queryByText(/Incomplete Drive copy:/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Save a copy/ })).toBeNull();
+    expect(screen.getByText(/Duplicate it in Workspace/)).toBeTruthy();
+    expect(links.get(copyId)?.id).toBe(file.id);
   });
 
   it('does not persist an unprotected local copy when its incomplete association cannot be stored', async () => {
@@ -1283,6 +1558,7 @@ describe('combined Drive Workspace integration', () => {
     vi.mocked(saveDriveTree).mockResolvedValueOnce({
       ...file,
       description: 'Readable backup',
+      revision: 'saved-revision',
       cleanupWarnings: [],
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
@@ -1381,18 +1657,19 @@ describe('Workspace deletion integration', () => {
     const before = vi.mocked(deleteDriveBackup).mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(deleteDriveBackup).toHaveBeenCalledTimes(before);
+    expect(deleteDriveBackup).toHaveBeenCalledTimes(before + 1);
+    expect(vi.mocked(deleteDriveBackup).mock.calls.at(-1)?.[0].documentDeleted).toBe(true);
     expect(records.has(original.id)).toBe(false);
   });
   it('holds local data until Drive finishes and prevents duplicate pending submissions', async () => {
     linkedCopies();
     let finish!: () => void;
     vi.mocked(deleteDriveBackup).mockImplementationOnce(
-      (progress) =>
+      (progress, afterDelete) =>
         new Promise((resolve) => {
           finish = () => {
             progress.documentDeleted = true;
-            resolve();
+            void afterDelete?.().then(resolve);
           };
         }),
     );
