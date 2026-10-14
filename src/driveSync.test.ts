@@ -347,6 +347,9 @@ describe('durable automatic Drive queue', () => {
     await h.edit();
     await tick(3000);
     await h.coordinator.flush();
+    const retryAt = h.store.links.get(h.tree.id)?.sync?.retryAt;
+    await h.coordinator.retry(h.tree.id);
+    expect(h.store.links.get(h.tree.id)?.sync?.retryAt).toBe(retryAt);
     await tick(119999);
     expect(h.save).toHaveBeenCalledOnce();
     await tick(1);
@@ -728,6 +731,29 @@ describe('sync recovery boundaries', () => {
     expect(h.coordinator.snapshot()[h.tree.id].status).toBe('retrying');
     await tick(11000);
     expect(h.save).toHaveBeenCalledTimes(2);
+  });
+  it('schedules an explicit Retry after token-service failures exhaust automatic attempts', async () => {
+    const h = harness();
+    const succeed = h.save.getMockImplementation()!;
+    h.save.mockImplementation(async () => {
+      h.authError();
+      throw new DriveRequestError(503, 'Token service unavailable');
+    });
+    await h.coordinator.refresh();
+    await h.edit();
+    await tick(3000);
+    for (let i = 0; i < 6; i++) await tick(65000);
+    expect(h.save).toHaveBeenCalledTimes(7);
+    expect(h.coordinator.snapshot()[h.tree.id].status).toBe('needs attention');
+    expect(h.store.links.get(h.tree.id)?.sync?.retryAt).toBeUndefined();
+    await tick(200000);
+    expect(h.save).toHaveBeenCalledTimes(7);
+    h.save.mockImplementation(succeed);
+    await h.coordinator.retry(h.tree.id);
+    await tick(0);
+    expect(h.save).toHaveBeenCalledTimes(8);
+    expect(h.coordinator.snapshot()[h.tree.id].status).toBe('synced');
+    expect(h.coordinator.hasPending()).toBe(false);
   });
   it('backs off when the network fails while refreshing a detected conflict', async () => {
     const h = harness();

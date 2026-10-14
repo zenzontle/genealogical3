@@ -508,7 +508,17 @@ export class DriveSyncCoordinator {
       if (recovery && link.sync?.attention && !link.sync.retryable) continue;
       await this.d.updateLinkedTree(link.treeId, (_tree, fresh) =>
         fresh?.id === link.id
-          ? { link: { ...fresh, sync: { ...fresh.sync, retries: 0, attention: undefined } } }
+          ? {
+              link: {
+                ...fresh,
+                sync: {
+                  ...fresh.sync,
+                  retries: 0,
+                  attention: undefined,
+                  retryAt: Math.max(fresh.sync?.retryAt || 0, this.d.now()),
+                },
+              },
+            }
           : {},
       );
     }

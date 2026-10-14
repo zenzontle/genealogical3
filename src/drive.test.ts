@@ -191,6 +191,54 @@ it('still cancels Drive operations when the session changes while waiting for an
 });
 
 describe('permanent Drive deletion', () => {
+  it.each(['operation queue', 'another tab'] as const)(
+    'finishes browser cleanup after a session change while waiting for %s',
+    async (waitingFor) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([]));
+      const progress = createDriveDeletion(file.id);
+      const cleanup = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(Error('Browser cleanup failed'))
+        .mockResolvedValue(undefined);
+      await expect(deleteDriveBackup(progress, cleanup)).rejects.toThrow(/Browser cleanup failed/);
+      expect(progress.documentDeleted).toBe(true);
+      expect(remote.files.has(file.id)).toBe(false);
+      remote.calls.length = 0;
+      const tokens = vi.mocked(driveAccessToken).mock.calls.length;
+      const gate = deferred(),
+        reached = deferred();
+      let held: Promise<void> | undefined;
+      if (waitingFor === 'operation queue') {
+        held = queueDriveOperation(session.generation, async () => {
+          reached.resolve();
+          await gate.promise;
+        });
+        await reached.promise;
+      } else {
+        vi.stubGlobal('navigator', {
+          locks: {
+            request: vi.fn(async (name: string, run: () => Promise<void>) => {
+              expect(name).toBe('genealogical3-drive-save');
+              reached.resolve();
+              await gate.promise;
+              return run();
+            }),
+          },
+        });
+      }
+      const pending = deleteDriveBackup(progress, cleanup);
+      const completed = expect(pending).resolves.toBeUndefined();
+      if (waitingFor === 'another tab') await reached.promise;
+      expect(cleanup).toHaveBeenCalledOnce();
+      ++session.generation;
+      gate.resolve();
+      await Promise.all([held, completed]);
+      expect(cleanup).toHaveBeenCalledTimes(2);
+      expect(remote.calls).toHaveLength(0);
+      expect(driveAccessToken).toHaveBeenCalledTimes(tokens);
+    },
+  );
   it.each([false, true])(
     'retains the folder and invisible unrelated contents, including Trash: %s',
     async (trashed) => {

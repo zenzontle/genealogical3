@@ -813,7 +813,7 @@ export function deleteDriveBackup(
   afterDelete?: () => Promise<void>,
 ): Promise<void> {
   if (progress.documentDeleted)
-    return afterDelete ? queueDriveOperation(getDriveGeneration(), afterDelete) : Promise.resolve();
+    return afterDelete ? queueDriveOperation(undefined, afterDelete) : Promise.resolve();
   const pending = deletions.get(progress);
   if (pending) return pending;
   const operation = queueDriveOperation(progress.generation, async () => {
