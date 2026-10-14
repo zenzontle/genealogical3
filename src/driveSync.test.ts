@@ -163,6 +163,20 @@ afterEach(() => {
 });
 
 describe('durable automatic Drive queue', () => {
+  it.each([false, true])(
+    'clears discarded editor markers while retaining durable pending changes: %s',
+    async (pending) => {
+      const h = harness();
+      await h.coordinator.refresh();
+      if (pending) await h.edit();
+      h.coordinator.noteEdit(h.tree.id, Date.now() + 100);
+      expect(h.coordinator.hasPending()).toBe(true);
+      await h.coordinator.discardEdits(h.tree.id);
+      expect(h.coordinator.hasPending()).toBe(pending);
+      expect(h.store.links.get(h.tree.id)?.sync?.pending).toBe(pending);
+      expect(h.save).not.toHaveBeenCalled();
+    },
+  );
   it('debounces the latest data edit and coalesces snapshots', async () => {
     const h = harness();
     await h.coordinator.refresh();

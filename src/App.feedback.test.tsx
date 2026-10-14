@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { driveSync } from './driveSync';
 import { makePerson, makeTree, validateTree, type Tree } from './model';
 import {
   removeWorkspaceStorage,
@@ -61,6 +62,7 @@ vi.mock('./driveSync', () => ({
     snapshot: () => syncState.views,
     start: () => () => {},
     noteEdit: vi.fn(),
+    discardEdits: vi.fn(async () => {}),
     hasPending: () => false,
     flush: vi.fn(async () => {}),
     retry: vi.fn(async () => {}),
@@ -94,7 +96,9 @@ vi.mock('./driveSync', () => ({
     }),
   },
 }));
-vi.mock('./storage', () => ({
+vi.mock('./storage', async (original) => ({
+  storedTreeData: (await original<typeof import('./storage')>()).storedTreeData,
+  TreeChangedError: (await original<typeof import('./storage')>()).TreeChangedError,
   listTrees: vi.fn(),
   listDriveLinks: vi.fn(),
   getTree: vi.fn(),
@@ -245,7 +249,9 @@ beforeEach(() => {
   };
   records = new Map([[original.id, original]]);
   vi.mocked(listTrees).mockImplementation(async () => [...records.values()]);
-  vi.mocked(getTree).mockImplementation(async (id) => records.get(id));
+  vi.mocked(getTree)
+    .mockReset()
+    .mockImplementation(async (id) => records.get(id));
   vi.mocked(saveTree).mockImplementation(async (tree) => {
     records.set(tree.id, tree);
     return tree.id;
@@ -283,6 +289,155 @@ const editorSnapshot = async () => {
   expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
   return vi.mocked(exportJson).mock.calls.at(-1)![0];
 };
+
+describe('cross-tab editor replacements', () => {
+  const driveVersion = (timestamp = original.dataUpdatedAt + 1): Tree => {
+    const person = makePerson('Remote person');
+    return {
+      ...original,
+      name: 'Drive family',
+      people: [person],
+      relations: [],
+      homePersonId: person.id,
+      dataUpdatedAt: timestamp,
+    };
+  };
+  it.each(['new timestamp', 'same timestamp'] as const)(
+    'blocks persistence during a cross-tab replacement with %s and reopens the stored version',
+    async (timestamp) => {
+      render(<App />);
+      await openOriginal();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      act(() => canvasEvents.onMoveEnd(null, { x: 10, y: 20, zoom: 1.5 }));
+      const replacement = driveVersion(
+        timestamp === 'same timestamp' ? original.dataUpdatedAt : undefined,
+      );
+      records.set(original.id, replacement);
+      let finishRead!: (tree: Tree) => void;
+      vi.mocked(getTree).mockReturnValueOnce(
+        new Promise<Tree>((resolve) => {
+          finishRead = resolve;
+        }),
+      );
+      act(() => window.dispatchEvent(new Event('tree-storage-refreshed')));
+      act(() => window.dispatchEvent(new Event('pagehide')));
+      await act(() => vi.advanceTimersByTimeAsync(450));
+      expect(saveTree).not.toHaveBeenCalled();
+      await act(async () => finishRead(replacement));
+      expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+      expect(records.get(original.id)).toEqual(replacement);
+      expect(driveSync.discardEdits).toHaveBeenCalledWith(original.id);
+      vi.useRealTimers();
+      fireEvent.click(await screen.findByRole('button', { name: 'Open Drive family' }));
+      await screen.findByRole('button', { name: 'Select Remote person' });
+      expect(await editorSnapshot()).toEqual(replacement);
+      expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+      act(() => canvasEvents.onMoveEnd(null, { x: 40, y: 50, zoom: 1.2 }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+      await screen.findByRole('heading', { name: 'Your family trees' });
+      expect(records.get(original.id)).toEqual({
+        ...replacement,
+        updatedAt: expect.any(Number),
+        viewport: { x: 40, y: 50, zoom: 1.2 },
+      });
+    },
+  );
+  it('cancels an older data snapshot queued behind a completed local write', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    let finishSave!: () => void;
+    vi.mocked(saveTree).mockImplementationOnce(async (value) => {
+      records.set(value.id, value);
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      return value.id;
+    });
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'First edit' } });
+    await waitFor(() => expect(saveTree).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Queued edit' } });
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => finishSave());
+    expect(saveTree).toHaveBeenCalledOnce();
+    expect(records.get(original.id)).toEqual(replacement);
+    expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+  });
+  it('preserves editor state and pending navigation for unrelated storage changes', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Local edit' } });
+    await waitFor(() => expect(records.get(original.id)?.people[0].nickname).toBe('Local edit'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    act(() => canvasEvents.onMoveEnd(null, { x: 12, y: 34, zoom: 1.1 }));
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    expect(screen.queryByRole('heading', { name: 'Your family trees' })).toBeNull();
+    expect(screen.getByLabelText('Nickname')).toHaveProperty('value', 'Local edit');
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', false);
+    await act(() => vi.advanceTimersByTimeAsync(450));
+    expect(records.get(original.id)?.viewport).toEqual({ x: 12, y: 34, zoom: 1.1 });
+    expect(records.get(original.id)?.people[0].nickname).toBe('Local edit');
+    expect(driveSync.discardEdits).not.toHaveBeenCalled();
+  });
+  it('keeps the first save of a new draft independent of unrelated cross-tab changes', async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New tree' }));
+    await screen.findByRole('button', { name: 'Add person' });
+    let finishSave!: () => void;
+    vi.mocked(saveTree).mockImplementationOnce(async (value) => {
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+      records.set(value.id, value);
+      return value.id;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    await waitFor(() => expect(saveTree).toHaveBeenCalledOnce());
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    expect(screen.getByRole('button', { name: 'Add person' })).toBeTruthy();
+    await act(async () => finishSave());
+    expect(driveSync.discardEdits).not.toHaveBeenCalled();
+    expect(
+      [...records.values()].find((value) => value.name === 'My family tree')?.people,
+    ).toHaveLength(1);
+  });
+  it('keeps navigation to Workspace safe while a cross-tab read is pending', async () => {
+    const other = { ...original, id: 'other', name: 'Other family' };
+    records.set(other.id, other);
+    render(<App />);
+    await openOriginal();
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    let finishRead!: (tree: Tree) => void;
+    vi.mocked(getTree).mockReturnValueOnce(
+      new Promise<Tree>((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    act(() => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await act(async () => finishRead(replacement));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Other family' }));
+    await screen.findByRole('button', { name: 'Select Alex' });
+    expect((await editorSnapshot()).id).toBe(other.id);
+    expect(records.get(original.id)).toEqual(replacement);
+  });
+  it('prevents stale persistence if reading the cross-tab update fails', async () => {
+    render(<App />);
+    await openOriginal();
+    const replacement = driveVersion();
+    records.set(original.id, replacement);
+    vi.mocked(getTree).mockRejectedValueOnce(Error('Storage unavailable'));
+    await act(async () => window.dispatchEvent(new Event('tree-storage-refreshed')));
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(saveTree).not.toHaveBeenCalled();
+    expect(records.get(original.id)).toEqual(replacement);
+    expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+  });
+});
 
 describe('local feedback integration', () => {
   it('rejects exhausted edits and person creation while preserving navigation, history and valid backups', async () => {

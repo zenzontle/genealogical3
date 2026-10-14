@@ -239,6 +239,27 @@ describe('permanent Drive deletion', () => {
       expect(driveAccessToken).toHaveBeenCalledTimes(tokens);
     },
   );
+  it('reports only remaining browser cleanup after the document and portraits are deleted', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const progress = createDriveDeletion(file.id);
+    let failure: unknown;
+    try {
+      await deleteDriveBackup(progress, async () => {
+        throw Error('Browser cleanup failed');
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(progress.documentDeleted).toBe(true);
+    expect(remote.files.has(file.id)).toBe(false);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain('permanently deleted');
+    expect((failure as Error).message).toContain('Retry to finish browser cleanup');
+    expect((failure as Error).message).not.toMatch(
+      /has not been confirmed deleted|No files have been confirmed deleted/,
+    );
+  });
   it.each([false, true])(
     'retains the folder and invisible unrelated contents, including Trash: %s',
     async (trashed) => {
@@ -948,11 +969,15 @@ describe('separate-photo Drive backups', () => {
           return { width: 128, height: 256, close: vi.fn() } as unknown as ImageBitmap;
         });
       else
-        vi.mocked(createImageBitmap).mockResolvedValueOnce({
-          width: 513,
-          height: 200,
-          close: vi.fn(),
-        } as unknown as ImageBitmap);
+        // Parallel downloads may decode in either order; target the JPEG used by the first two people.
+        vi.mocked(createImageBitmap).mockImplementation(
+          async (source) =>
+            ({
+              width: new Uint8Array(await (source as Blob).arrayBuffer())[2] === 1 ? 513 : 128,
+              height: 200,
+              close: vi.fn(),
+            }) as unknown as ImageBitmap,
+        );
       const result = await openDriveTree(file.id);
       expect(result.restoreWarnings.map((w) => w.personId)).toEqual(
         tree.people.slice(0, 2).map((p) => p.id),

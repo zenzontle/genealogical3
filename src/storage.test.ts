@@ -138,6 +138,52 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe('home designation in browser storage', () => {
+  it.each(['new timestamp', 'same timestamp', 'removed'] as const)(
+    'rejects a stale editor save atomically after a replacement with %s',
+    async (change) => {
+      const baseline = makeTree('Local');
+      const storage = browserStorage([baseline]);
+      const replacement = {
+        ...baseline,
+        name: 'Selected Drive version',
+        dataUpdatedAt:
+          change === 'same timestamp' ? baseline.dataUpdatedAt : baseline.dataUpdatedAt + 1,
+      };
+      const link = {
+        treeId: baseline.id,
+        id: 'backup',
+        name: '',
+        modifiedTime: '',
+        sync: {
+          acknowledgedDataUpdatedAt: replacement.dataUpdatedAt,
+          revision: 'selected',
+          pending: false,
+        },
+      };
+      await saveDriveLink(link);
+      // The replacement occurs after the editor captured the old version, before its transaction.
+      if (change === 'removed') storage.records.delete(baseline.id);
+      else storage.records.set(baseline.id, replacement);
+      await expect(
+        saveTree({ ...baseline, viewport: { x: 40, y: 20, zoom: 2 } }, baseline),
+      ).rejects.toThrow(/changed in another tab/);
+      expect(await getTree(baseline.id)).toEqual(change === 'removed' ? undefined : replacement);
+      expect(await getDriveLink(baseline.id)).toEqual(link);
+    },
+  );
+  it('accepts guarded editor saves when only stored navigation and local-save times changed', async () => {
+    const baseline = makeTree('Local');
+    browserStorage([
+      { ...baseline, updatedAt: baseline.updatedAt + 1, viewport: { x: 5, y: 6, zoom: 2 } },
+    ]);
+    const edited = {
+      ...baseline,
+      name: 'Next local edit',
+      dataUpdatedAt: baseline.dataUpdatedAt + 1,
+    };
+    await saveTree(edited, baseline);
+    expect(await getTree(baseline.id)).toEqual(edited);
+  });
   it('keeps the debounce clock at wall time when data timestamps run ahead', async () => {
     const tree = { ...makeTree('Linked'), dataUpdatedAt: 500 };
     browserStorage([tree]);

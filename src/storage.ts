@@ -35,6 +35,22 @@ export type DriveLink = {
   cleanupWarnings?: string[];
   sync?: DriveSync;
 };
+// Navigation and local-save timestamps do not identify a different data version.
+export const storedTreeData = (tree: Tree) => {
+  const normalized = normalizePersonNames(normalizeHomePerson(tree));
+  return JSON.stringify([
+    normalized.dataUpdatedAt,
+    normalized.name,
+    normalized.homePersonId,
+    normalized.people,
+    normalized.relations,
+  ]);
+};
+export class TreeChangedError extends Error {
+  constructor() {
+    super('This tree changed in another tab. Reopen it from Workspace before saving.');
+  }
+}
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB, 3);
@@ -82,10 +98,12 @@ export const getTree = (id: string) =>
   transaction<Tree | undefined>(STORE, 'readonly', (store) => store.get(id)).then((tree) =>
     tree ? normalizePersonNames(normalizeHomePerson(tree)) : undefined,
   );
-export const saveTree = (tree: Tree) => {
+export const saveTree = (tree: Tree, expected?: Tree) => {
   assertValidLifeDates(tree);
   const normalized = normalizeHomePerson(tree);
   return updateLinkedTree(tree.id, (previous, link) => {
+    if (expected && (!previous || storedTreeData(previous) !== storedTreeData(expected)))
+      throw new TreeChangedError();
     if (link && previous?.dataUpdatedAt !== normalized.dataUpdatedAt) {
       link.sync = {
         ...link.sync,

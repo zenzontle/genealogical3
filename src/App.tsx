@@ -78,6 +78,8 @@ import {
   listDriveLinks,
   type DriveLink,
   saveTree,
+  storedTreeData,
+  TreeChangedError,
   updateLinkedTree,
 } from './storage';
 import {
@@ -156,6 +158,9 @@ export default function App() {
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     saveCounter = useRef(0),
     saveQueue = useRef<Promise<unknown>>(Promise.resolve()),
+    storageRefresh = useRef<Promise<void>>(Promise.resolve()),
+    persistedTrees = useRef(new Map<string, Tree>()),
+    saveEpochs = useRef(new Map<string, number>()),
     fileInput = useRef<HTMLInputElement>(null),
     flowRef = useRef<ReactFlowInstance<PersonNode> | null>(null),
     canvasRef = useRef<HTMLDivElement>(null),
@@ -238,22 +243,75 @@ export default function App() {
     }
   }, [showError]);
   useEffect(() => {
+    const refreshFromAnotherTab = () => {
+      void refreshLibrary();
+      const active = treeRef.current;
+      if (!active || draftTree.current || !persistedTrees.current.has(active.id)) return;
+      const request = navigation.current;
+      const epoch = saveEpochs.current.get(active.id) || 0;
+      const invalidate = (message: string) => {
+        if ((saveEpochs.current.get(active.id) || 0) !== epoch) return;
+        saveEpochs.current.set(active.id, epoch + 1);
+        if (treeRef.current?.id !== active.id) return;
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+        ++saveCounter.current;
+        if (request === navigation.current) ++navigation.current;
+        treeRef.current = null;
+        void driveSync.discardEdits(active.id).catch(showError);
+        history.current = [];
+        future.current = [];
+        setTree(null);
+        setTreeAction(null);
+        setConflictTreeId(null);
+        setPendingCenter(null);
+        setSelectedId(null);
+        setSelectedRelationId(null);
+        setScreen('home');
+        setNotice(message);
+      };
+      // Hold saves until the stored version is checked, then reject stale queued snapshots.
+      storageRefresh.current = storageRefresh.current.then(async () => {
+        try {
+          const latest = await getTree(active.id);
+          const baseline = persistedTrees.current.get(active.id) || active;
+          if (latest && storedTreeData(latest) === storedTreeData(baseline)) return;
+          invalidate(
+            'This tree changed in another tab. Reopen it from Workspace to load the current version.',
+          );
+        } catch (error) {
+          invalidate(
+            'Could not check this tree for changes from another tab. Reopen it from Workspace before editing.',
+          );
+          showError(error);
+        }
+      });
+    };
     refreshLibrary();
     window.addEventListener('tree-storage-changed', refreshLibrary);
-    window.addEventListener('tree-storage-refreshed', refreshLibrary);
+    window.addEventListener('tree-storage-refreshed', refreshFromAnotherTab);
     return () => {
       window.removeEventListener('tree-storage-changed', refreshLibrary);
-      window.removeEventListener('tree-storage-refreshed', refreshLibrary);
+      window.removeEventListener('tree-storage-refreshed', refreshFromAnotherTab);
     };
-  }, [refreshLibrary]);
+  }, [refreshLibrary, showError]);
   const queueSave = useCallback((value: Tree) => {
+    const epoch = saveEpochs.current.get(value.id) || 0;
     const queued = saveQueue.current
       .catch(() => undefined)
-      .then(() =>
-        removingLocal.current.has(value.id) || removedLocal.current.has(value.id)
-          ? undefined
-          : saveTree(value),
-      );
+      .then(async () => {
+        let checked: Promise<void>;
+        do {
+          checked = storageRefresh.current;
+          await checked;
+        } while (checked !== storageRefresh.current);
+        if ((saveEpochs.current.get(value.id) || 0) !== epoch) throw new TreeChangedError();
+        if (removingLocal.current.has(value.id) || removedLocal.current.has(value.id)) return;
+        const saved = await saveTree(value, persistedTrees.current.get(value.id));
+        if ((saveEpochs.current.get(value.id) || 0) === epoch)
+          persistedTrees.current.set(value.id, value);
+        return saved;
+      });
     saveQueue.current = queued;
     return queued;
   }, []);
@@ -332,11 +390,14 @@ export default function App() {
         saveTimer.current = null;
         await queueSave(treeRef.current);
       }
-      await saveQueue.current;
+      await saveQueue.current.catch((error: unknown) => {
+        if (!(error instanceof TreeChangedError)) throw error;
+      });
       const found = draft || (await getTree(id));
       if (!found) throw Error('This tree was not found.');
       const link = draft ? undefined : await getDriveLink(id);
       if (request !== navigation.current) return false;
+      if (!draft) persistedTrees.current.set(found.id, found);
       history.current = [];
       future.current = [];
       treeRef.current = found;

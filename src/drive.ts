@@ -823,6 +823,11 @@ export function deleteDriveBackup(
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Drive deletion failed.';
       const completed = progress.deletedPortraitIds.length;
+      if (progress.documentDeleted)
+        throw Error(
+          `${message} The Drive backup was permanently deleted. Retry to finish browser cleanup.`,
+          { cause: error },
+        );
       throw Error(
         `${message} ${completed ? `${completed} portrait file${completed === 1 ? '' : 's'} permanently deleted. The tree document has not been confirmed deleted.` : 'No files have been confirmed deleted.'} Retry to finish cleanup.`,
         { cause: error },

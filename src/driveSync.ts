@@ -103,6 +103,10 @@ export class DriveSyncCoordinator {
   }
   hasPending = () =>
     Object.entries(this.views).some(([id, view]) => view.pending || this.edits.has(id));
+  async discardEdits(id: string) {
+    this.edits.delete(id);
+    await this.refresh();
+  }
   async refresh(bypassDebounce = false) {
     const request = ++this.refreshId;
     const [trees, links] = await Promise.all([this.d.listTrees(), this.d.listDriveLinks()]);
