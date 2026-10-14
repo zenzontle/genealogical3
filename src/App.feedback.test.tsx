@@ -20,6 +20,7 @@ import {
 } from './storage';
 import { exportJson, exportPng, portraitData } from './media';
 import type { PersonNode } from './PersonCard';
+import { afterPaint } from './feedback';
 import { mockDialogs } from './dialogTestSetup';
 import {
   authorizeDrive,
@@ -148,7 +149,7 @@ vi.mock('./drive', () => ({
 vi.mock('./media', () => ({ exportJson: vi.fn(), exportPng: vi.fn(), portraitData: vi.fn() }));
 vi.mock('./feedback', async (original) => ({
   ...(await original<typeof import('./feedback')>()),
-  afterPaint: () => Promise.resolve(),
+  afterPaint: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('./useConnectorProximity', () => ({ useConnectorProximity: vi.fn() }));
 vi.mock('@xyflow/react', async (original) => ({
@@ -188,11 +189,14 @@ vi.mock('@xyflow/react', async (original) => ({
   },
 }));
 
+const defaultManualSave = vi.mocked(driveSync.manualSave).getMockImplementation()!;
 let original: Tree;
 let records: Map<string, Tree>;
 let links: Map<string, DriveLink>;
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(driveSync.manualSave).mockReset().mockImplementation(defaultManualSave);
+  vi.mocked(afterPaint).mockReset().mockResolvedValue(undefined);
   driveState.configured = false;
   driveState.connection = 'restoring';
   driveState.generation = 0;
@@ -291,6 +295,159 @@ const editorSnapshot = async () => {
   expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
   return vi.mocked(exportJson).mock.calls.at(-1)![0];
 };
+
+describe('operation toast integration', () => {
+  it.each(['JSON', 'PNG'] as const)(
+    'shows %s progress, failure, retry and timed success in the toast stack',
+    async (format) => {
+      render(<App />);
+      await openOriginal();
+      let finishPaint!: () => void;
+      vi.mocked(afterPaint).mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishPaint = resolve;
+        }),
+      );
+      if (format === 'JSON') {
+        vi.mocked(exportJson).mockImplementationOnce(() => {
+          throw Error('Export failed.');
+        });
+      } else {
+        vi.mocked(exportPng)
+          .mockRejectedValueOnce(Error('Export failed.'))
+          .mockResolvedValue(undefined);
+      }
+      fireEvent.click(screen.getByRole('button', { name: `Export ${format}` }));
+      const pending = screen.getByText(`Preparing ${format}…`);
+      expect(pending.closest('.toast-stack')).toBeTruthy();
+      expect(pending.closest('.toast')?.querySelector('button')).toBeNull();
+      for (const name of ['Export JSON', 'Export PNG', 'Download a backup']) {
+        expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true);
+      }
+      await act(async () => finishPaint());
+      const error = await screen.findByText('Export failed.');
+      expect(error.closest('.toast-stack')).toBeTruthy();
+      expect(error.closest('[role="alert"]')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+      fireEvent.change(screen.getByLabelText('Nickname'), {
+        target: { value: 'Edited after failure' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      const success = await screen.findByText(`${format} download started.`);
+      expect(success.closest('.toast-stack')).toBeTruthy();
+      expect(success.closest('[role="status"]')).toBeTruthy();
+      const exporter = format === 'JSON' ? exportJson : exportPng;
+      expect(vi.mocked(exporter).mock.calls.at(-1)![0].people[0].nickname).toBe(
+        'Edited after failure',
+      );
+      vi.useFakeTimers();
+      // The toast timer was created before fake timers; use a new export to exercise the full duration.
+      await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: `Export ${format}` })),
+      );
+      await act(() => vi.advanceTimersByTimeAsync(4999));
+      expect(screen.getByText(`${format} download started.`)).toBeTruthy();
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(screen.queryByText(`${format} download started.`)).toBeNull();
+    },
+  );
+
+  it.each([true, false])(
+    'keeps import progress and recovery in the toast area (empty library: %s)',
+    async (empty) => {
+      if (empty) records.clear();
+      render(<App />);
+      await screen.findByRole(empty ? 'heading' : 'button', {
+        name: empty ? /Every family/ : 'Open Family',
+      });
+      const text = JSON.stringify(makeTree('Imported example'));
+      let finishRead!: (text: string) => void;
+      let finishSave!: () => void;
+      let finishRefresh!: (trees: Tree[]) => void;
+      const file = Object.assign(new File([text], 'tree.json', { type: 'application/json' }), {
+        text: vi
+          .fn()
+          .mockReturnValueOnce(
+            new Promise<string>((resolve) => {
+              finishRead = resolve;
+            }),
+          )
+          .mockResolvedValue(text),
+      });
+      fireEvent.change(screen.getByLabelText('Import JSON file'), { target: { files: [file] } });
+      const reading = await screen.findByText('Reading file…');
+      expect(reading.closest('.toast-stack')).toBeTruthy();
+      expect(reading.closest('.toast')?.querySelector('button')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: empty ? 'Import a tree' : 'Import' }),
+      ).toHaveProperty('disabled', true);
+      vi.mocked(saveTree).mockRejectedValueOnce(Error('Browser storage full.'));
+      await act(async () => finishRead(text));
+      const error = await screen.findByText('Browser storage full.');
+      expect(error.closest('.toast-stack')).toBeTruthy();
+      const importedId = vi.mocked(saveTree).mock.calls.at(-1)![0].id;
+      vi.mocked(saveTree).mockImplementationOnce(
+        (tree) =>
+          new Promise<string>((resolve) => {
+            finishSave = () => {
+              records.set(tree.id, tree);
+              resolve(tree.id);
+            };
+          }),
+      );
+      vi.mocked(listTrees).mockReturnValueOnce(
+        new Promise<Tree[]>((resolve) => {
+          finishRefresh = resolve;
+        }),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      expect((await screen.findByText('Saving tree…')).closest('.toast-stack')).toBeTruthy();
+      expect(vi.mocked(saveTree).mock.calls.at(-1)![0].id).toBe(importedId);
+      expect(file.text).toHaveBeenCalledOnce();
+      await act(async () => finishSave());
+      expect((await screen.findByText('Refreshing library…')).closest('.toast-stack')).toBeTruthy();
+      await act(async () => finishRefresh([...records.values()]));
+      const success = await screen.findByText('Imported Imported example (imported).');
+      expect(success.closest('.toast-stack')).toBeTruthy();
+      vi.useFakeTimers();
+      await act(() => vi.advanceTimersByTimeAsync(10000));
+      expect(screen.getByRole('button', { name: 'Open tree' })).toBeTruthy();
+      vi.useRealTimers();
+      expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Open tree' }));
+      await screen.findByRole('button', { name: 'Export JSON' });
+      expect(screen.queryByText('Imported Imported example (imported).')).toBeNull();
+      expect(screen.getByTitle('Rename tree').textContent).toContain('Imported example (imported)');
+    },
+  );
+
+  it('stacks a general notice with import errors and keeps choosing another file available', async () => {
+    vi.mocked(duplicateSavedTree).mockRejectedValueOnce(Error('Could not duplicate this tree.'));
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Duplicate Family' }));
+    const notice = await screen.findByText('Could not duplicate this tree.');
+    const file = Object.assign(new File(['{}'], 'invalid.json', { type: 'application/json' }), {
+      text: async () => '{}',
+    });
+    const input = screen.getByLabelText('Import JSON file');
+    fireEvent.change(input, { target: { files: [file] } });
+    await screen.findByRole('button', { name: 'Choose another file' });
+    const stack = notice.closest('.toast-stack')!;
+    expect(stack.querySelectorAll('.toast')).toHaveLength(2);
+    expect(stack.querySelectorAll('[role="alert"]')).toHaveLength(2);
+    vi.useFakeTimers();
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(stack.querySelectorAll('.toast')).toHaveLength(2);
+    const chooseFile = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByRole('button', { name: 'Choose another file' }));
+    expect(chooseFile).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss feedback' }));
+    expect(stack.querySelectorAll('.toast')).toHaveLength(1);
+    expect(screen.getByText('Could not duplicate this tree.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss message' }));
+    expect(stack.querySelectorAll('.toast')).toHaveLength(0);
+  });
+});
 
 describe('cross-tab editor replacements', () => {
   const driveVersion = (timestamp = original.dataUpdatedAt + 1): Tree => {
