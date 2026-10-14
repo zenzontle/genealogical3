@@ -45,7 +45,6 @@ export function HomeScreen({
   onRenameTree,
   onRemoveTree,
   importBusy = false,
-  importFeedback,
   driveFiles = [],
   driveLinks = [],
   driveLoading = false,
@@ -70,7 +69,6 @@ export function HomeScreen({
   onRenameTree: (tree: Tree) => void;
   onRemoveTree: (entry: WorkspaceEntry) => void;
   importBusy?: boolean;
-  importFeedback?: ReactNode;
   driveFiles?: DriveFile[];
   driveLinks?: DriveLink[];
   driveLoading?: boolean;
@@ -135,7 +133,6 @@ export function HomeScreen({
                 </div>
                 {driveControls}
                 <span>No account needed.</span>
-                {importFeedback}
               </div>
             </div>
             <div className="hero-art" aria-hidden="true">
@@ -185,7 +182,6 @@ export function HomeScreen({
               </div>
             </div>
             {driveControls}
-            {importFeedback}
             {driveLoading && (
               <div className="workspace-drive-status" role="status" aria-busy="true">
                 Loading Google Drive trees…

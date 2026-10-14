@@ -1046,29 +1046,6 @@ export default function App() {
           }
           importBusy={imports.feedback.status === 'pending'}
           driveBusy={driveBusy}
-          importFeedback={
-            <OperationFeedback
-              state={imports.feedback}
-              onDismiss={imports.dismiss}
-              action={
-                imports.feedback.status === 'success' && imports.importedId
-                  ? {
-                      label: 'Open tree',
-                      onClick: () => {
-                        void openTree(imports.importedId!);
-                        imports.dismiss();
-                      },
-                    }
-                  : imports.feedback.status === 'error'
-                    ? {
-                        label: imports.canRetry ? 'Retry' : 'Choose another file',
-                        onClick: () =>
-                          imports.canRetry ? void imports.run() : fileInput.current?.click(),
-                      }
-                    : undefined
-              }
-            />
-          }
           onRetryLibrary={() => {
             setLibraryState('loading');
             setNotice('');
@@ -1216,19 +1193,6 @@ export default function App() {
                 delete the linked local copy, and reopen the remaining Drive card to download again,
                 then choose Save to Drive on a Workspace duplicate if you want a separate backup.
               </p>
-            </div>
-          )}
-          {exports.feedback.status !== 'idle' && (
-            <div className="export-feedback">
-              <OperationFeedback
-                state={exports.feedback}
-                onDismiss={exports.dismiss}
-                action={
-                  exports.feedback.status === 'error'
-                    ? { label: 'Retry', onClick: exports.retry }
-                    : undefined
-                }
-              />
             </div>
           )}
           <div className={`editor-layout ${sidebarIsCollapsed ? 'sidebar-collapsed' : ''}`}>
@@ -1498,14 +1462,49 @@ export default function App() {
           onClose={deletion.close}
         />
       )}
-      {notice && (
-        <div className="toast" role="alert">
-          <span>{notice}</span>
-          <button aria-label="Dismiss message" onClick={() => setNotice('')}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
+      <div className="toast-stack">
+        {notice && (
+          <div className="toast" role="alert">
+            <span>{notice}</span>
+            <button aria-label="Dismiss message" onClick={() => setNotice('')}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        <OperationFeedback
+          presentation="toast"
+          autoDismissMs={5000}
+          state={exports.feedback}
+          onDismiss={exports.dismiss}
+          action={
+            exports.feedback.status === 'error'
+              ? { label: 'Retry', onClick: exports.retry }
+              : undefined
+          }
+        />
+        <OperationFeedback
+          presentation="toast"
+          state={imports.feedback}
+          onDismiss={imports.dismiss}
+          action={
+            imports.feedback.status === 'success' && imports.importedId
+              ? {
+                  label: 'Open tree',
+                  onClick: () => {
+                    void openTree(imports.importedId!);
+                    imports.dismiss();
+                  },
+                }
+              : imports.feedback.status === 'error'
+                ? {
+                    label: imports.canRetry ? 'Retry' : 'Choose another file',
+                    onClick: () =>
+                      imports.canRetry ? void imports.run() : fileInput.current?.click(),
+                  }
+                : undefined
+          }
+        />
+      </div>
       {driveBusy && !deletion.action && (
         <div className="export-feedback" role="status" aria-live="polite">
           {photoProgress
