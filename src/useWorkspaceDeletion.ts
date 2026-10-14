@@ -4,6 +4,7 @@ import {
   deleteDriveBackup,
   getDriveConnection,
   getDriveGeneration,
+  queueDriveOperation,
   type DriveDeletionProgress,
 } from './drive';
 import { removeWorkspaceStorage } from './storage';
@@ -80,21 +81,23 @@ export function useWorkspaceDeletion({
     onBusy(true);
     let releaseLocal: (() => Promise<void>) | undefined;
     try {
-      if (task.progress) {
-        if (!task.progress.documentDeleted) await deleteDriveBackup(task.progress);
-        onDriveDeleted(backupId!, task.progress.generation);
-      }
       if (treeId) releaseLocal = await beforeLocalRemoval(treeId);
-      try {
-        await removeWorkspaceStorage({ treeId, backupId });
-      } catch (error) {
-        if (task.progress?.documentDeleted)
-          throw Error(
-            'The Drive backup and its portraits were permanently deleted, but browser cleanup failed. Your local copies are still available. Retry to finish browser cleanup.',
-            { cause: error },
-          );
-        throw error;
-      }
+      const cleanup = async () => {
+        if (task.progress?.documentDeleted) onDriveDeleted(backupId!, task.progress.generation);
+        try {
+          await removeWorkspaceStorage({ treeId, backupId });
+        } catch (error) {
+          if (task.progress?.documentDeleted)
+            throw Error(
+              'The Drive backup and its portraits were permanently deleted, but browser cleanup failed. Your local copies are still available. Retry to finish browser cleanup.',
+              { cause: error },
+            );
+          throw error;
+        }
+      };
+      // Keep association removal inside the same cross-tab lock as uploads/deletion.
+      if (task.progress) await deleteDriveBackup(task.progress, cleanup);
+      else await queueDriveOperation(getDriveGeneration(), cleanup);
       onRemoved(treeId, backupId);
       retries.current.delete(key(entry));
     } finally {

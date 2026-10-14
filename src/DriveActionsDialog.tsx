@@ -11,7 +11,7 @@ export function DriveActionsDialog({
   configured: boolean;
   canDisconnect: boolean;
   busy: boolean;
-  onAction: (action: 'save' | 'copy') => void;
+  onAction: () => void;
   onDisconnect: () => void;
   onClose: () => void;
 }) {
@@ -54,32 +54,33 @@ export function DriveActionsDialog({
               Open a Google Drive card in Workspace to retrieve the document and its private photos.
               To retry missing portraits, duplicate local edits for safekeeping, delete the linked
               local copy, and reopen the remaining Drive card to download again. Download JSON from
-              the editor for a portable backup with embedded portraits. Save a copy creates
-              independent photo files. After a successful save, replaced or removed photos go to
-              Drive Trash; older Drive revisions may then have missing photos. Keep each backup's
-              photo folder with its document. Editing across devices at the same time is
-              unsupported. Drive deletion permanently removes the backup and its app-owned
-              portraits, including superseded portraits in Trash. Photo folder containers remain to
-              protect unrelated contents.
+              the editor for a portable backup with embedded portraits. Duplicate a tree in
+              Workspace to make an independent local copy; choose Save to Drive on the duplicate to
+              create a new backup. After a successful save, replaced or removed photos go to Drive
+              Trash; older Drive revisions may then have missing photos. Keep each backup's photo
+              folder with its document. Editing across devices at the same time is unsupported.
+              Drive deletion permanently removes the backup and its app-owned portraits, including
+              superseded portraits in Trash. Photo folder containers remain to protect unrelated
+              contents.
+            </p>
+            <p>
+              Linked trees sync automatically three seconds after data edits, with at least ten
+              seconds between tree-save attempts. Local saving continues independently. Offline or
+              disconnected changes stay pending and resume when you reconnect. Failed requests retry
+              with increasing delays; Retry is available when attention is needed. Conflicts pause
+              sync: review Local last edited and Drive last edited, then replace Drive with local,
+              use the fully downloaded Drive version, or leave paused. You can duplicate local edits
+              in Workspace first. There is no automatic merge.
             </p>
             <div className="drive-action-list">
               <button
                 disabled={busy}
                 onClick={() => {
                   onClose();
-                  onAction('save');
+                  onAction();
                 }}
               >
                 Save to Drive
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  onClose();
-                  onAction('copy');
-                }}
-              >
-                Save a copy
               </button>
               {canDisconnect && (
                 <button disabled={busy} onClick={onDisconnect}>

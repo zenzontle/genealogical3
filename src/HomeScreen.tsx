@@ -24,6 +24,7 @@ import type { DriveFile } from './drive';
 import type { DriveLink } from './storage';
 import type { Tree } from './model';
 import type { ReactNode } from 'react';
+import type { SyncView } from './driveSync';
 
 const heroPeople = [
   { name: 'Eleanor', dates: '1924 — 2008', sex: 'female', position: 'art-one' },
@@ -54,6 +55,9 @@ export function HomeScreen({
   driveControls,
   onRetryDrive = () => {},
   onRestoreDrive = () => {},
+  syncViews,
+  onReviewConflict,
+  onRetrySync,
 }: {
   library: Tree[];
   libraryState: 'loading' | 'ready' | 'error';
@@ -76,6 +80,9 @@ export function HomeScreen({
   driveControls?: ReactNode;
   onRetryDrive?: () => void;
   onRestoreDrive?: (file: DriveFile) => void;
+  syncViews?: Record<string, SyncView>;
+  onReviewConflict?: (id: string) => void;
+  onRetrySync?: (id: string) => void;
 }) {
   const entries = workspaceEntries(library, driveLinks, driveFiles);
   const showHero = libraryState === 'ready' && entries.length === 0 && !driveLoading && !driveError;
@@ -217,6 +224,9 @@ export function HomeScreen({
                   onDuplicateTree={onDuplicateTree}
                   onRenameTree={onRenameTree}
                   onRemoveTree={onRemoveTree}
+                  syncView={entry.kind === 'local' ? syncViews?.[entry.tree.id] : undefined}
+                  onReviewConflict={onReviewConflict}
+                  onRetrySync={onRetrySync}
                 />
               ))}
             </div>
@@ -315,14 +325,17 @@ export function HomeScreen({
                   </div>
                   <strong>Only when you choose</strong>
                   <p>
-                    Connect to see Drive trees in Workspace. Documents and photos download only when
-                    you open a Drive-only card.
+                    Connect to see Drive trees in Workspace. Linked backups sync after data edits.
+                    Opening a Drive-only card or choosing Use Drive version downloads its contents.
+                    Older links are compared with their backups before sync begins.
                   </p>
                 </div>
                 <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
                   <Cloud size={28} aria-hidden="true" />
                   <h4>Outside this browser</h4>
-                  <p>Cloud copies are optional. Trees upload only when you save to Drive.</p>
+                  <p>
+                    Cloud backups are optional. Linked trees sync automatically after data edits.
+                  </p>
                   <ul>
                     <li>
                       <Cloud size={17} aria-hidden="true" />

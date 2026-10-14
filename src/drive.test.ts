@@ -3,7 +3,9 @@ import { makePerson, makeTree, validateTree, type Tree } from './model';
 import { photoDigest, type DriveDocument } from './driveDocument';
 
 const session = vi.hoisted(() => ({ generation: 0 }));
-vi.mock('./driveAuth', () => ({
+vi.mock('./driveAuth', async (original) => ({
+  DriveAuthenticationError: (await original<typeof import('./driveAuth')>())
+    .DriveAuthenticationError,
   getDriveGeneration: () => session.generation,
   driveAccessToken: vi.fn(async () => 'token'),
   authorizeDrive: vi.fn(),
@@ -20,6 +22,9 @@ import {
   openDriveTree,
   saveDriveTree,
   type PhotoProgress,
+  DriveRequestError,
+  queueDriveOperation,
+  verifyDriveRestoreLocked,
 } from './drive';
 
 const jpeg = (value = 1) => Uint8Array.from([0xff, 0xd8, value, 0xff, 0xd9]);
@@ -404,6 +409,96 @@ describe('permanent Drive deletion', () => {
 });
 
 describe('separate-photo Drive backups', () => {
+  it('prevents a restored association from being committed after another tab deletes its backup', async () => {
+    fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const restored = await openDriveTree(file.id);
+    await deleteDriveBackup(createDriveDeletion(file.id));
+    let committed = false;
+    await expect(
+      queueDriveOperation(session.generation, async () => {
+        await verifyDriveRestoreLocked(file.id, session.generation, restored);
+        committed = true;
+      }),
+    ).rejects.toThrow(/404/);
+    expect(committed).toBe(false);
+  });
+  it('revalidates downloaded revisions and ownership before committing a local association', async () => {
+    const remote = fakeDrive(),
+      file = await saveDriveTree(family([1])),
+      restored = await openDriveTree(file.id);
+    const doc = remote.document(file.id);
+    doc.revision = 'changed-after-download';
+    remote.setDocument(file.id, doc);
+    await expect(verifyDriveRestoreLocked(file.id, session.generation, restored)).rejects.toThrow(
+      /Drive version changed/,
+    );
+    remote.files.get(file.id)!.appProperties.app = 'another-app';
+    await expect(verifyDriveRestoreLocked(file.id, session.generation, restored)).rejects.toThrow(
+      /ownership changed/,
+    );
+  });
+  it('updates by stored ID without looking for a containing library folder', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    const start = remote.calls.length;
+    await saveDriveTree({ ...tree, name: 'Updated' }, file.id, undefined, {
+      expectedRevision: file.revision,
+    });
+    expect(
+      remote.calls
+        .slice(start)
+        .some((call) => call.url.searchParams.get('q')?.includes("name = 'genealogical3'")),
+    ).toBe(false);
+  });
+  it('checks the acknowledged revision before uploading any portraits', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree),
+      doc = remote.document(file.id);
+    doc.revision = 'other-version';
+    remote.setDocument(file.id, doc);
+    const uploads = remote.photoUploads().length;
+    await expect(
+      saveDriveTree(family([2]), file.id, undefined, { expectedRevision: file.revision }),
+    ).rejects.toThrow(/Drive version changed/);
+    expect(remote.photoUploads()).toHaveLength(uploads);
+  });
+  it('rechecks revision after portrait uploads immediately before replacing the document', async () => {
+    const remote = fakeDrive(),
+      tree = family([1]);
+    const file = await saveDriveTree(tree);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'POST' && call.meta?.appProperties?.kind === 'portrait') {
+        const doc = remote.document(file.id);
+        doc.revision = 'changed-during-upload';
+        remote.setDocument(file.id, doc);
+      }
+    };
+    tree.people[0].portrait = portrait(2);
+    await expect(
+      saveDriveTree(tree, file.id, undefined, { expectedRevision: file.revision }),
+    ).rejects.toThrow(/Drive version changed/);
+    expect(remote.document(file.id).revision).toBe('changed-during-upload');
+    expect(remote.trashCalls()).toHaveLength(0);
+  });
+  it.each(['userRateLimitExceeded', 'insufficientFilePermissions'])(
+    'parses Google 403 reason %s and Retry-After',
+    async (reason) => {
+      const remote = fakeDrive();
+      remote.hooks.before = async () =>
+        new Response(JSON.stringify({ error: { errors: [{ reason }] } }), {
+          status: 403,
+          headers: { 'Retry-After': '120' },
+        });
+      const error = await saveDriveTree(family()).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(DriveRequestError);
+      expect((error as DriveRequestError).reasons).toEqual([reason]);
+      expect((error as DriveRequestError).retryAfter).toBe(120000);
+      expect((error as DriveRequestError).retryable).toBe(reason === 'userRateLimitExceeded');
+    },
+  );
   it('renames an existing document to the shared backup ID when overwriting, and gives copies their own ID', async () => {
     const remote = fakeDrive();
     const tree = family([]);
@@ -579,7 +674,7 @@ describe('separate-photo Drive backups', () => {
         expect(image.appProperties.backupId).toBe(file.id);
       }
       const result = await openDriveTree(file.id, (p) => progress.push(p));
-      expect(result).toEqual({ tree, restoreWarnings: [] });
+      expect(result).toEqual({ tree, restoreWarnings: [], revision: file.revision });
       expect(tree).toEqual(original);
       expect(progress).toContainEqual({
         direction: 'upload',
@@ -670,7 +765,7 @@ describe('separate-photo Drive backups', () => {
   });
 
   it.each(['photos', 'portrait', 'tree', 'library'])(
-    'retries a lost %s create response with the same pre-generated ID',
+    'verifies a lost %s create response without retrying the write',
     async (kind) => {
       const remote = fakeDrive();
       let lost = false;
@@ -687,8 +782,13 @@ describe('separate-photo Drive backups', () => {
       const creates = remote.calls.filter(
         (call) => call.options.method === 'POST' && call.meta?.appProperties?.kind === kind,
       );
-      expect(creates).toHaveLength(2);
-      expect(creates[0].meta?.id).toBe(creates[1].meta?.id);
+      expect(creates).toHaveLength(1);
+      expect(
+        remote.calls.some(
+          (call) =>
+            !call.options.method && call.url.pathname.endsWith(`/files/${creates[0].meta?.id}`),
+        ),
+      ).toBe(true);
       expect([...remote.files.values()].filter((f) => f.appProperties.kind === kind)).toHaveLength(
         1,
       );
@@ -722,8 +822,7 @@ describe('separate-photo Drive backups', () => {
       }
     };
     tree.people[0].portrait = null;
-    const result = await saveDriveTree(tree, file.id);
-    expect(result.cleanupWarnings[0]).toMatch(/another save/);
+    await expect(saveDriveTree(tree, file.id)).rejects.toThrow(/Drive version changed/);
     expect(remote.trashCalls()).toHaveLength(0);
   });
 
@@ -743,7 +842,7 @@ describe('separate-photo Drive backups', () => {
     // A cross-backup image in the folder is also excluded by ownership checks.
     remote.files.get(other.imageFileId)!.parents.push(doc.photoFolderId);
     tree.people[0].portrait = null;
-    await saveDriveTree(tree, first.id);
+    await expect(saveDriveTree(tree, first.id)).rejects.toThrow(/missing portraits/);
     expect(remote.trashCalls()).toHaveLength(0);
     expect(remote.files.get(other.imageFileId)!.trashed).toBeUndefined();
     expect(ownPhoto.trashed).toBeUndefined();
@@ -858,7 +957,10 @@ describe('separate-photo Drive backups', () => {
       remote.setDocument(file.id, doc);
       const start = remote.calls.length;
       await expect(openDriveTree(file.id)).rejects.toThrow(/Invalid/);
-      expect(remote.calls.slice(start)).toHaveLength(1);
+      expect(remote.calls.slice(start)).toHaveLength(2);
+      expect(
+        remote.calls.slice(start).every((call) => call.url.pathname.endsWith(`/files/${file.id}`)),
+      ).toBe(true);
     },
   );
 
@@ -992,7 +1094,17 @@ describe('Drive picker', () => {
       appProperties: { app: 'GENEalogical3', format: 'tree-v1' },
       content: new TextEncoder().encode(JSON.stringify(tree)),
     });
-    expect((await openDriveTree('legacy')).tree).toEqual(tree);
-    await expect(saveDriveTree(tree, 'legacy')).rejects.toThrow(/Save a copy/);
+    const restored = await openDriveTree('legacy');
+    expect(restored.tree).toEqual(tree);
+    await verifyDriveRestoreLocked('legacy', session.generation, restored);
+    remote.files.get('legacy')!.content = new TextEncoder().encode(
+      JSON.stringify({ ...tree, name: 'Changed legacy tree' }),
+    );
+    await expect(verifyDriveRestoreLocked('legacy', session.generation, restored)).rejects.toThrow(
+      /Drive version changed/,
+    );
+    await expect(saveDriveTree(tree, 'legacy')).rejects.toThrow(
+      /Duplicate your local tree in Workspace/,
+    );
   });
 });

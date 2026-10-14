@@ -188,8 +188,12 @@
         Google Drive access is optional. When you choose a Drive action, the app asks Google for the
         <code>https://www.googleapis.com/auth/drive.file</code> permission, limiting access to files
         created by or authorized for this app. Transfers occur directly between your browser and
-        Google. Opening a Drive tree creates a local working copy. Local edits do not automatically
-        sync to Drive; saving to an associated Drive file requires your confirmation.
+        Google. Opening a Drive tree creates a linked local working copy. Already-linked trees
+        automatically sync data edits while connected; unlinked trees become linked after a
+        successful manual Save to Drive. Offline and disconnected edits remain pending. Conflicts
+        pause sync for review, and replacing either reviewed version requires confirmation. You can
+        duplicate local edits in Workspace before resolving. Simultaneous cross-device editing and
+        automatic merging are unsupported.
       </p>
       <p>
         Workspace lets you confirm deletion of a local tree, its Drive backup, or both. Local only
@@ -203,8 +207,9 @@
         to retain before confirming deletion.
       </p>
       <p>
-        Choose Disconnect Drive to clear the current session's access token. To revoke Google's
-        permission grant, remove GENEalogical3 in your
+        Choose Disconnect Drive to forget this browser's remembered connection. Pending changes
+        remain local and resume after reconnection. To revoke Google's permission grant, remove
+        GENEalogical3 in your
         <a href="https://myaccount.google.com/connections">Google account connections</a>.
         Disconnecting or revoking access does not delete local trees, Drive files, or downloaded
         backups. Manage downloaded and shared copies where you saved or shared them.

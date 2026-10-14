@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { driveSync } from './driveSync';
+import { useDriveSync } from './useDriveSync';
+import { DriveSyncStatus } from './DriveSyncStatus';
+import { DriveConflictDialog } from './DriveConflictDialog';
 import {
   ReactFlow,
   Background,
@@ -73,8 +77,8 @@ import {
   listTrees,
   listDriveLinks,
   type DriveLink,
-  saveDriveLink,
   saveTree,
+  updateLinkedTree,
 } from './storage';
 import {
   authorizeDrive,
@@ -83,7 +87,8 @@ import {
   getDriveConnection,
   getDriveGeneration,
   openDriveTree,
-  saveDriveTree,
+  queueDriveOperation,
+  verifyDriveRestoreLocked,
   type DriveFile,
   type RestoreWarning,
   type PhotoProgress,
@@ -129,7 +134,7 @@ export default function App() {
   const [restoreWarnings, setRestoreWarnings] = useState<RestoreWarning[]>([]);
   const [photoProgress, setPhotoProgress] = useState<PhotoProgress | null>(null);
   const driveOperationBusy = useRef(false);
-  const [driveSavedAt, setDriveSavedAt] = useState('');
+  const [conflictTreeId, setConflictTreeId] = useState<string | null>(null);
   const [driveLinks, setDriveLinks] = useState<DriveLink[]>([]);
   const driveWorkspace = useDriveWorkspace(screen === 'home');
   const driveReady = driveWorkspace.ready;
@@ -190,7 +195,6 @@ export default function App() {
       if (backupId && driveFile?.id === backupId) {
         setDriveFile(null);
         setRestoreWarnings([]);
-        setDriveSavedAt('');
       }
       if (backupId) void driveWorkspace.refresh();
     },
@@ -235,6 +239,12 @@ export default function App() {
   }, [showError]);
   useEffect(() => {
     refreshLibrary();
+    window.addEventListener('tree-storage-changed', refreshLibrary);
+    window.addEventListener('tree-storage-refreshed', refreshLibrary);
+    return () => {
+      window.removeEventListener('tree-storage-changed', refreshLibrary);
+      window.removeEventListener('tree-storage-refreshed', refreshLibrary);
+    };
   }, [refreshLibrary]);
   const queueSave = useCallback((value: Tree) => {
     const queued = saveQueue.current
@@ -247,6 +257,13 @@ export default function App() {
     saveQueue.current = queued;
     return queued;
   }, []);
+  const persistOnClose = useCallback(async () => {
+    if (!treeRef.current || draftTree.current) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    await queueSave(treeRef.current);
+  }, [queueSave]);
+  const syncViews = useDriveSync(persistOnClose, showError);
   const commit = useCallback(
     (
       next: Tree,
@@ -277,6 +294,7 @@ export default function App() {
       setTree(updated);
       // Viewport updates do not turn an untouched new tree into a saved tree.
       if (change === 'data') draftTree.current = false;
+      if (change === 'data') driveSync.noteEdit(updated.id, updated.dataUpdatedAt);
       if (draftTree.current) return;
       if (!persist) {
         setSaveState('saved');
@@ -285,7 +303,7 @@ export default function App() {
       setSaveState('saving');
       if (saveTimer.current) clearTimeout(saveTimer.current);
       const count = ++saveCounter.current;
-      saveTimer.current = setTimeout(async () => {
+      const persistUpdate = async () => {
         saveTimer.current = null;
         try {
           await queueSave(updated);
@@ -299,7 +317,10 @@ export default function App() {
             showError(error);
           }
         }
-      }, 450);
+      };
+      // Persist data edits promptly; navigation must never postpone pending data.
+      if (change === 'data') void persistUpdate();
+      else saveTimer.current = setTimeout(persistUpdate, 450);
     },
     [queueSave, refreshLibrary, showError],
   );
@@ -340,7 +361,6 @@ export default function App() {
           : null,
       );
       setRestoreWarnings(link?.restoreWarnings || []);
-      setDriveSavedAt('');
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
       setNotice('');
@@ -616,7 +636,7 @@ export default function App() {
     selectPerson(id);
     setPendingCenter({ treeId: current.id, personId: id });
   };
-  const saveNow = async () => {
+  const saveNow = async (requirePersistence = false) => {
     if (!treeRef.current || draftTree.current) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
@@ -630,75 +650,46 @@ export default function App() {
     } catch (error) {
       setSaveState('error');
       showError(error);
+      if (requirePersistence) throw error;
     }
   };
-  const doDrive = async (action: 'save' | 'copy') => {
-    if (!driveReady || driveOperationBusy.current) return;
-    if (!treeRef.current) return;
-    const snapshot = treeRef.current ? cloneTree(treeRef.current) : null;
-    const target = driveFile;
-    const warnings = restoreWarnings;
-    if (action === 'save' && warnings.length) {
+  const doDrive = async () => {
+    if (!driveReady || driveOperationBusy.current || !treeRef.current) return;
+    const snapshot = cloneTree(treeRef.current);
+    const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
+    if (restoreWarnings.length) {
       setNotice(
-        'This local copy has missing portraits. Duplicate local edits for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again, or use Save a copy.',
+        'This local copy has missing portraits. Duplicate it in Workspace for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again.',
       );
       return;
     }
-    if (
-      action === 'copy' &&
-      warnings.length &&
-      !window.confirm(
-        'This copy is incomplete. Missing portraits will be omitted from the new backup. Save a copy?',
-      )
-    )
-      return;
-    if (
-      action === 'save' &&
-      target &&
-      !window.confirm(
-        `Replace "${driveTreeName(target.name, target.description)}" in Google Drive with the current tree?`,
-      )
-    )
-      return;
     driveOperationBusy.current = true;
     setDriveBusy(true);
     setPhotoProgress(null);
     try {
-      await authorizeDrive();
-      const file = await saveDriveTree(
-        snapshot!,
-        action === 'save' ? target?.id : undefined,
+      draftTree.current = false;
+      // Start authorization in the click gesture so first-time consent can open its popup.
+      await Promise.all([authorizeDrive(), saveNow(true)]);
+      const file = await driveSync.manualSave(
+        snapshot.id,
         setPhotoProgress,
+        undefined,
+        expectedBackupId,
       );
-      const savedName = driveTreeName(file.name, file.description);
-      if (treeRef.current?.id === snapshot!.id) {
-        setDriveFile(file);
-        setRestoreWarnings([]);
-        setDriveSavedAt(
-          new Date().toLocaleTimeString([], {
-            hour: 'numeric',
-            minute: '2-digit',
-          }),
-        );
-      }
-      try {
-        await saveDriveLink({
-          treeId: snapshot!.id,
-          id: file.id,
-          name: file.name,
-          description: file.description,
-          modifiedTime: file.modifiedTime,
-          restoreWarnings: [],
-        });
-        setNotice([`Saved to Google Drive as ${savedName}.`, ...file.cleanupWarnings].join(' '));
-      } catch {
+      if (file) {
+        if (treeRef.current?.id === snapshot.id) {
+          setDriveFile(file);
+          setRestoreWarnings([]);
+        }
         setNotice(
           [
-            `Saved to Google Drive as ${savedName}, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.`,
+            `Saved to Google Drive as ${driveTreeName(file.name, file.description)}.`,
             ...file.cleanupWarnings,
           ].join(' '),
         );
-      }
+      } else if (driveSync.snapshot()[snapshot.id]?.conflict) setConflictTreeId(snapshot.id);
+      else if (driveSync.snapshot()[snapshot.id]?.status === 'synced')
+        setNotice('Your Drive backup is up to date.');
       await refreshLibrary();
       void driveWorkspace.refresh();
     } catch (error) {
@@ -729,26 +720,39 @@ export default function App() {
         name: imported.name,
         updatedAt: Date.now(),
       };
-      // Persist the safety flag before exposing the local copy in the library.
-      await saveDriveLink({
-        treeId: copy.id,
-        id: file.id,
-        name: file.name,
-        description: file.description,
-        modifiedTime: file.modifiedTime,
-        restoreWarnings: result.restoreWarnings,
+      await queueDriveOperation(generation, async () => {
+        await verifyDriveRestoreLocked(file.id, generation, result);
+        // Keep tree contents, safety flags and association in one locked atomic commit.
+        await updateLinkedTree(copy.id, () => {
+          if (generation !== getDriveGeneration() || getDriveConnection() !== 'connected')
+            throw Error('Google Drive connection changed. Open the Workspace card again to retry.');
+          return {
+            tree: copy,
+            link: {
+              treeId: copy.id,
+              id: file.id,
+              name: file.name,
+              description: file.description,
+              modifiedTime: file.modifiedTime,
+              restoreWarnings: result.restoreWarnings,
+              sync: {
+                acknowledgedDataUpdatedAt: copy.dataUpdatedAt,
+                revision: result.revision,
+                pending: false,
+              },
+            },
+          };
+        });
       });
-      await saveTree(copy);
       await refreshLibrary();
       if (origin !== navigation.current) return;
       if (!(await openTree(copy.id))) return;
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
-      setDriveSavedAt('');
       setNotice(
         result.restoreWarnings.length
           ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
-          : 'Opened a local working copy. Save to Drive when ready.',
+          : 'Opened a local working copy. Future data edits sync to Drive automatically.',
       );
     } catch (error) {
       if (origin === navigation.current) showError(error);
@@ -763,7 +767,6 @@ export default function App() {
     setDriveBusy(true);
     try {
       await disconnectDrive();
-      setDriveSavedAt('');
       setDriveActionsOpen(false);
       setNotice('Forgot Google Drive access in this browser. Your local tree is still saved.');
     } catch (error) {
@@ -929,6 +932,9 @@ export default function App() {
           library={library}
           libraryState={libraryState}
           driveLinks={driveLinks}
+          syncViews={syncViews}
+          onReviewConflict={setConflictTreeId}
+          onRetrySync={(id) => void driveSync.retry(id).catch(showError)}
           driveFiles={driveWorkspace.files}
           driveLoading={driveWorkspace.loading}
           driveError={driveWorkspace.error}
@@ -1034,9 +1040,6 @@ export default function App() {
               </div>
             </div>
             <div className="editor-header-actions">
-              <span className="drive-status">
-                {driveSavedAt ? `Drive saved ${driveSavedAt}` : 'Drive not saved'}
-              </span>
               {tree && (
                 <HeaderPersonSearch key={tree.id} people={tree.people} onJump={jumpToPerson} />
               )}
@@ -1069,19 +1072,10 @@ export default function App() {
                       ? 'Google Drive options'
                       : 'Set VITE_GOOGLE_CLIENT_ID to enable Google Drive'
                   }
-                  onClick={() => doDrive('save')}
+                  onClick={() => void doDrive()}
                   aria-disabled={restoreWarnings.length > 0}
                 >
                   Save to Drive
-                </button>
-                <button
-                  className="icon-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured}
-                  aria-label="Save a copy to Google Drive"
-                  title="Save a copy to Drive"
-                  onClick={() => doDrive('copy')}
-                >
-                  <Plus size={18} />
                 </button>
                 <button
                   className="button mobile-drive-button"
@@ -1131,6 +1125,15 @@ export default function App() {
               </button>
             </div>
           </header>
+          <div className="editor-drive-status">
+            <DriveSyncStatus
+              view={tree ? syncViews[tree.id] : undefined}
+              onReview={() => setConflictTreeId(tree?.id || null)}
+              onRetry={() => {
+                if (tree) void driveSync.retry(tree.id).catch(showError);
+              }}
+            />
+          </div>
           {restoreWarnings.length > 0 && (
             <div className="export-feedback" role="alert">
               <p>
@@ -1138,7 +1141,7 @@ export default function App() {
                 {restoreWarnings.map((warning) => warning.name || warning.personId).join(', ')}.{' '}
                 Overwriting the original backup is blocked. Duplicate local edits for safekeeping,
                 delete the linked local copy, and reopen the remaining Drive card to download again,
-                or Save a copy to omit missing portraits.
+                then choose Save to Drive on a Workspace duplicate if you want a separate backup.
               </p>
             </div>
           )}
@@ -1384,6 +1387,28 @@ export default function App() {
             </span>
           </div>
         </div>
+      )}
+      {conflictTreeId && syncViews[conflictTreeId]?.conflict && (
+        <DriveConflictDialog
+          name={library.find((item) => item.id === conflictTreeId)?.name || 'Family tree'}
+          conflict={syncViews[conflictTreeId].conflict!}
+          onClose={() => setConflictTreeId(null)}
+          onResolve={async (action, reviewed) => {
+            await saveNow(true);
+            if (action === 'local') {
+              const result = await driveSync.manualSave(conflictTreeId, undefined, reviewed);
+              await refreshLibrary();
+              return !!result;
+            }
+            const replacement = await driveSync.useDrive(conflictTreeId, reviewed);
+            if (replacement && treeRef.current?.id === replacement.id) {
+              treeRef.current = replacement;
+              await openTree(replacement.id);
+            }
+            await refreshLibrary();
+            return !!replacement;
+          }}
+        />
       )}
       {treeAction && (
         <TreeActionDialog

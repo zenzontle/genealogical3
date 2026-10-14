@@ -9,10 +9,14 @@ import {
   listDriveLinks,
   saveDriveLink,
   saveTree,
+  updateLinkedTree,
   removeWorkspaceStorage,
 } from './storage';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 // A small asynchronous IDB boundary fake checks the real storage functions,
 // including read-only legacy normalization, without adding a dependency.
@@ -20,12 +24,11 @@ function browserStorage(initial: unknown[]) {
   const records = new Map(initial.map((value) => [(value as { id: string }).id, value]));
   const links = new Map();
   const put = vi.fn((value: { id: string }) => {
-    records.set(value.id, structuredClone(value));
     return value.id;
   });
   const modes: string[] = [];
   const storeNames: (string | string[])[] = [];
-  const failure = { linkDelete: false };
+  const failure = { linkDelete: false, linkPut: false };
   const db = {
     close: vi.fn(),
     transaction: (stores: string | string[], mode: string) => {
@@ -39,6 +42,10 @@ function browserStorage(initial: unknown[]) {
         oncomplete: () => {},
         onabort: () => {},
         error: null as Error | null,
+        abort: () => {
+          aborted = true;
+          tx.onabort();
+        },
         objectStore: (selected?: string) => {
           const storeName = selected || stores;
           const activeRecords = storeName === 'driveLinks' ? stagedLinks : stagedTrees;
@@ -74,6 +81,7 @@ function browserStorage(initial: unknown[]) {
             put: (value: { id: string; treeId?: string }) =>
               request(() => {
                 if (storeName === 'driveLinks') {
+                  if (failure.linkPut) throw Error('Link save failed');
                   stagedLinks.set(value.treeId, structuredClone(value));
                   return value.treeId;
                 }
@@ -130,6 +138,87 @@ function browserStorage(initial: unknown[]) {
 }
 
 describe('home designation in browser storage', () => {
+  it('keeps the debounce clock at wall time when data timestamps run ahead', async () => {
+    const tree = { ...makeTree('Linked'), dataUpdatedAt: 500 };
+    browserStorage([tree]);
+    await saveDriveLink({
+      treeId: tree.id,
+      id: 'backup',
+      name: '',
+      modifiedTime: '',
+      sync: { acknowledgedDataUpdatedAt: 500, revision: 'baseline' },
+    });
+    vi.spyOn(Date, 'now').mockReturnValue(200);
+    await saveTree({ ...tree, name: 'Edited', dataUpdatedAt: 600 });
+    expect((await getDriveLink(tree.id))?.sync).toMatchObject({ pending: true, editedAt: 200 });
+    expect((await getTree(tree.id))?.dataUpdatedAt).toBe(600);
+  });
+  it('rolls back when an atomic update is canceled before committing', async () => {
+    const tree = makeTree('Kept');
+    browserStorage([tree]);
+    await expect(
+      updateLinkedTree(tree.id, () => {
+        throw Error('Connection changed');
+      }),
+    ).rejects.toThrow('Connection changed');
+    expect(await getTree(tree.id)).toEqual(tree);
+  });
+  it('commits data edits and their pending sync identity atomically', async () => {
+    const tree = { ...makeTree('Linked'), dataUpdatedAt: 100 };
+    vi.spyOn(Date, 'now').mockReturnValue(200);
+    const storage = browserStorage([tree]);
+    await saveDriveLink({
+      treeId: tree.id,
+      id: 'backup',
+      name: '',
+      modifiedTime: '',
+      sync: { acknowledgedDataUpdatedAt: 100, revision: 'baseline' },
+    });
+    storage.failure.linkPut = true;
+    await expect(saveTree({ ...tree, name: 'Edited', dataUpdatedAt: 200 })).rejects.toThrow(
+      'Link save failed',
+    );
+    expect(await getTree(tree.id)).toEqual(tree);
+    expect((await getDriveLink(tree.id))?.sync?.pending).toBeUndefined();
+    storage.failure.linkPut = false;
+    await saveTree({ ...tree, name: 'Edited', dataUpdatedAt: 200 });
+    expect((await getDriveLink(tree.id))?.sync).toMatchObject({
+      acknowledgedDataUpdatedAt: 100,
+      revision: 'baseline',
+      pending: true,
+      editedAt: 200,
+    });
+    expect((await getTree(tree.id))?.name).toBe('Edited');
+  });
+  it('preserves retry state and debounce timing on navigation and persists acknowledgements without dropping newer edits', async () => {
+    const tree = { ...makeTree('Linked'), dataUpdatedAt: 200 };
+    browserStorage([tree]);
+    const sync = {
+      acknowledgedDataUpdatedAt: 100,
+      revision: 'baseline',
+      pending: true,
+      editedAt: 200,
+      retries: 2,
+      retryAt: 10000,
+      upload: { revision: 'upload', dataUpdatedAt: 200, content: 'snapshot' },
+    };
+    await saveDriveLink({ treeId: tree.id, id: 'backup', name: '', modifiedTime: '', sync });
+    await saveTree({ ...tree, viewport: { x: 40, y: 0, zoom: 2 }, updatedAt: 900 });
+    expect((await getDriveLink(tree.id))?.sync).toEqual(sync);
+    await saveTree({ ...tree, name: 'Newer', dataUpdatedAt: 300 });
+    await updateLinkedTree(tree.id, (latest, link) => ({
+      link: {
+        ...link!,
+        sync: {
+          acknowledgedDataUpdatedAt: 200,
+          revision: 'upload',
+          pending: latest!.dataUpdatedAt !== 200,
+        },
+      },
+    }));
+    expect((await getDriveLink(tree.id))?.sync?.pending).toBe(true);
+    expect((await getTree(tree.id))?.name).toBe('Newer');
+  });
   it.each(['local', 'drive', 'both'] as const)(
     'atomically applies %s scope to shared associations without removing other local copies',
     async (scope) => {

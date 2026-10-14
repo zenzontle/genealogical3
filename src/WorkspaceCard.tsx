@@ -3,6 +3,8 @@ import type { DriveFile } from './drive';
 import type { Tree } from './model';
 import { TreePreview } from './TreePreview';
 import { driveTreeName, type WorkspaceEntry } from './workspaceEntries';
+import { DriveSyncStatus } from './DriveSyncStatus';
+import type { SyncView } from './driveSync';
 
 export function WorkspaceCard({
   entry,
@@ -14,6 +16,9 @@ export function WorkspaceCard({
   onDuplicateTree,
   onRenameTree,
   onRemoveTree,
+  syncView,
+  onReviewConflict,
+  onRetrySync,
 }: {
   entry: WorkspaceEntry;
   busy: boolean;
@@ -24,6 +29,9 @@ export function WorkspaceCard({
   onDuplicateTree: (tree: Tree) => void;
   onRenameTree: (tree: Tree) => void;
   onRemoveTree: (entry: WorkspaceEntry) => void;
+  syncView?: SyncView;
+  onReviewConflict?: (id: string) => void;
+  onRetrySync?: (id: string) => void;
 }) {
   const local = entry.kind === 'local' ? entry.tree : null;
   const name =
@@ -84,6 +92,13 @@ export function WorkspaceCard({
           Open tree <ArrowRight size={15} />
         </span>
       </button>
+      {local && link && (
+        <DriveSyncStatus
+          view={syncView}
+          onReview={() => onReviewConflict?.(local.id)}
+          onRetry={() => onRetrySync?.(local.id)}
+        />
+      )}
       <div className="tree-tile-tools">
         {local && (
           <>
