@@ -181,6 +181,7 @@ export function HomeScreen({
                 </h1>
               </div>
               <div className="library-actions">
+                {driveConfigured && driveControls}
                 <button className="button outline" disabled={importBusy} onClick={onImportTree}>
                   <Upload size={17} /> Import
                 </button>
@@ -189,7 +190,6 @@ export function HomeScreen({
                 </button>
               </div>
             </div>
-            {driveConfigured && driveControls}
             {driveError && (
               <div className="workspace-drive-status" role="alert">
                 <p>{driveError}</p>

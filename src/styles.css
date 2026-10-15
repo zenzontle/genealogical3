@@ -422,6 +422,9 @@ h2 {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+.library-actions .workspace-drive-controls {
+  margin-bottom: 0;
+}
 .library-status {
   padding: 2rem;
   border: 1px solid var(--border);
