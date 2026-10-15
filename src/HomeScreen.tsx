@@ -101,7 +101,7 @@ export function HomeScreen({
             <a href="#how-it-works">How it works</a>
             <a href="#privacy">Privacy</a>
           </nav>
-          {showHero && driveControls && (
+          {(showHero || driveConfigured) && driveControls && (
             <div className="header-drive-controls">{driveControls}</div>
           )}
         </div>
@@ -181,7 +181,6 @@ export function HomeScreen({
                 </h1>
               </div>
               <div className="library-actions">
-                {driveConfigured && driveControls}
                 <button className="button outline" disabled={importBusy} onClick={onImportTree}>
                   <Upload size={17} /> Import
                 </button>
