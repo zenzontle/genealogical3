@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { driveAuthDev } from './server/driveAuthDev';
+import { canonicalPagePath, discoverHtmlPages, htmlPagePath } from './publicPages';
 import {
   renderPrivacyPolicy,
   renderTermsOfService,
@@ -13,27 +14,49 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const policyPath = fileURLToPath(new URL('./privacy-policy/index.html', import.meta.url));
 const termsPath = fileURLToPath(new URL('./terms-of-service/index.html', import.meta.url));
 
-function publicLegalPages(identity: PublicIdentity): Plugin {
-  const rewriteLegalPath = (server: Pick<PreviewServer, 'middlewares'>) => {
+function publicPages(identity: PublicIdentity, pages: string[]): Plugin {
+  const routes = new Map<string, string>();
+  for (const filename of pages) {
+    const path = canonicalPagePath(root, filename);
+    if (routes.has(path)) throw new Error(`Multiple HTML pages resolve to ${path}.`);
+    routes.set(path, htmlPagePath(root, filename));
+  }
+  const rewritePagePath = (server: Pick<PreviewServer, 'middlewares'>) => {
     server.middlewares.use((request, _response, next) => {
       const path = request.url?.split('?')[0];
-      if (path === '/privacy-policy' || path === '/terms-of-service') {
-        request.url = request.url!.replace(path, `${path}/index.html`);
+      if (path) {
+        const destination = routes.get(path.replace(/\/$/, '') || '/');
+        if (destination) request.url = destination + request.url!.slice(path.length);
       }
       next();
     });
   };
   return {
-    name: 'public-legal-pages',
-    configureServer: rewriteLegalPath,
-    configurePreviewServer: rewriteLegalPath,
+    name: 'public-pages',
+    configureServer: rewritePagePath,
+    configurePreviewServer: rewritePagePath,
     transformIndexHtml: {
       order: 'pre',
       handler(html, context) {
         const filename = normalizePath(context.filename);
-        if (filename === normalizePath(policyPath)) return renderPrivacyPolicy(html, identity);
-        if (filename === normalizePath(termsPath)) return renderTermsOfService(html, identity);
-        return html;
+        if (filename === normalizePath(policyPath)) {
+          html = renderPrivacyPolicy(html, identity);
+        } else if (filename === normalizePath(termsPath)) {
+          html = renderTermsOfService(html, identity);
+        }
+        return {
+          html,
+          tags: [
+            {
+              tag: 'link',
+              attrs: {
+                rel: 'canonical',
+                href: `${identity.appUrl}${canonicalPagePath(root, filename)}`,
+              },
+              injectTo: 'head',
+            },
+          ],
+        };
       },
     },
   };
@@ -41,10 +64,11 @@ function publicLegalPages(identity: PublicIdentity): Plugin {
 
 export default defineConfig(({ mode }) => {
   const identity = resolvePublicIdentity(loadEnv(mode, root, ['PUBLIC_', 'PRIVACY_CONTACT_EMAIL']));
+  const pages = discoverHtmlPages(root);
   return {
     plugins: [
       react(),
-      publicLegalPages(identity),
+      publicPages(identity, pages),
       driveAuthDev({
         ...process.env,
         ...loadEnv(mode, root, ['VITE_GOOGLE_CLIENT_ID', 'GOOGLE_', 'DRIVE_']),
@@ -57,11 +81,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
-        input: {
-          main: fileURLToPath(new URL('./index.html', import.meta.url)),
-          privacyPolicy: policyPath,
-          termsOfService: termsPath,
-        },
+        input: pages,
         output: {
           manualChunks: {
             'react-vendor': ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],

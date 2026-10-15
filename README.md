@@ -24,6 +24,14 @@ pnpm dev
 
 Open the URL Vite prints. `pnpm build` checks TypeScript and creates a production build; `pnpm test` runs document and relationship validation tests.
 
+### Adding public pages
+
+Add a standalone HTML file such as `about.html` or `about/index.html` to the project. Vite discovers HTML pages automatically at startup and builds each one, including nested pages. Restart `pnpm dev` after adding a new page. Do not create both forms for the same URL; duplicate routes stop startup/build with an error.
+
+Each page receives a canonical link generated from `PUBLIC_APP_URL` and its file path: `index.html` uses `/`, `about.html` and `about/index.html` use `/about`, and `guides/start.html` uses `/guides/start`. These clean paths work in development, preview, and on Vercel without adding individual entries or rewrites. Source HTML should omit its own canonical tag so the generated tag is the only one.
+
+Discovery skips hidden files and directories, `node_modules`, `dist`, `coverage`, `public`, `src`, `server`, `api`, and `scripts`. Keep page HTML outside those directories; files in `public` are copied unchanged rather than processed as pages.
+
 The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile. `pnpm-workspace.yaml` allows esbuild's install script, which Vite needs.
 
 ### Linting
@@ -99,7 +107,7 @@ A native leave-page warning is registered only while linked trees have unacknowl
 
 ### Public terms of service
 
-The Terms of Service are a standalone HTML page at `/terms-of-service`, available without sign-in or JavaScript. Vite builds `terms-of-service/index.html` as a separate entry, and `vercel.json` serves it at the public path. The page is also available through local development and production preview. Links appear in the homepage footer, Drive options dialog, and privacy policy; the terms link back to the privacy policy.
+The Terms of Service are a standalone HTML page at `/terms-of-service`, available without sign-in or JavaScript. Vite discovers `terms-of-service/index.html` as a separate entry, and Vercel serves it at the public path using clean URLs. The page is also available through local development and production preview. Links appear in the homepage footer, Drive options dialog, and privacy policy; the terms link back to the privacy policy.
 
 After deploying, open `https://genealogical3.vercel.app/terms-of-service` and confirm it displays the terms, then use that URL in **Google Auth Platform → Branding → App domain → Application terms of service link**. For a fork, use `${PUBLIC_APP_URL}/terms-of-service`. Google also requires your homepage and privacy policy links and authorized/verified domains; see [Google's OAuth branding guidance](https://support.google.com/cloud/answer/15549049?hl=en). Adding this page does not deploy it or submit the app to Google.
 
@@ -107,7 +115,7 @@ The terms use the same configured developer, app URL, and contact method as the 
 
 ### Public privacy policy
 
-The public policy is a standalone HTML page at `/privacy-policy`, served without sign-in or JavaScript. Vite builds `privacy-policy/index.html` as a separate HTML entry, and `vercel.json` maps the requested path to that page. The same path works in local development and production preview. Links appear in the homepage footer and Drive options dialog.
+The public policy is a standalone HTML page at `/privacy-policy`, served without sign-in or JavaScript. Vite discovers `privacy-policy/index.html` as a separate HTML entry, and Vercel serves it at the public path using clean URLs. The same path works in local development and production preview. Links appear in the homepage footer and Drive options dialog.
 
 After deploying, use `https://genealogical3.vercel.app/privacy-policy` as the Privacy Policy URL in Google Auth Platform's Branding settings. Use the same URL as the homepage link, and complete Google's domain ownership requirements for the deployment. Verify that the deployed URL displays the policy before submitting it to Google.
 
