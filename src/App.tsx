@@ -1016,15 +1016,19 @@ export default function App() {
           driveControls={
             <div className="workspace-drive-controls">
               {driveConfigured &&
-                driveWorkspace.connection !== 'connected' &&
                 driveWorkspace.connection !== 'disconnected' &&
                 driveWorkspace.connection !== 'error' && (
-                  <span role="status">
-                    {driveWorkspace.connection === 'restoring'
-                      ? 'Restoring Google Drive connection…'
-                      : driveWorkspace.connection === 'connecting'
-                        ? 'Connecting Google Drive…'
-                        : 'Disconnecting Google Drive…'}
+                  <span
+                    role="status"
+                    className={driveWorkspace.connection === 'connected' ? 'sr-only' : undefined}
+                  >
+                    {driveWorkspace.connection === 'connected'
+                      ? 'Google Drive connected'
+                      : driveWorkspace.connection === 'restoring'
+                        ? 'Restoring Google Drive connection…'
+                        : driveWorkspace.connection === 'connecting'
+                          ? 'Connecting Google Drive…'
+                          : 'Disconnecting Google Drive…'}
                   </span>
                 )}
               {driveWorkspace.connection === 'connected' ||
