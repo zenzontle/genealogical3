@@ -1424,7 +1424,12 @@ export default function App() {
               <span className="editor-footer-developer">
                 &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
               </span>
-              <a href={import.meta.env.PUBLIC_REPOSITORY_URL} aria-label="GitHub repository">
+              <a
+                href={import.meta.env.PUBLIC_REPOSITORY_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitHub repository"
+              >
                 <Github size={13} aria-hidden="true" /> GitHub
               </a>
             </span>
