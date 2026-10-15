@@ -21,6 +21,7 @@ import {
   CircleHelp,
   Download,
   FileImage,
+  Github,
   Heart,
   Home,
   Menu,
@@ -1418,6 +1419,19 @@ export default function App() {
               <button disabled={exports.feedback.status === 'pending'} onClick={downloadJson}>
                 Download a backup
               </button>
+            </span>
+            <span className="editor-footer-credit">
+              <span className="editor-footer-developer">
+                &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
+              </span>
+              <a
+                href={import.meta.env.PUBLIC_REPOSITORY_URL}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="GitHub repository"
+              >
+                <Github size={13} aria-hidden="true" /> GitHub
+              </a>
             </span>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
