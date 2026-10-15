@@ -1462,7 +1462,7 @@ export default function App() {
           onClose={deletion.close}
         />
       )}
-      <div className="toast-stack">
+      <div className="toast-stack" id="operation-toasts">
         {notice && (
           <div className="toast" role="alert">
             <span>{notice}</span>

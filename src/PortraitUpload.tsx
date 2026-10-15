@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Eye, ImagePlus } from 'lucide-react';
 import type { Person } from './model';
 import { portraitData } from './media';
-import { OperationFeedback } from './OperationFeedback';
+import { FeedbackToast } from './FeedbackToast';
 import { LocalDialog } from './LocalDialog';
 import { afterPaint, errorMessage, type FeedbackState } from './feedback';
 
@@ -79,7 +79,8 @@ export function PortraitUpload({
     />
   );
   const status = (
-    <OperationFeedback
+    <FeedbackToast
+      withinDialog={viewerOpen}
       state={feedback}
       onDismiss={dismiss}
       action={

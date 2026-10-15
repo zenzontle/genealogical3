@@ -24,7 +24,7 @@ afterEach(() => {
 const choose = (file = new File(['photo'], 'photo.png', { type: 'image/png' })) =>
   fireEvent.change(screen.getByLabelText('Choose portrait'), { target: { files: [file] } });
 
-describe('portrait inline feedback', () => {
+describe('portrait toast feedback', () => {
   it('shows processing, retries decoder failures, and applies only the portrait value', async () => {
     const change = vi.fn();
     let resolve!: (portrait: string) => void;
@@ -38,7 +38,10 @@ describe('portrait inline feedback', () => {
       );
     render(<PortraitUpload person={makePerson('Alex')} onChange={change} />);
     choose();
-    expect((await screen.findByRole('alert')).textContent).toContain('Could not decode');
+    const error = await screen.findByRole('alert');
+    expect(error.textContent).toContain('Could not decode');
+    expect(error.closest('.toast-stack')).toBeTruthy();
+    expect(error.closest('.operation-feedback')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(screen.getByRole('status').textContent).toContain('Processing photo');
     expect(screen.getByRole('button', { name: 'Add photo' })).toHaveProperty('disabled', true);
@@ -46,6 +49,7 @@ describe('portrait inline feedback', () => {
     await act(async () => resolve('data:image/jpeg;base64,portrait'));
     expect(change).toHaveBeenCalledWith('data:image/jpeg;base64,portrait');
     expect(screen.getByRole('status').textContent).toContain('Photo updated');
+    expect(screen.getByRole('status').closest('.toast-stack')).toBeTruthy();
   });
 
   it('offers a different photo for invalid files', async () => {
@@ -182,6 +186,9 @@ describe('full photo viewer', () => {
     await user.click(screen.getByRole('button', { name: 'View photo' }));
     choose();
     await screen.findByText('Photo updated.');
+    expect(
+      within(screen.getByRole('dialog')).getByRole('status').closest('.toast-stack'),
+    ).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'Photo of Alex' })).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Photo of Alex' }).getAttribute('src')).toBe(
       'data:image/jpeg;base64,replacement',

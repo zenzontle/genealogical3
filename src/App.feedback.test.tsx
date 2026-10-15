@@ -885,6 +885,7 @@ describe('local feedback integration', () => {
       await screen.findByText('Photo updated.');
     };
     await upload();
+    expect(screen.getByText('Photo updated.').closest('.toast-stack')?.id).toBe('operation-toasts');
     expect((await editorSnapshot()).dataUpdatedAt).toBe(++expected);
     fireEvent.click(screen.getByRole('button', { name: 'View photo' }));
     await upload();
