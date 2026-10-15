@@ -1068,7 +1068,8 @@ describe('local feedback integration', () => {
         false,
       ),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Drive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Disconnect Drive' });
     vi.mocked(disconnectDrive).mockImplementationOnce(async () => {
       ++driveState.generation;
       setDriveConnection('error');
@@ -1077,6 +1078,7 @@ describe('local feedback integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect Drive' }));
     await screen.findByText('Disconnect failed. Please retry.');
     expect(screen.queryByText(/Forgot Google Drive access/)).toBeNull();
+    expect(screen.queryByText('Disconnecting Google Drive…')).toBeNull();
     expect(screen.getByRole('button', { name: 'Disconnect Drive' })).toHaveProperty(
       'disabled',
       false,
@@ -1094,7 +1096,7 @@ describe('local feedback integration', () => {
     await screen.findByText(
       'Forgot Google Drive access in this browser. Your local tree is still saved.',
     );
-    expect(screen.getByRole('button', { name: 'Select Alex' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Family' })).toBeTruthy();
     expect(disconnectDrive).toHaveBeenCalledTimes(2);
     expect(restoreDrive).toHaveBeenCalledOnce();
     expect(authorizeDrive).not.toHaveBeenCalled();

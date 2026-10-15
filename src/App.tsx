@@ -1014,18 +1014,21 @@ export default function App() {
           onRestoreDrive={loadDrive}
           driveControls={
             <div className="workspace-drive-controls">
-              {driveConfigured && driveWorkspace.connection !== 'disconnected' && (
-                <span role="status">
-                  {driveWorkspace.connection === 'connected'
-                    ? 'Google Drive connected'
-                    : driveWorkspace.connection === 'restoring'
-                      ? 'Restoring Google Drive connection…'
-                      : driveWorkspace.connection === 'connecting'
-                        ? 'Connecting Google Drive…'
-                        : 'Disconnecting Google Drive…'}
-                </span>
-              )}
-              {driveWorkspace.connection === 'connected' ? (
+              {driveConfigured &&
+                driveWorkspace.connection !== 'disconnected' &&
+                driveWorkspace.connection !== 'error' && (
+                  <span role="status">
+                    {driveWorkspace.connection === 'connected'
+                      ? 'Google Drive connected'
+                      : driveWorkspace.connection === 'restoring'
+                        ? 'Restoring Google Drive connection…'
+                        : driveWorkspace.connection === 'connecting'
+                          ? 'Connecting Google Drive…'
+                          : 'Disconnecting Google Drive…'}
+                  </span>
+                )}
+              {driveWorkspace.connection === 'connected' ||
+              driveWorkspace.connection === 'error' ? (
                 <button className="button outline" disabled={driveBusy} onClick={forgetDrive}>
                   Disconnect Drive
                 </button>
