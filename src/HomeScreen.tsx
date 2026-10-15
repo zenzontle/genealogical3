@@ -50,6 +50,7 @@ export function HomeScreen({
   driveLinks = [],
   driveLoading = false,
   driveError = '',
+  driveConfigured = false,
   driveConnected = false,
   driveBusy = false,
   driveControls,
@@ -74,6 +75,7 @@ export function HomeScreen({
   driveLinks?: DriveLink[];
   driveLoading?: boolean;
   driveError?: string;
+  driveConfigured?: boolean;
   driveConnected?: boolean;
   driveBusy?: boolean;
   driveControls?: ReactNode;
@@ -94,10 +96,13 @@ export function HomeScreen({
             GENEalogical<span className="brand-three">3</span>
           </span>
         </div>
-        <nav>
-          <a href="#how-it-works">How it works</a>
-          <a href="#privacy">Privacy</a>
-        </nav>
+        <div className="site-header-actions">
+          <nav>
+            <a href="#how-it-works">How it works</a>
+            <a href="#privacy">Privacy</a>
+          </nav>
+          {showHero && driveControls && <div className="header-drive-controls">{driveControls}</div>}
+        </div>
       </header>
       <main>
         {showHero && (
@@ -132,7 +137,6 @@ export function HomeScreen({
                     <Upload size={18} aria-hidden="true" /> Import a tree
                   </button>
                 </div>
-                {driveControls}
                 <span>No account needed.</span>
               </div>
             </div>
@@ -183,7 +187,7 @@ export function HomeScreen({
                 </button>
               </div>
             </div>
-            {driveControls}
+            {driveConfigured && driveControls}
             {driveError && (
               <div className="workspace-drive-status" role="alert">
                 <p>{driveError}</p>
