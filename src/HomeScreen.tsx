@@ -101,7 +101,9 @@ export function HomeScreen({
             <a href="#how-it-works">How it works</a>
             <a href="#privacy">Privacy</a>
           </nav>
-          {showHero && driveControls && <div className="header-drive-controls">{driveControls}</div>}
+          {showHero && driveControls && (
+            <div className="header-drive-controls">{driveControls}</div>
+          )}
         </div>
       </header>
       <main>
