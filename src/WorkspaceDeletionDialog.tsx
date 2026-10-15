@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { LocalDialog } from './LocalDialog';
-import { OperationFeedback } from './OperationFeedback';
+import { FeedbackToast } from './FeedbackToast';
 import { errorMessage, type FeedbackState } from './feedback';
 import { driveTreeName, type DeletionScope } from './workspaceEntries';
 import type { WorkspaceDeletion } from './useWorkspaceDeletion';
@@ -94,7 +94,11 @@ export function WorkspaceDeletionDialog({
         {browserCleanup && (
           <p role="status">Drive deletion is complete. Retry to finish browser cleanup.</p>
         )}
-        <OperationFeedback state={feedback} onDismiss={() => setFeedback({ status: 'idle' })} />
+        <FeedbackToast
+          withinDialog
+          state={feedback}
+          onDismiss={() => setFeedback({ status: 'idle' })}
+        />
         <div className="dialog-actions">
           <button
             type="button"

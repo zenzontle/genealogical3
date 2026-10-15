@@ -1,6 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { LocalDialog } from './LocalDialog';
-import { OperationFeedback } from './OperationFeedback';
+import { FeedbackToast } from './FeedbackToast';
 import { errorMessage, type FeedbackState } from './feedback';
 
 export type TreeAction =
@@ -67,7 +67,11 @@ export function TreeActionDialog({
           </label>
         )}
         <div id={errorId}>
-          <OperationFeedback state={feedback} onDismiss={() => setFeedback({ status: 'idle' })} />
+          <FeedbackToast
+            withinDialog
+            state={feedback}
+            onDismiss={() => setFeedback({ status: 'idle' })}
+          />
         </div>
         <div className="dialog-actions">
           <button
