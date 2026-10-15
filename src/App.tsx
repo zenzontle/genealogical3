@@ -1018,7 +1018,10 @@ export default function App() {
               {driveConfigured &&
                 driveWorkspace.connection !== 'disconnected' &&
                 driveWorkspace.connection !== 'error' && (
-                  <span role="status">
+                  <span
+                    role="status"
+                    className={driveWorkspace.connection === 'connected' ? 'sr-only' : undefined}
+                  >
                     {driveWorkspace.connection === 'connected'
                       ? 'Google Drive connected'
                       : driveWorkspace.connection === 'restoring'
@@ -1421,19 +1424,18 @@ export default function App() {
                 Download a backup
               </button>
             </span>
-            <span className="editor-footer-credit">
-              <span className="editor-footer-developer">
-                &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
-              </span>
-              <a
-                href={import.meta.env.PUBLIC_REPOSITORY_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="GitHub repository"
-              >
-                <Github size={13} aria-hidden="true" /> GitHub
-              </a>
+            <span className="editor-footer-developer">
+              &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
             </span>
+            <a
+              className="editor-footer-github"
+              href={import.meta.env.PUBLIC_REPOSITORY_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="GitHub repository"
+            >
+              <Github size={13} aria-hidden="true" /> GitHub
+            </a>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
             </span>
