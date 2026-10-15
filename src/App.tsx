@@ -1016,16 +1016,15 @@ export default function App() {
           driveControls={
             <div className="workspace-drive-controls">
               {driveConfigured &&
+                driveWorkspace.connection !== 'connected' &&
                 driveWorkspace.connection !== 'disconnected' &&
                 driveWorkspace.connection !== 'error' && (
                   <span role="status">
-                    {driveWorkspace.connection === 'connected'
-                      ? 'Google Drive connected'
-                      : driveWorkspace.connection === 'restoring'
-                        ? 'Restoring Google Drive connection…'
-                        : driveWorkspace.connection === 'connecting'
-                          ? 'Connecting Google Drive…'
-                          : 'Disconnecting Google Drive…'}
+                    {driveWorkspace.connection === 'restoring'
+                      ? 'Restoring Google Drive connection…'
+                      : driveWorkspace.connection === 'connecting'
+                        ? 'Connecting Google Drive…'
+                        : 'Disconnecting Google Drive…'}
                   </span>
                 )}
               {driveWorkspace.connection === 'connected' ||
@@ -1421,19 +1420,18 @@ export default function App() {
                 Download a backup
               </button>
             </span>
-            <span className="editor-footer-credit">
-              <span className="editor-footer-developer">
-                &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
-              </span>
-              <a
-                href={import.meta.env.PUBLIC_REPOSITORY_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="GitHub repository"
-              >
-                <Github size={13} aria-hidden="true" /> GitHub
-              </a>
+            <span className="editor-footer-developer">
+              &copy; 2026 {import.meta.env.PUBLIC_DEVELOPER_NAME}
             </span>
+            <a
+              className="editor-footer-github"
+              href={import.meta.env.PUBLIC_REPOSITORY_URL}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="GitHub repository"
+            >
+              <Github size={13} aria-hidden="true" /> GitHub
+            </a>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
             </span>
