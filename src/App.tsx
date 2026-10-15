@@ -37,7 +37,6 @@ import { BrandMark } from './BrandMark';
 import { PersonEditor, type ConnectMode } from './PersonEditor';
 import { RelationshipEditor } from './RelationshipEditor';
 import { HomeScreen } from './HomeScreen';
-import { DriveActionsDialog } from './DriveActionsDialog';
 import { useDriveWorkspace } from './useDriveWorkspace';
 import { HeaderPersonSearch } from './HeaderPersonSearch';
 import { TreeActionDialog, type TreeAction } from './TreeActionDialog';
@@ -142,7 +141,6 @@ export default function App() {
   const driveWorkspace = useDriveWorkspace(screen === 'home');
   const driveReady = driveWorkspace.ready;
   const [driveBusy, setDriveBusy] = useState(false);
-  const [driveActionsOpen, setDriveActionsOpen] = useState(false);
   const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
     null,
   );
@@ -841,7 +839,6 @@ export default function App() {
     setDriveBusy(true);
     try {
       await disconnectDrive();
-      setDriveActionsOpen(false);
       setNotice('Forgot Google Drive access in this browser. Your local tree is still saved.');
     } catch (error) {
       showError(error);
@@ -1012,38 +1009,45 @@ export default function App() {
           driveFiles={driveWorkspace.files}
           driveLoading={driveWorkspace.loading}
           driveError={driveWorkspace.error}
+          driveConfigured={driveConfigured}
           driveConnected={driveWorkspace.connection === 'connected'}
           onRetryDrive={() => void driveWorkspace.retry()}
           onRestoreDrive={loadDrive}
           driveControls={
-            driveConfigured && (
-              <div className="workspace-drive-controls">
-                <span role="status">
-                  {driveWorkspace.connection === 'connected'
-                    ? 'Google Drive connected'
-                    : driveWorkspace.connection === 'restoring'
-                      ? 'Restoring Google Drive connection…'
-                      : driveWorkspace.connection === 'connecting'
-                        ? 'Connecting Google Drive…'
-                        : driveWorkspace.connection === 'disconnecting'
-                          ? 'Disconnecting Google Drive…'
-                          : 'Google Drive disconnected'}
-                </span>
-                {driveWorkspace.connection === 'connected' ? (
-                  <button className="button outline" disabled={driveBusy} onClick={forgetDrive}>
-                    Disconnect Drive
-                  </button>
-                ) : (
-                  <button
-                    className="button outline"
-                    disabled={driveBusy || !driveReady}
-                    onClick={() => void driveWorkspace.connect()}
-                  >
-                    Connect Drive
-                  </button>
+            <div className="workspace-drive-controls">
+              {driveConfigured &&
+                driveWorkspace.connection !== 'disconnected' &&
+                driveWorkspace.connection !== 'error' && (
+                  <span role="status">
+                    {driveWorkspace.connection === 'connected'
+                      ? 'Google Drive connected'
+                      : driveWorkspace.connection === 'restoring'
+                        ? 'Restoring Google Drive connection…'
+                        : driveWorkspace.connection === 'connecting'
+                          ? 'Connecting Google Drive…'
+                          : 'Disconnecting Google Drive…'}
+                  </span>
                 )}
-              </div>
-            )
+              {driveWorkspace.connection === 'connected' ||
+              driveWorkspace.connection === 'error' ? (
+                <button className="button outline" disabled={driveBusy} onClick={forgetDrive}>
+                  Disconnect Drive
+                </button>
+              ) : (
+                <button
+                  className="button outline"
+                  disabled={driveBusy || !driveReady || !driveConfigured}
+                  title={
+                    driveConfigured
+                      ? undefined
+                      : 'Google Drive is not configured for this deployment'
+                  }
+                  onClick={() => void driveWorkspace.connect()}
+                >
+                  Connect Drive
+                </button>
+              )}
+            </div>
           }
           importBusy={imports.feedback.status === 'pending'}
           driveBusy={driveBusy}
@@ -1120,8 +1124,8 @@ export default function App() {
                   disabled={driveBusy || !driveReady || !driveConfigured}
                   title={
                     driveConfigured
-                      ? 'Google Drive options'
-                      : 'Set VITE_GOOGLE_CLIENT_ID to enable Google Drive'
+                      ? 'Save to Google Drive'
+                      : 'Google Drive is not configured for this deployment'
                   }
                   onClick={() => void doDrive()}
                   aria-disabled={restoreWarnings.length > 0}
@@ -1130,19 +1134,16 @@ export default function App() {
                 </button>
                 <button
                   className="button mobile-drive-button"
-                  onClick={() => setDriveActionsOpen(true)}
+                  disabled={driveBusy || !driveReady || !driveConfigured}
+                  title={
+                    driveConfigured
+                      ? 'Save to Google Drive'
+                      : 'Google Drive is not configured for this deployment'
+                  }
+                  onClick={() => void doDrive()}
                 >
                   Drive
                 </button>
-                {!driveConfigured && (
-                  <button
-                    className="icon-button drive-config-help"
-                    aria-label="Why Google Drive is unavailable"
-                    onClick={() => setDriveActionsOpen(true)}
-                  >
-                    <CircleHelp size={17} />
-                  </button>
-                )}
               </div>
               <button
                 className="icon-button sidebar-toggle"
@@ -1525,18 +1526,6 @@ export default function App() {
             ? `${photoProgress.direction === 'upload' ? 'Uploading' : 'Downloading'} photos: ${photoProgress.completed} of ${photoProgress.total}`
             : 'Connecting to Google Drive…'}
         </div>
-      )}
-      {driveActionsOpen && (
-        <DriveActionsDialog
-          configured={driveConfigured}
-          canDisconnect={
-            driveWorkspace.connection === 'connected' || driveWorkspace.connection === 'error'
-          }
-          busy={driveBusy || !driveReady}
-          onAction={doDrive}
-          onDisconnect={forgetDrive}
-          onClose={() => setDriveActionsOpen(false)}
-        />
       )}
     </>
   );
