@@ -17,6 +17,7 @@ import {
   Users,
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { HeroBranches } from './HeroBranches';
 import { SexIcon } from './SexIcon';
 import { WorkspaceCard } from './WorkspaceCard';
 import { workspaceEntries, type WorkspaceEntry } from './workspaceEntries';
@@ -136,6 +137,7 @@ export function HomeScreen({
               </div>
             </div>
             <div className="hero-art" aria-hidden="true">
+              <HeroBranches />
               <div className="hero-leaf leaf-one">✻</div>
               <div className="hero-leaf leaf-two">✻</div>
               <div className="hero-tree">
