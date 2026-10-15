@@ -1383,6 +1383,22 @@ h2 {
   text-decoration: underline;
   font-size: inherit;
 }
+.editor-footer-credit {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  white-space: nowrap;
+}
+.editor-footer-credit a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: inherit;
+  text-decoration: none;
+}
+.editor-footer-credit a:hover {
+  color: var(--accent);
+}
 .person-card {
   width: 180px;
   height: 136px;
