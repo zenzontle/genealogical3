@@ -2,13 +2,17 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { driveAuthDev } from './server/driveAuthDev';
-import { canonicalPagePath, discoverHtmlPages, htmlPagePath } from './publicPages';
+import {
+  canonicalPagePath,
+  discoverHtmlPages,
+  htmlPagePath,
+} from './scripts/public-pages/publicPages';
 import {
   renderPrivacyPolicy,
   renderTermsOfService,
   resolvePublicIdentity,
   type PublicIdentity,
-} from './publicIdentity';
+} from './scripts/public-pages/publicIdentity';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const policyPath = fileURLToPath(new URL('./privacy-policy/index.html', import.meta.url));

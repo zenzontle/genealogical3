@@ -24,6 +24,27 @@ pnpm dev
 
 Open the URL Vite prints. `pnpm build` checks TypeScript and creates a production build; `pnpm test` runs document and relationship validation tests.
 
+### Project structure
+
+```text
+src/
+  app/          Application composition and integration tests
+  components/   React UI components and their tests
+  hooks/        React hooks and their tests
+  lib/          Tree models, layout, storage, Drive, and other shared logic
+  styles/       Application stylesheets
+  test/         Shared test helpers
+  main.tsx      Browser entry point
+  vite-env.d.ts Vite environment types
+server/         Server-side Drive authentication and its tests
+api/            Vercel API route entry points
+scripts/
+  public-pages/ Public HTML discovery, identity rendering, and their tests
+public/         Static assets copied unchanged
+```
+
+Tests stay beside the code they exercise. Public HTML pages remain at their URL paths (`index.html`, `privacy-policy/index.html`, and `terms-of-service/index.html`); root configuration files keep their standard tool locations.
+
 ### Adding public pages
 
 Add a standalone HTML file such as `about.html` or `about/index.html` to the project. Vite discovers HTML pages automatically at startup and builds each one, including nested pages. Restart `pnpm dev` after adding a new page. Do not create both forms for the same URL; duplicate routes stop startup/build with an error.
