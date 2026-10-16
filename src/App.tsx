@@ -1018,10 +1018,7 @@ export default function App() {
               {driveConfigured &&
                 driveWorkspace.connection !== 'disconnected' &&
                 driveWorkspace.connection !== 'error' && (
-                  <span
-                    role="status"
-                    className={driveWorkspace.connection === 'connected' ? 'sr-only' : undefined}
-                  >
+                  <span role="status" className="sr-only">
                     {driveWorkspace.connection === 'connected'
                       ? 'Google Drive connected'
                       : driveWorkspace.connection === 'restoring'
@@ -1032,14 +1029,23 @@ export default function App() {
                   </span>
                 )}
               {driveWorkspace.connection === 'connected' ||
-              driveWorkspace.connection === 'error' ? (
-                <button className="button outline" disabled={driveBusy} onClick={forgetDrive}>
-                  Disconnect Drive
+              driveWorkspace.connection === 'error' ||
+              driveWorkspace.connection === 'disconnecting' ? (
+                <button
+                  className="button outline"
+                  disabled={driveBusy || !driveReady}
+                  aria-busy={driveWorkspace.connection === 'disconnecting'}
+                  onClick={forgetDrive}
+                >
+                  {driveWorkspace.connection === 'disconnecting'
+                    ? 'Disconnecting…'
+                    : 'Disconnect Drive'}
                 </button>
               ) : (
                 <button
                   className="button outline"
                   disabled={driveBusy || !driveReady || !driveConfigured}
+                  aria-busy={!driveReady}
                   title={
                     driveConfigured
                       ? undefined
@@ -1047,7 +1053,11 @@ export default function App() {
                   }
                   onClick={() => void driveWorkspace.connect()}
                 >
-                  Connect Drive
+                  {driveWorkspace.connection === 'restoring'
+                    ? 'Restoring Drive…'
+                    : driveWorkspace.connection === 'connecting'
+                      ? 'Connecting…'
+                      : 'Connect Drive'}
                 </button>
               )}
             </div>
