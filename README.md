@@ -58,6 +58,12 @@ The React entry point mounts `@vercel/analytics/react` once alongside the app to
 
 In the Vercel project dashboard, open **Analytics** and enable Web Analytics, then deploy the updated app. No analytics API key or environment variable is required. Visit the deployed editor and confirm that page views appear in the dashboard; local development does not send production analytics. See [Vercel's setup guide](https://vercel.com/docs/analytics/quickstart).
 
+## Vercel Speed Insights
+
+The React entry point mounts `@vercel/speed-insights/react` once alongside the app to report Web Vitals and measure page performance. The SDK uses its default sampling and environment detection. The standalone privacy policy and terms pages do not load Speed Insights.
+
+In the Vercel project dashboard, open **Speed Insights** and enable it, then deploy the updated app. No API key or environment variable is required. Visit the deployed app and interact with it to generate performance measurements, then check the Speed Insights dashboard. See [Vercel's setup guide](https://vercel.com/docs/speed-insights/quickstart).
+
 ## Google Drive setup
 
 The editor works without Google configuration. To enable Drive backups and automatic sync for linked trees:
