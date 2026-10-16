@@ -42,7 +42,7 @@ export default defineConfig([
     files: [
       'eslint.config.js',
       'vite.config.ts',
-      'scripts/**/*.{js,mjs,cjs}',
+      'scripts/**/*.{js,mjs,cjs,ts}',
       'server/**/*.ts',
       'api/**/*.ts',
     ],
