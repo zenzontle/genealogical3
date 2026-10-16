@@ -5,3 +5,4 @@ dist
 .perf
 .pnpm-store
 *.tsbuildinfo
+.codegraph/
