@@ -21,6 +21,7 @@ import {
   listDriveTrees,
   openDriveTree,
   saveDriveTree,
+  saveDriveTreeLocked,
   type PhotoProgress,
   DriveRequestError,
   queueDriveOperation,
@@ -49,6 +50,7 @@ type RemoteFile = {
   appProperties: Record<string, string>;
   trashed?: boolean;
   appAccessible?: boolean;
+  contentRestrictions?: { readOnly: boolean; reason?: string }[];
   content: Uint8Array;
 };
 type Call = { url: URL; options: RequestInit; meta?: Partial<RemoteFile> };
@@ -127,6 +129,11 @@ function fakeDrive() {
       return (await hooks.after?.(call)) || new Response(null, { status: 204 });
     }
     if (options.method === 'PATCH') {
+      if (
+        file.contentRestrictions?.some((restriction) => restriction.readOnly) &&
+        (options.body instanceof Blob || call.meta?.name !== undefined)
+      )
+        return json({ error: { errors: [{ reason: 'fileContentRestricted' }] } }, 403);
       Object.assign(file, call.meta);
       if (options.body instanceof Blob) file.content = content;
       return (await hooks.after?.(call)) || json(file);
@@ -191,6 +198,120 @@ it('still cancels Drive operations when the session changes while waiting for an
 });
 
 describe('permanent Drive deletion', () => {
+  it('blocks an already-preflighted cross-device save from committing after folder deletion', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const doc = remote.document(file.id);
+    const reached = deferred(),
+      release = deferred();
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'PATCH' && call.options.body instanceof Blob) {
+        reached.resolve();
+        await release.promise;
+      }
+    };
+    // A different device holds its own operation lock, so run the real writer independently.
+    const writer = saveDriveTreeLocked(family([2]), session.generation, file.id).catch(
+      (error: unknown) => error,
+    );
+    await reached.promise;
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'DELETE' && call.url.pathname.endsWith(doc.photoFolderId)) {
+        release.resolve();
+        await writer;
+      }
+    };
+    try {
+      await deleteDriveBackup(createDriveDeletion(file.id));
+      expect(await writer).toMatchObject({ status: 403, reasons: ['fileContentRestricted'] });
+      expect(remote.files.has(file.id)).toBe(false);
+      expect(remote.files.has(doc.photoFolderId)).toBe(false);
+    } finally {
+      release.resolve();
+      await writer;
+    }
+  });
+  it('keeps the folder and all portraits when a cross-device save wins before write protection', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const doc = remote.document(file.id);
+    let savedRevision: string | undefined;
+    remote.hooks.before = async (call) => {
+      if (call.meta?.contentRestrictions) {
+        const saved = await saveDriveTreeLocked(family([2]), session.generation, file.id);
+        savedRevision = saved.revision;
+      }
+    };
+    remote.calls.length = 0;
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(/backup changed/);
+    expect(remote.document(file.id).revision).toBe(savedRevision);
+    expect(remote.files.has(doc.photoFolderId)).toBe(true);
+    expect(doc.portraits.every((ref) => remote.files.has(ref.imageFileId))).toBe(true);
+    expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+  });
+  it.each(['failure', 'unconfirmed response'] as const)(
+    'does not delete anything when write protection has a %s',
+    async (failure) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1]));
+      remote.hooks.before = async (call) => {
+        if (call.meta?.contentRestrictions)
+          return new Response(
+            JSON.stringify(failure === 'failure' ? {} : remote.files.get(file.id)),
+            { status: failure === 'failure' ? 500 : 200 },
+          );
+      };
+      remote.calls.length = 0;
+      await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow();
+      expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+    },
+  );
+  it('recovers a lost write-protection response and keeps the protection through retry', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    remote.hooks.after = async (call) => {
+      if (call.meta?.contentRestrictions) throw Error('lost protection response');
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(
+      /No files have been confirmed deleted/,
+    );
+    expect(remote.files.get(file.id)!.contentRestrictions).toEqual([
+      { readOnly: true, reason: expect.stringContaining('deletion') },
+    ]);
+    remote.hooks.after = undefined;
+    await deleteDriveBackup(progress);
+    expect(progress.documentDeleted).toBe(true);
+    expect(remote.calls.filter((call) => call.meta?.contentRestrictions)).toHaveLength(1);
+  });
+  it('stops folder deletion if write protection is removed during portrait cleanup', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const doc = remote.document(file.id);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'DELETE') remote.files.get(file.id)!.contentRestrictions = [];
+    };
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
+      /write protection/,
+    );
+    expect(remote.files.has(doc.photoFolderId)).toBe(true);
+    expect(remote.files.has(file.id)).toBe(true);
+  });
+  it('retains existing read-only restrictions and prevents new saves after partial deletion', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const restrictions = [{ readOnly: true, reason: 'User restriction' }];
+    remote.files.get(file.id)!.contentRestrictions = restrictions;
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'DELETE') return new Response('{}', { status: 500 });
+    };
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow();
+    expect(remote.files.get(file.id)!.contentRestrictions).toEqual(restrictions);
+    expect(remote.calls.some((call) => call.meta?.contentRestrictions)).toBe(false);
+    remote.calls.length = 0;
+    await expect(saveDriveTree(family([2]), file.id)).rejects.toThrow(/read-only.*deletion/);
+    expect(remote.photoUploads()).toHaveLength(0);
+  });
   it('deletes an empty photos folder before its document and preserves the library', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([]));

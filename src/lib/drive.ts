@@ -25,13 +25,15 @@ const api = 'https://www.googleapis.com/drive/v3/files';
 const uploadApi = 'https://www.googleapis.com/upload/drive/v3/files';
 const app = 'GENEalogical3';
 const folderMimeType = 'application/vnd.google-apps.folder';
-const metadataFields = 'id,name,description,modifiedTime,mimeType,parents,appProperties,trashed';
+const metadataFields =
+  'id,name,description,modifiedTime,mimeType,parents,appProperties,trashed,contentRestrictions(readOnly)';
 export type DriveFile = { id: string; name: string; description?: string; modifiedTime: string };
 type FileMetadata = DriveFile & {
   mimeType: string;
   parents?: string[];
   appProperties?: Record<string, string>;
   trashed?: boolean;
+  contentRestrictions?: { readOnly?: boolean }[];
 };
 export type RestoreWarning = { personId: string; name: string };
 export type DriveRestoreResult = {
@@ -161,6 +163,8 @@ const owned = (file: FileMetadata, kind: string, backupId: string) =>
   file.appProperties?.app === app &&
   file.appProperties?.kind === kind &&
   file.appProperties?.backupId === backupId;
+const contentReadOnly = (file: FileMetadata) =>
+  file.contentRestrictions?.some((restriction) => restriction.readOnly);
 const escaped = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const mediaUrl = (id: string) => `${api}/${encodeURIComponent(id)}?alt=media`;
 const metadataUrl = (id: string) => `${api}/${encodeURIComponent(id)}?fields=${metadataFields}`;
@@ -446,6 +450,10 @@ async function saveSnapshot(
     if (!owned(file, 'tree', existingId) || file.mimeType !== 'application/json')
       throw Error(
         'This backup requires attention. Duplicate your local tree in Workspace to save a new backup.',
+      );
+    if (contentReadOnly(file))
+      throw Error(
+        'This Drive backup is read-only, possibly because deletion is in progress. Retry deletion in Workspace, or duplicate your local tree to save a new backup.',
       );
     previous = await readDocument(existingId, generation);
     if (options.expectedRevision && previous.revision !== options.expectedRevision)
@@ -739,6 +747,7 @@ async function deleteBackup(progress: DriveDeletionProgress) {
   )
     throw Error('This file is not an app-owned tree backup. Deletion stopped.');
   const input = await readJson(await request(mediaUrl(id), {}, generation));
+  let requireWriteProtection = false;
   const verifyDocument = async () => {
     const fresh = await metadata(id, generation);
     if (
@@ -749,9 +758,14 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         : !deletionOwned(fresh, 'tree', id))
     )
       throw Error('The backup ownership changed. The tree document was kept.');
+    if (requireWriteProtection && !contentReadOnly(fresh))
+      throw Error(
+        'The backup write protection changed. Deletion stopped. Retry deletion in Workspace.',
+      );
     const current = await readJson(await request(mediaUrl(id), {}, generation));
     if (JSON.stringify(current) !== JSON.stringify(input))
       throw Error('The backup changed during deletion. The tree document was kept.');
+    return fresh;
   };
   if (legacy) {
     validateTree(input);
@@ -840,6 +854,29 @@ async function deleteBackup(progress: DriveDeletionProgress) {
       if (!progress.deletedPortraitIds.includes(photoId) && (await verifyPortrait(photoId)))
         verifiedPortraitIds.push(photoId);
     }
+    const fresh = await verifyDocument();
+    // Drive enforces this barrier even for other devices that already passed save preflight.
+    // Keep it through partial failures: a retained document must not accept new revisions.
+    if (!contentReadOnly(fresh))
+      await request(
+        `${api}/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentRestrictions: [
+              {
+                readOnly: true,
+                reason: 'GENEalogical3 backup deletion in progress. Retry deletion in Workspace.',
+              },
+            ],
+          }),
+        },
+        generation,
+      );
+    requireWriteProtection = true;
+    // A writer may have committed just before the barrier was installed.
+    await verifyDocument();
     for (const photoId of verifiedPortraitIds) {
       await verifyDocument();
       await verifyFolder();
