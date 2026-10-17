@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { queueDriveOperation } from '../lib/drive';
+import { deleteDriveBackup, queueDriveOperation } from '../lib/drive';
 import { makeTree } from '../lib/model';
 import { removeWorkspaceStorage } from '../lib/storage';
 import { useWorkspaceDeletion } from './useWorkspaceDeletion';
@@ -10,6 +10,11 @@ const session = vi.hoisted(() => ({ generation: 0 }));
 vi.mock('../lib/driveAuth', async (original) => ({
   ...(await original<typeof import('../lib/driveAuth')>()),
   getDriveGeneration: () => session.generation,
+  getDriveConnection: () => 'connected',
+}));
+vi.mock('../lib/drive', async (original) => ({
+  ...(await original<typeof import('../lib/drive')>()),
+  deleteDriveBackup: vi.fn(),
 }));
 vi.mock('../lib/storage', () => ({ removeWorkspaceStorage: vi.fn(async () => {}) }));
 
@@ -26,7 +31,61 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('local Workspace deletion', () => {
+describe('Workspace deletion', () => {
+  it.each([false, true])(
+    'resets uncertain attempts on reconnect and preserves confirmed folder deletion: %s',
+    async (folderDeleted) => {
+      const operationBusy = { current: false };
+      const { result } = renderHook(() =>
+        useWorkspaceDeletion({
+          operationBusy,
+          beforeLocalRemoval: vi.fn(),
+          onDriveDeleted: vi.fn(),
+          onRemoved: vi.fn(),
+          onBusy: vi.fn(),
+        }),
+      );
+      const entry = {
+        kind: 'drive' as const,
+        file: { id: 'backup', name: 'Family', modifiedTime: '' },
+        updatedAt: 0,
+      };
+      act(() => result.current.open(entry));
+      vi.mocked(deleteDriveBackup).mockImplementationOnce(async (progress) => {
+        progress.photoFolderId = 'folder';
+        progress.folderAttempted = true;
+        progress.folderDeleted = folderDeleted;
+        progress.documentAttempted = true;
+        progress.portraitAttempted = 'uncertain-portrait';
+        progress.deletedPortraitIds = ['confirmed-portrait'];
+        throw Error('lost response');
+      });
+      await act(async () => {
+        await expect(result.current.submit('drive')).rejects.toThrow('lost response');
+      });
+      const progress = result.current.action!.progress!;
+      act(() => {
+        result.current.close();
+        result.current.open(entry);
+      });
+      expect(progress.folderAttempted).toBe(true);
+      ++session.generation;
+      act(() => {
+        result.current.close();
+        result.current.open(entry);
+      });
+      expect(progress).toMatchObject({
+        generation: session.generation,
+        folderAttempted: false,
+        folderDeleted,
+        documentAttempted: false,
+        portraitAttempted: undefined,
+        deletedPortraitIds: ['confirmed-portrait'],
+      });
+      expect(removeWorkspaceStorage).not.toHaveBeenCalled();
+      expect(operationBusy.current).toBe(false);
+    },
+  );
   it.each(['operation queue', 'another tab'] as const)(
     'removes local data after the Drive generation changes while waiting for %s',
     async (waitingFor) => {

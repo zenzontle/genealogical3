@@ -28,6 +28,14 @@ function render(
 }
 
 describe('homepage library hierarchy', () => {
+  it('warns against personal files in backup photos folders in the Drive privacy information', () => {
+    const html = render('ready');
+    expect(html).toContain('Keep the <code>genealogical3</code> Drive folder for app backups.');
+    expect(html).toContain('Do not add personal files to its <code>.photos</code> folders:');
+    expect(html).toContain(
+      'permanently deletes its photos folder and files you own inside it, including files added manually.',
+    );
+  });
   it('withholds the empty hero while Drive discovery is pending, and renders local cards', () => {
     expect(render('ready', [], null, { driveLoading: true })).not.toContain('class="hero"');
     const html = render('ready', [makeTree('Local')], null, { driveLoading: true });

@@ -47,6 +47,7 @@ export function useWorkspaceDeletion({
       // Missing files in another account cannot confirm a previously uncertain DELETE.
       previous.progress.documentAttempted = false;
       previous.progress.portraitAttempted = undefined;
+      previous.progress.folderAttempted = false;
       previous.progress.generation = getDriveGeneration();
     }
     if (previous?.progress && !previous.progress.documentDeleted)
@@ -89,7 +90,7 @@ export function useWorkspaceDeletion({
         } catch (error) {
           if (task.progress?.documentDeleted)
             throw Error(
-              'The Drive backup and its portraits were permanently deleted, but browser cleanup failed. Your local copies are still available. Retry to finish browser cleanup.',
+              'The Drive backup and its associated photos were permanently deleted, but browser cleanup failed. Your local copies are still available. Retry to finish browser cleanup.',
               { cause: error },
             );
           throw error;

@@ -10,6 +10,14 @@ const legalPages = [
 ];
 
 describe('public deployment identity', () => {
+  it('discloses permanent photos-folder deletion, including manually added and unlisted files', () => {
+    const text = policy.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ');
+    expect(text).toContain(
+      'Keep the genealogical3 Drive folder for app backups. Do not add personal files to its .photos folders: deleting a backup permanently deletes its photos folder and files you own inside it, including files added manually.',
+    );
+    expect(text).toContain('nested contents the app may not be able to list');
+    expect(text).not.toContain('Photo-folder containers and unrelated files are retained');
+  });
   it('preserves the original deployment when settings are unset or blank', () => {
     const defaults = resolvePublicIdentity({});
     expect(defaults).toEqual({

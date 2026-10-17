@@ -191,6 +191,229 @@ it('still cancels Drive operations when the session changes while waiting for an
 });
 
 describe('permanent Drive deletion', () => {
+  it('deletes an empty photos folder before its document and preserves the library', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.files.get(folderId)!.name = 'Manually renamed photos';
+    const libraryId = remote.files.get(folderId)!.parents[0];
+    remote.calls.length = 0;
+    const progress = createDriveDeletion(file.id);
+    await deleteDriveBackup(progress);
+    expect(
+      remote.calls
+        .filter((call) => call.options.method === 'DELETE')
+        .map((call) => call.url.pathname.split('/').at(-1)),
+    ).toEqual([folderId, file.id]);
+    expect(progress).toMatchObject({
+      photoFolderId: folderId,
+      folderAttempted: true,
+      folderDeleted: true,
+      documentDeleted: true,
+    });
+    expect([...remote.files.keys()]).toEqual([libraryId]);
+  });
+  it.each([
+    'app',
+    'kind',
+    'backupId',
+    'mimeType',
+    'id',
+    'document-folder-id',
+    'library',
+    'sibling',
+  ])('stops before any deletion when folder identity is invalid: %s', async (field) => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const doc = remote.document(file.id);
+    const folder = remote.files.get(doc.photoFolderId)!;
+    if (field === 'mimeType') folder.mimeType = 'application/json';
+    else if (field === 'id') folder.id = 'other';
+    else if (field === 'document-folder-id') doc.photoFolderId = '../invalid';
+    else if (field === 'library') doc.photoFolderId = folder.parents[0];
+    else if (field === 'sibling') {
+      const sibling = await saveDriveTree(family([]));
+      doc.photoFolderId = remote.document(sibling.id).photoFolderId;
+    } else folder.appProperties[field] = 'other';
+    remote.setDocument(file.id, doc);
+    remote.calls.length = 0;
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow();
+    expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+  });
+  it.each([403, 404])(
+    'requires accessible folder metadata before any DELETE (status %s)',
+    async (status) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1]));
+      const folderId = remote.document(file.id).photoFolderId;
+      remote.hooks.before = async (call) => {
+        if (call.url.pathname.endsWith(folderId)) return new Response('{}', { status });
+      };
+      remote.calls.length = 0;
+      const progress = createDriveDeletion(file.id);
+      await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access.*intended account/);
+      expect(progress.folderAttempted).toBe(false);
+      expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+    },
+  );
+  it('does not treat a folder disappearing after preflight as an attempted deletion', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    let reads = 0;
+    remote.hooks.before = async (call) => {
+      if (call.url.searchParams.get('alt') === 'media' && ++reads === 2)
+        remote.files.delete(folderId);
+    };
+    remote.calls.length = 0;
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access/);
+    expect(progress.folderAttempted).toBe(false);
+    expect(progress.folderDeleted).toBe(false);
+    expect(remote.files.has(file.id)).toBe(true);
+    expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+  });
+  it('does not confirm an attempted folder deletion from a 403 or delete the document', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'DELETE') return new Response('{}', { status: 500 });
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/not been confirmed deleted/);
+    remote.hooks.before = async (call) => {
+      if (call.url.pathname.endsWith(folderId)) return new Response('{}', { status: 403 });
+    };
+    remote.calls.length = 0;
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access/);
+    expect(progress.folderAttempted).toBe(true);
+    expect(progress.folderDeleted).toBe(false);
+    expect(remote.files.has(file.id)).toBe(true);
+    expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+  });
+  it.each(['folder ownership', 'document ownership', 'revision'])(
+    'stops folder and document deletion after portraits when %s changes',
+    async (change) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1]));
+      const doc = remote.document(file.id);
+      remote.hooks.after = async (call) => {
+        if (call.options.method !== 'DELETE') return;
+        if (change === 'folder ownership')
+          remote.files.get(doc.photoFolderId)!.appProperties.backupId = 'other';
+        else if (change === 'document ownership')
+          remote.files.get(file.id)!.appProperties.backupId = 'other';
+        else remote.setDocument(file.id, { ...doc, revision: 'changed' });
+      };
+      const progress = createDriveDeletion(file.id);
+      await expect(deleteDriveBackup(progress)).rejects.toThrow(
+        /does not belong|ownership changed|backup changed/,
+      );
+      expect(progress.folderAttempted).toBe(false);
+      expect(remote.files.has(doc.photoFolderId)).toBe(true);
+      expect(remote.files.has(file.id)).toBe(true);
+    },
+  );
+  it('stops subsequent portraits when the document revision changes during deletion', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1, 2]));
+    const doc = remote.document(file.id);
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'DELETE')
+        remote.setDocument(file.id, { ...doc, revision: 'changed' });
+    };
+    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(/backup changed/);
+    expect(remote.files.has(doc.portraits[1].imageFileId)).toBe(true);
+    expect(remote.files.has(doc.photoFolderId)).toBe(true);
+  });
+  it.each(['folder', 'document', 'portrait'] as const)(
+    'rechecks %s ownership before deleting the next portrait',
+    async (target) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1, 2]));
+      const doc = remote.document(file.id);
+      const changedId = {
+        folder: doc.photoFolderId,
+        document: file.id,
+        portrait: doc.portraits[1].imageFileId,
+      }[target];
+      remote.hooks.after = async (call) => {
+        if (call.options.method === 'DELETE')
+          remote.files.get(changedId)!.appProperties.backupId = 'other';
+      };
+      await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
+        /does not belong|ownership changed/,
+      );
+      expect(remote.files.has(doc.portraits[0].imageFileId)).toBe(false);
+      expect(remote.files.has(doc.portraits[1].imageFileId)).toBe(true);
+      expect(remote.files.has(doc.photoFolderId)).toBe(true);
+      expect(remote.files.has(file.id)).toBe(true);
+    },
+  );
+  it('retains the document after a folder failure and retries only unconfirmed steps', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([1]));
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'DELETE' && call.url.pathname.endsWith(folderId))
+        return new Response('{}', { status: 500 });
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(
+      /1 portrait file permanently deleted.*photos folder has not been confirmed deleted.*tree document has not been confirmed deleted/,
+    );
+    expect(progress).toMatchObject({
+      folderAttempted: true,
+      folderDeleted: false,
+      documentAttempted: false,
+    });
+    expect(remote.files.has(file.id)).toBe(true);
+    remote.hooks.before = undefined;
+    remote.calls.length = 0;
+    await deleteDriveBackup(progress);
+    expect(
+      remote.calls
+        .filter((call) => call.options.method === 'DELETE')
+        .map((call) => call.url.pathname.split('/').at(-1)),
+    ).toEqual([folderId, file.id]);
+  });
+  it.each(['ownership', 'revision', 'request failure'])(
+    'reports folder deletion separately and skips it on retry after document %s',
+    async (failure) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([]));
+      const doc = remote.document(file.id);
+      remote.hooks.after = async (call) => {
+        if (call.options.method === 'DELETE' && call.url.pathname.endsWith(doc.photoFolderId)) {
+          if (failure === 'ownership') remote.files.get(file.id)!.appProperties.backupId = 'other';
+          if (failure === 'revision') remote.setDocument(file.id, { ...doc, revision: 'changed' });
+        }
+      };
+      remote.hooks.before = async (call) => {
+        if (
+          failure === 'request failure' &&
+          call.options.method === 'DELETE' &&
+          call.url.pathname.endsWith(file.id)
+        )
+          return new Response('{}', { status: 500 });
+      };
+      const progress = createDriveDeletion(file.id);
+      await expect(deleteDriveBackup(progress)).rejects.toThrow(
+        /photos folder and files you own inside it were permanently deleted.*tree document has not been confirmed deleted/,
+      );
+      expect(progress.folderDeleted).toBe(true);
+      expect(remote.files.has(file.id)).toBe(true);
+      remote.files.get(file.id)!.appProperties.backupId = file.id;
+      remote.setDocument(file.id, doc);
+      remote.hooks.before = remote.hooks.after = undefined;
+      remote.calls.length = 0;
+      await deleteDriveBackup(progress);
+      expect(remote.calls.some((call) => call.url.pathname.endsWith(doc.photoFolderId))).toBe(
+        false,
+      );
+    },
+  );
   it.each(['operation queue', 'another tab'] as const)(
     'finishes browser cleanup after a session change while waiting for %s',
     async (waitingFor) => {
@@ -256,13 +479,21 @@ describe('permanent Drive deletion', () => {
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain('permanently deleted');
     expect((failure as Error).message).toContain('Retry to finish browser cleanup');
+    expect((failure as Error).message).toContain(
+      'The photos folder and files you own inside it were also permanently deleted.',
+    );
     expect((failure as Error).message).not.toMatch(
       /has not been confirmed deleted|No files have been confirmed deleted/,
     );
   });
-  it.each([false, true])(
-    'retains the folder and invisible unrelated contents, including Trash: %s',
-    async (trashed) => {
+  it.each([
+    [true, false],
+    [false, false],
+    [true, true],
+    [false, true],
+  ])(
+    'deletes manually added and nested contents (visible: %s, trashed: %s)',
+    async (appAccessible, trashed) => {
       const remote = fakeDrive();
       const file = await saveDriveTree(family([1]));
       const doc = remote.document(file.id);
@@ -274,33 +505,53 @@ describe('permanent Drive deletion', () => {
         mimeType: 'text/plain',
         parents: [folder.id],
         appProperties: {},
-        appAccessible: false,
+        appAccessible,
         trashed,
+      });
+      remote.files.set('nested', {
+        ...folder,
+        id: 'nested',
+        parents: [folder.id],
+        appProperties: {},
+        appAccessible,
+        trashed,
+      });
+      remote.files.set('descendant', {
+        ...remote.files.get('hidden')!,
+        id: 'descendant',
+        parents: ['nested'],
       });
       remote.calls.length = 0;
       await deleteDriveBackup(createDriveDeletion(file.id));
       expect(remote.files.has(file.id)).toBe(false);
       expect(remote.files.has(doc.portraits[0].imageFileId)).toBe(false);
-      expect(remote.files.has(folder.id)).toBe(true);
-      expect(remote.files.has('hidden')).toBe(true);
+      expect(remote.files.has(folder.id)).toBe(false);
+      expect(remote.files.has('hidden')).toBe(false);
+      expect(remote.files.has('nested')).toBe(false);
+      expect(remote.files.has('descendant')).toBe(false);
       expect(
         remote.calls.some(
           (call) => call.options.method === 'DELETE' && call.url.pathname.endsWith(folder.id),
         ),
-      ).toBe(false);
+      ).toBe(true);
     },
   );
-  it('deletes current and superseded trashed portraits individually, document last, retaining containers and unrelated files', async () => {
+  it('deletes portraits even outside the folder, then the folder and document, preserving the library, sibling backup and outside files', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([1, 2]));
     const old = remote.document(file.id).portraits[0].imageFileId;
     await saveDriveTree(family([3]), file.id);
     expect(remote.files.get(old)?.trashed).toBe(true);
     const folderId = remote.document(file.id).photoFolderId;
+    const libraryId = remote.files.get(folderId)!.parents[0];
+    const sibling = await saveDriveTree(family([4]));
+    const siblingDoc = remote.document(sibling.id);
+    remote.files.get(old)!.parents = ['root'];
     remote.files.set('unrelated', {
       ...remote.files.get(old)!,
       id: 'unrelated',
       appProperties: {},
+      parents: ['root'],
       trashed: false,
     });
     remote.calls.length = 0;
@@ -311,18 +562,26 @@ describe('permanent Drive deletion', () => {
       .map((call) => call.url.pathname.split('/').at(-1));
     expect(deleted).toContain(old);
     expect(deleted.at(-1)).toBe(file.id);
-    expect(deleted).toHaveLength(4);
-    expect(remote.files.has(folderId)).toBe(true);
+    expect(deleted).toHaveLength(5);
+    expect(deleted.at(-2)).toBe(folderId);
+    expect(remote.files.has(folderId)).toBe(false);
     expect(remote.files.has('unrelated')).toBe(true);
+    expect(remote.files.has(libraryId)).toBe(true);
+    expect(remote.document(sibling.id)).toEqual(siblingDoc);
+    expect(remote.files.has(siblingDoc.photoFolderId)).toBe(true);
+    expect(siblingDoc.portraits.every((ref) => remote.files.has(ref.imageFileId))).toBe(true);
+    expect(progress.folderDeleted).toBe(true);
     expect(progress.documentDeleted).toBe(true);
   });
   it('deletes a validated legacy portable backup document only', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
     remote.files.get(file.id)!.appProperties = { app: 'GENEalogical3', format: 'tree-v1' };
     remote.files.get(file.id)!.content = new TextEncoder().encode(JSON.stringify(family([1])));
     remote.calls.length = 0;
     await deleteDriveBackup(createDriveDeletion(file.id));
+    expect(remote.files.has(folderId)).toBe(true);
     expect(remote.calls.filter((call) => call.options.method === 'DELETE')).toHaveLength(1);
     expect(remote.calls.some((call) => call.url.searchParams.get('q')?.includes('portrait'))).toBe(
       false,
@@ -404,15 +663,19 @@ describe('permanent Drive deletion', () => {
       remote.calls
         .filter((call) => call.options.method === 'DELETE')
         .map((call) => call.url.pathname.split('/').at(-1)),
-    ).toEqual([second, file.id]);
+    ).toEqual([second, doc.photoFolderId, file.id]);
   });
-  it.each(['portrait', 'document'] as const)(
+  it.each(['portrait', 'folder', 'document'] as const)(
     'recovers a lost %s DELETE response without recreating anything',
     async (target) => {
       const remote = fakeDrive();
       const file = await saveDriveTree(family([1]));
-      const id =
-        target === 'portrait' ? remote.document(file.id).portraits[0].imageFileId : file.id;
+      const doc = remote.document(file.id);
+      const id = {
+        portrait: doc.portraits[0].imageFileId,
+        folder: doc.photoFolderId,
+        document: file.id,
+      }[target];
       remote.hooks.after = async (call) => {
         if (call.options.method === 'DELETE' && call.url.pathname.endsWith(id))
           throw Error('lost response');
@@ -422,7 +685,13 @@ describe('permanent Drive deletion', () => {
       remote.hooks.after = undefined;
       await deleteDriveBackup(progress);
       expect(progress.documentDeleted).toBe(true);
+      expect(progress.folderDeleted).toBe(true);
       expect(remote.files.has(file.id)).toBe(false);
+      expect(
+        remote.calls.filter(
+          (call) => call.options.method === 'DELETE' && call.url.pathname.endsWith(id),
+        ),
+      ).toHaveLength(1);
     },
   );
   it('stops deletion when authorization expires and preserves the document', async () => {
@@ -435,27 +704,32 @@ describe('permanent Drive deletion', () => {
     expect(remote.files.has(file.id)).toBe(true);
     expect(driveAccessToken).toHaveBeenCalledWith(true);
   });
-  it('stops on an account change without sending requests using the new account', async () => {
-    const remote = fakeDrive();
-    const file = await saveDriveTree(family([1, 2]));
-    const first = remote.document(file.id).portraits[0].imageFileId;
-    remote.hooks.after = async (call) => {
-      if (call.options.method === 'DELETE' && call.url.pathname.endsWith(first)) {
-        ++session.generation;
-        vi.mocked(driveAccessToken).mockResolvedValue('other-account');
-      }
-    };
-    remote.calls.length = 0;
-    await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
-      /connection changed/,
-    );
-    expect(remote.files.has(file.id)).toBe(true);
-    expect(
-      remote.calls.every(
-        (call) => (call.options.headers as Record<string, string>).Authorization === 'Bearer token',
-      ),
-    ).toBe(true);
-  });
+  it.each(['portrait', 'folder'] as const)(
+    'stops on an account change during %s deletion without sending requests using the new account',
+    async (target) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1, 2]));
+      const doc = remote.document(file.id);
+      const first = target === 'portrait' ? doc.portraits[0].imageFileId : doc.photoFolderId;
+      remote.hooks.after = async (call) => {
+        if (call.options.method === 'DELETE' && call.url.pathname.endsWith(first)) {
+          ++session.generation;
+          vi.mocked(driveAccessToken).mockResolvedValue('other-account');
+        }
+      };
+      remote.calls.length = 0;
+      await expect(deleteDriveBackup(createDriveDeletion(file.id))).rejects.toThrow(
+        /connection changed/,
+      );
+      expect(remote.files.has(file.id)).toBe(true);
+      expect(
+        remote.calls.every(
+          (call) =>
+            (call.options.headers as Record<string, string>).Authorization === 'Bearer token',
+        ),
+      ).toBe(true);
+    },
+  );
   it('serializes deletion with saves and blocks a queued overwrite of a deleted backup', async () => {
     const remote = fakeDrive();
     const file = await saveDriveTree(family([]));
