@@ -89,7 +89,12 @@ function assertGeneration(generation: number) {
       'Google Drive connection changed. Return to Workspace and retry in the intended account.',
     );
 }
-async function request(url: string, options: RequestInit = {}, generation = getDriveGeneration()) {
+async function request(
+  url: string,
+  options: RequestInit = {},
+  generation = getDriveGeneration(),
+  onAmbiguousFailure?: () => void,
+) {
   assertGeneration(generation);
   const access = async (refresh = false) => {
     try {
@@ -112,6 +117,7 @@ async function request(url: string, options: RequestInit = {}, generation = getD
       return response;
     } catch {
       assertGeneration(generation);
+      onAmbiguousFailure?.();
       throw new DriveRequestError(0, 'Could not reach Google Drive. Your local tree is unchanged.');
     }
   };
@@ -128,6 +134,7 @@ async function request(url: string, options: RequestInit = {}, generation = getD
     );
   }
   if (!response.ok) {
+    if (response.status >= 500) onAmbiguousFailure?.();
     const body = await response.json().catch(() => ({}));
     const reasons = (Array.isArray(body?.error?.errors) ? body.error.errors : []).flatMap(
       (error: { reason?: unknown }) => (typeof error?.reason === 'string' ? [error.reason] : []),
@@ -697,6 +704,7 @@ export type DriveDeletionProgress = {
   documentDeleted: boolean;
   documentAttempted: boolean;
   photoFolderId?: string;
+  /** A successful or ambiguous DELETE; definitive failures cannot authorize a later 404. */
   folderAttempted: boolean;
   folderDeleted: boolean;
   portraitAttempted?: string;
@@ -783,6 +791,10 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         'The backup photo folder changed during deletion. Reopen Workspace to review it.',
       );
     progress.photoFolderId = doc.photoFolderId;
+    const folderUnavailable = () =>
+      Error(
+        'The backup photos folder is missing or inaccessible. Restore access to it in Google Drive, then retry in the intended account. Deletion stopped.',
+      );
     const verifyFolder = async () => {
       if (progress.folderDeleted) return;
       let folder: FileMetadata;
@@ -798,10 +810,10 @@ async function deleteBackup(progress: DriveDeletionProgress) {
           progress.folderDeleted = true;
           return;
         }
-        throw Error(
-          'The backup photos folder is missing or inaccessible. Restore access to it in Google Drive, then retry in the intended account. Deletion stopped.',
-        );
+        throw folderUnavailable();
       }
+      // Seeing the folder still present disproves any earlier uncertain deletion.
+      progress.folderAttempted = false;
       if (
         folder.id !== doc.photoFolderId ||
         folder.id === id ||
@@ -891,8 +903,22 @@ async function deleteBackup(progress: DriveDeletionProgress) {
     // Google also permanently deletes user-owned contents, as disclosed in confirmation.
     await verifyFolder();
     if (!progress.folderDeleted) {
+      // A direct 404 can mean revoked access. Only an ambiguous request may
+      // authorize confirmation from a later metadata 404.
+      try {
+        await request(
+          `${api}/${encodeURIComponent(doc.photoFolderId)}`,
+          { method: 'DELETE' },
+          generation,
+          () => {
+            progress.folderAttempted = true;
+          },
+        );
+      } catch (error) {
+        if (error instanceof DriveRequestError && error.status === 404) throw folderUnavailable();
+        throw error;
+      }
       progress.folderAttempted = true;
-      await remove(doc.photoFolderId);
       progress.folderDeleted = true;
     }
   }

@@ -14,7 +14,7 @@ vi.mock('./driveAuth', async (original) => ({
   driveConfigured: true,
   expireDriveConnection: vi.fn(),
 }));
-import { driveAccessToken } from './driveAuth';
+import { DriveAuthenticationError, driveAccessToken } from './driveAuth';
 import {
   createDriveDeletion,
   deleteDriveBackup,
@@ -412,6 +412,129 @@ describe('permanent Drive deletion', () => {
     expect(progress.folderDeleted).toBe(false);
     expect(remote.files.has(file.id)).toBe(true);
     expect(remote.calls.some((call) => call.options.method === 'DELETE')).toBe(false);
+  });
+  it.each([false, true])(
+    'rejects a folder DELETE 404 and keeps rejecting inaccessible metadata (earlier ambiguous attempt: %s)',
+    async (earlierAttempt) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([1]));
+      const doc = remote.document(file.id);
+      const progress = createDriveDeletion(file.id);
+      const cleanup = vi.fn(async () => {});
+      if (earlierAttempt) {
+        remote.hooks.before = async (call) => {
+          if (call.options.method === 'DELETE' && call.url.pathname.endsWith(doc.photoFolderId))
+            return new Response('{}', { status: 500 });
+        };
+        await expect(deleteDriveBackup(progress, cleanup)).rejects.toThrow();
+        expect(progress.folderAttempted).toBe(true);
+      }
+      remote.hooks.before = async (call) => {
+        if (call.options.method === 'DELETE' && call.url.pathname.endsWith(doc.photoFolderId))
+          remote.files.get(doc.photoFolderId)!.appAccessible = false;
+      };
+      await expect(deleteDriveBackup(progress, cleanup)).rejects.toThrow(/Restore access/);
+      expect(progress).toMatchObject({
+        folderAttempted: false,
+        folderDeleted: false,
+        documentAttempted: false,
+      });
+      expect(remote.files.has(file.id)).toBe(true);
+      expect(remote.files.has(doc.photoFolderId)).toBe(true);
+      await expect(deleteDriveBackup(progress, cleanup)).rejects.toThrow(/Restore access/);
+      expect(cleanup).not.toHaveBeenCalled();
+      expect(remote.files.has(file.id)).toBe(true);
+      remote.files.get(doc.photoFolderId)!.appAccessible = true;
+      remote.hooks.before = undefined;
+      await deleteDriveBackup(progress, cleanup);
+      expect(progress.documentDeleted).toBe(true);
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(
+        remote.calls.filter(
+          (call) =>
+            call.options.method === 'DELETE' &&
+            call.url.pathname.endsWith(doc.portraits[0].imageFileId),
+        ),
+      ).toHaveLength(1);
+    },
+  );
+  it.each([403, 429])(
+    'does not use a definitive folder DELETE failure (%s) to confirm a later metadata 404',
+    async (status) => {
+      const remote = fakeDrive();
+      const file = await saveDriveTree(family([]));
+      const folderId = remote.document(file.id).photoFolderId;
+      remote.hooks.before = async (call) => {
+        if (call.options.method === 'DELETE') return new Response('{}', { status });
+      };
+      const progress = createDriveDeletion(file.id);
+      await expect(deleteDriveBackup(progress)).rejects.toThrow();
+      expect(progress.folderAttempted).toBe(false);
+      remote.files.get(folderId)!.appAccessible = false;
+      await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access/);
+      expect(progress.folderDeleted).toBe(false);
+      expect(remote.files.has(file.id)).toBe(true);
+    },
+  );
+  it('does not count failed token renewal as an ambiguous folder DELETE', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    vi.mocked(driveAccessToken).mockImplementation(async (refresh) => {
+      if (refresh) throw new DriveAuthenticationError(500, 'Token renewal failed');
+      return 'token';
+    });
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'DELETE') return new Response('{}', { status: 401 });
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/Token renewal failed/);
+    expect(progress.folderAttempted).toBe(false);
+    remote.files.get(folderId)!.appAccessible = false;
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access/);
+    expect(remote.files.has(file.id)).toBe(true);
+  });
+  it('confirms a later metadata 404 after an ambiguous server error from folder DELETE', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.hooks.after = async (call) => {
+      if (call.options.method === 'DELETE' && call.url.pathname.endsWith(folderId))
+        return new Response('{}', { status: 500 });
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow();
+    expect(progress.folderAttempted).toBe(true);
+    expect(remote.files.has(folderId)).toBe(false);
+    expect(remote.files.has(file.id)).toBe(true);
+    await deleteDriveBackup(progress);
+    expect(progress.folderDeleted).toBe(true);
+    expect(progress.documentDeleted).toBe(true);
+    expect(
+      remote.calls.filter(
+        (call) => call.options.method === 'DELETE' && call.url.pathname.endsWith(folderId),
+      ),
+    ).toHaveLength(1);
+  });
+  it('clears earlier ambiguity when retry finds the folder still present before access is lost', async () => {
+    const remote = fakeDrive();
+    const file = await saveDriveTree(family([]));
+    const folderId = remote.document(file.id).photoFolderId;
+    remote.hooks.before = async (call) => {
+      if (call.options.method === 'DELETE') return new Response('{}', { status: 500 });
+    };
+    const progress = createDriveDeletion(file.id);
+    await expect(deleteDriveBackup(progress)).rejects.toThrow();
+    expect(progress.folderAttempted).toBe(true);
+    let folderReads = 0;
+    remote.hooks.before = async (call) => {
+      if (!call.options.method && call.url.pathname.endsWith(folderId) && ++folderReads === 2)
+        remote.files.get(folderId)!.appAccessible = false;
+    };
+    await expect(deleteDriveBackup(progress)).rejects.toThrow(/Restore access/);
+    expect(progress.folderAttempted).toBe(false);
+    expect(progress.folderDeleted).toBe(false);
+    expect(remote.files.has(file.id)).toBe(true);
   });
   it.each(['folder ownership', 'document ownership', 'revision'])(
     'stops folder and document deletion after portraits when %s changes',
