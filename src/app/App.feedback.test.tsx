@@ -145,6 +145,8 @@ vi.mock('../lib/drive', () => ({
     deletedPortraitIds: [],
     documentDeleted: false,
     documentAttempted: false,
+    folderAttempted: false,
+    folderDeleted: false,
   }),
   deleteDriveBackup: vi.fn(),
   queueDriveOperation: async (_generation: number, run: () => Promise<unknown>) => run(),
@@ -1777,6 +1779,10 @@ describe('Workspace deletion integration', () => {
           name: { local: 'Local only', drive: 'Drive only', both: 'Both' }[scope],
         }),
       );
+      expect(screen.getByRole('dialog').textContent?.includes('files you added manually')).toBe(
+        scope !== 'local',
+      );
+      expect(screen.queryByRole('checkbox')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       expect(records.has(original.id)).toBe(scope === 'drive');

@@ -63,11 +63,26 @@ describe('Workspace deletion confirmation', () => {
       expect(submit).not.toHaveBeenCalled();
       const description = screen.getByRole('dialog').querySelector('p')!.textContent!;
       expect(description.toLowerCase().includes('permanently')).toBe(scope !== 'local');
-      if (scope !== 'local') expect(description).toContain('cannot be undone');
+      const warning =
+        'If this backup has a photos folder, deleting it also permanently deletes files you own inside that folder, including files you added manually. The app may not be able to list those files. This cannot be undone.';
+      expect(description.includes(warning)).toBe(scope !== 'local');
+      const describedBy = screen.getByRole('dialog').getAttribute('aria-describedby')!;
+      expect(document.getElementById(describedBy)?.textContent).toBe(description);
+      expect(screen.queryByRole('checkbox')).toBeNull();
       await user.click(screen.getByRole('button', { name: 'Delete' }));
       expect(submit).toHaveBeenCalledWith(scope);
     },
   );
+  it('removes the folder warning when switching back to local-only deletion', async () => {
+    const user = userEvent.setup();
+    dialog();
+    for (const name of ['Drive only', 'Both']) {
+      await user.click(screen.getByRole('radio', { name }));
+      expect(screen.getByText(/The app may not be able to list those files/)).toBeTruthy();
+      await user.click(screen.getByRole('radio', { name: 'Local only' }));
+      expect(screen.queryByText(/The app may not be able to list those files/)).toBeNull();
+    }
+  });
   it('provides accurate single-state explanations without scope choices', () => {
     const view = dialog({ ...linked, entry: { kind: 'local', tree, updatedAt: 0 } });
     expect(screen.queryByRole('radio')).toBeNull();

@@ -351,6 +351,12 @@ export function HomeScreen({
                           Disconnect Drive forgets this browser's connection without deleting files
                           or revoking Google's permission.
                         </p>
+                        <p>
+                          Keep the <code>genealogical3</code> Drive folder for app backups. Do not
+                          add personal files to its <code>.photos</code> folders: deleting a backup
+                          permanently deletes its photos folder and files you own inside it,
+                          including files added manually.
+                        </p>
                       </div>
                     </li>
                     <li>

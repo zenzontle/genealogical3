@@ -32,6 +32,8 @@ export function WorkspaceDeletionDialog({
   const busy = feedback.status === 'pending';
   const browserCleanup = !!action.progress?.documentDeleted;
   const driveUnavailable = !driveConnected && !browserCleanup;
+  const folderWarning =
+    ' If this backup has a photos folder, deleting it also permanently deletes files you own inside that folder, including files you added manually. The app may not be able to list those files. This cannot be undone.';
   const explanation: Record<DeletionScope, string> = {
     local: `Remove “${name}” from this browser.${linked ? ' Its Drive backup will remain available to open again.' : ' Keep a backup first if you want to keep this tree.'}`,
     drive: `Permanently delete “${backupName}” from Google Drive, including its associated portraits. This cannot be undone.${linked ? ' All local copies will remain, without this Drive association.' : ''}`,
@@ -40,7 +42,7 @@ export function WorkspaceDeletionDialog({
   return (
     <LocalDialog
       title="Delete tree?"
-      description={explanation[scope]}
+      description={explanation[scope] + (scope === 'local' ? '' : folderWarning)}
       busy={busy}
       onClose={onClose}
     >

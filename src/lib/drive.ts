@@ -25,13 +25,15 @@ const api = 'https://www.googleapis.com/drive/v3/files';
 const uploadApi = 'https://www.googleapis.com/upload/drive/v3/files';
 const app = 'GENEalogical3';
 const folderMimeType = 'application/vnd.google-apps.folder';
-const metadataFields = 'id,name,description,modifiedTime,mimeType,parents,appProperties,trashed';
+const metadataFields =
+  'id,name,description,modifiedTime,mimeType,parents,appProperties,trashed,contentRestrictions(readOnly)';
 export type DriveFile = { id: string; name: string; description?: string; modifiedTime: string };
 type FileMetadata = DriveFile & {
   mimeType: string;
   parents?: string[];
   appProperties?: Record<string, string>;
   trashed?: boolean;
+  contentRestrictions?: { readOnly?: boolean }[];
 };
 export type RestoreWarning = { personId: string; name: string };
 export type DriveRestoreResult = {
@@ -87,7 +89,12 @@ function assertGeneration(generation: number) {
       'Google Drive connection changed. Return to Workspace and retry in the intended account.',
     );
 }
-async function request(url: string, options: RequestInit = {}, generation = getDriveGeneration()) {
+async function request(
+  url: string,
+  options: RequestInit = {},
+  generation = getDriveGeneration(),
+  onAmbiguousFailure?: () => void,
+) {
   assertGeneration(generation);
   const access = async (refresh = false) => {
     try {
@@ -110,6 +117,7 @@ async function request(url: string, options: RequestInit = {}, generation = getD
       return response;
     } catch {
       assertGeneration(generation);
+      onAmbiguousFailure?.();
       throw new DriveRequestError(0, 'Could not reach Google Drive. Your local tree is unchanged.');
     }
   };
@@ -126,6 +134,7 @@ async function request(url: string, options: RequestInit = {}, generation = getD
     );
   }
   if (!response.ok) {
+    if (response.status >= 500) onAmbiguousFailure?.();
     const body = await response.json().catch(() => ({}));
     const reasons = (Array.isArray(body?.error?.errors) ? body.error.errors : []).flatMap(
       (error: { reason?: unknown }) => (typeof error?.reason === 'string' ? [error.reason] : []),
@@ -161,6 +170,8 @@ const owned = (file: FileMetadata, kind: string, backupId: string) =>
   file.appProperties?.app === app &&
   file.appProperties?.kind === kind &&
   file.appProperties?.backupId === backupId;
+const contentReadOnly = (file: FileMetadata) =>
+  file.contentRestrictions?.some((restriction) => restriction.readOnly);
 const escaped = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const mediaUrl = (id: string) => `${api}/${encodeURIComponent(id)}?alt=media`;
 const metadataUrl = (id: string) => `${api}/${encodeURIComponent(id)}?fields=${metadataFields}`;
@@ -447,6 +458,10 @@ async function saveSnapshot(
       throw Error(
         'This backup requires attention. Duplicate your local tree in Workspace to save a new backup.',
       );
+    if (contentReadOnly(file))
+      throw Error(
+        'This Drive backup is read-only, possibly because deletion is in progress. Retry deletion in Workspace, or duplicate your local tree to save a new backup.',
+      );
     previous = await readDocument(existingId, generation);
     if (options.expectedRevision && previous.revision !== options.expectedRevision)
       throw new DriveConflictError();
@@ -688,6 +703,10 @@ export type DriveDeletionProgress = {
   deletedPortraitIds: string[];
   documentDeleted: boolean;
   documentAttempted: boolean;
+  photoFolderId?: string;
+  /** A successful or ambiguous DELETE; definitive failures cannot authorize a later 404. */
+  folderAttempted: boolean;
+  folderDeleted: boolean;
   portraitAttempted?: string;
   revision?: string;
 };
@@ -698,6 +717,8 @@ export function createDriveDeletion(id: string): DriveDeletionProgress {
     deletedPortraitIds: [],
     documentDeleted: false,
     documentAttempted: false,
+    folderAttempted: false,
+    folderDeleted: false,
   };
 }
 const deletionOwned = (file: FileMetadata, kind: string, id: string) =>
@@ -734,6 +755,26 @@ async function deleteBackup(progress: DriveDeletionProgress) {
   )
     throw Error('This file is not an app-owned tree backup. Deletion stopped.');
   const input = await readJson(await request(mediaUrl(id), {}, generation));
+  let requireWriteProtection = false;
+  const verifyDocument = async () => {
+    const fresh = await metadata(id, generation);
+    if (
+      fresh.id !== id ||
+      fresh.mimeType !== 'application/json' ||
+      (legacy
+        ? fresh.appProperties?.app !== app || fresh.appProperties?.format !== 'tree-v1'
+        : !deletionOwned(fresh, 'tree', id))
+    )
+      throw Error('The backup ownership changed. The tree document was kept.');
+    if (requireWriteProtection && !contentReadOnly(fresh))
+      throw Error(
+        'The backup write protection changed. Deletion stopped. Retry deletion in Workspace.',
+      );
+    const current = await readJson(await request(mediaUrl(id), {}, generation));
+    if (JSON.stringify(current) !== JSON.stringify(input))
+      throw Error('The backup changed during deletion. The tree document was kept.');
+    return fresh;
+  };
   if (legacy) {
     validateTree(input);
     if (input?.format === driveFormat)
@@ -745,6 +786,46 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         'The backup changed during deletion. Reopen its Workspace card to review before retrying.',
       );
     progress.revision = doc.revision;
+    if (progress.photoFolderId && progress.photoFolderId !== doc.photoFolderId)
+      throw Error(
+        'The backup photo folder changed during deletion. Reopen Workspace to review it.',
+      );
+    progress.photoFolderId = doc.photoFolderId;
+    const folderUnavailable = () =>
+      Error(
+        'The backup photos folder is missing or inaccessible. Restore access to it in Google Drive, then retry in the intended account. Deletion stopped.',
+      );
+    const verifyFolder = async () => {
+      if (progress.folderDeleted) return;
+      let folder: FileMetadata;
+      try {
+        folder = await metadata(doc.photoFolderId, generation);
+      } catch (error) {
+        if (
+          !(error instanceof DriveRequestError) ||
+          !(error.status === 404 || (error.status === 403 && !error.retryable))
+        )
+          throw error;
+        if (error.status === 404 && progress.folderAttempted) {
+          progress.folderDeleted = true;
+          return;
+        }
+        throw folderUnavailable();
+      }
+      // Seeing the folder still present disproves any earlier uncertain deletion.
+      progress.folderAttempted = false;
+      if (
+        folder.id !== doc.photoFolderId ||
+        folder.id === id ||
+        folder.mimeType !== folderMimeType ||
+        !deletionOwned(folder, 'photos', id)
+      )
+        throw Error(
+          'The photos folder does not belong to this backup. Deletion stopped to protect unrelated files.',
+        );
+    };
+    // Validate the exact document-owned folder before deleting any portrait.
+    await verifyFolder();
     // Do not exclude Trash: superseded portraits must also be permanently removed.
     const inventory = await listFiles(
       new URLSearchParams({
@@ -757,11 +838,9 @@ async function deleteBackup(progress: DriveDeletionProgress) {
     const ids = new Set([
       ...doc.portraits.map((ref) => ref.imageFileId),
       ...inventory.map((photo) => photo.id),
+      ...(progress.portraitAttempted ? [progress.portraitAttempted] : []),
     ]);
-    const verifiedPortraitIds: string[] = [];
-    // Preflight every candidate so a validation failure leaves the retained backup intact.
-    for (const photoId of ids) {
-      if (progress.deletedPortraitIds.includes(photoId)) continue;
+    const verifyPortrait = async (photoId: string) => {
       let photo: FileMetadata;
       try {
         photo = await metadata(photoId, generation);
@@ -769,7 +848,7 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         if (!(error instanceof DriveRequestError && error.status === 404)) throw error;
         // Missing references need no deletion; count only our verified, attempted DELETEs.
         if (progress.portraitAttempted === photoId) progress.deletedPortraitIds.push(photoId);
-        continue;
+        return false;
       }
       if (
         photo.id !== photoId ||
@@ -779,29 +858,71 @@ async function deleteBackup(progress: DriveDeletionProgress) {
         throw Error(
           'A portrait does not belong to this backup. Deletion stopped to protect unrelated files.',
         );
-      verifiedPortraitIds.push(photoId);
+      return true;
+    };
+    const verifiedPortraitIds: string[] = [];
+    // Preflight every candidate so a validation failure leaves the retained backup intact.
+    for (const photoId of ids) {
+      if (!progress.deletedPortraitIds.includes(photoId) && (await verifyPortrait(photoId)))
+        verifiedPortraitIds.push(photoId);
     }
+    const fresh = await verifyDocument();
+    // Drive enforces this barrier even for other devices that already passed save preflight.
+    // Keep it through partial failures: a retained document must not accept new revisions.
+    if (!contentReadOnly(fresh))
+      await request(
+        `${api}/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentRestrictions: [
+              {
+                readOnly: true,
+                reason: 'GENEalogical3 backup deletion in progress. Retry deletion in Workspace.',
+              },
+            ],
+          }),
+        },
+        generation,
+      );
+    requireWriteProtection = true;
+    // A writer may have committed just before the barrier was installed.
+    await verifyDocument();
     for (const photoId of verifiedPortraitIds) {
+      await verifyDocument();
+      await verifyFolder();
+      if (!(await verifyPortrait(photoId))) continue;
       progress.portraitAttempted = photoId;
       await remove(photoId);
       progress.deletedPortraitIds.push(photoId);
       progress.portraitAttempted = undefined;
     }
-    const current = await readDocument(id, generation);
-    if (JSON.stringify(current) !== JSON.stringify(doc))
-      throw Error('The backup changed during deletion. The tree document was kept.');
+    await verifyDocument();
+    // Recheck ownership immediately before DELETE; drive.file may hide descendants.
+    // Google also permanently deletes user-owned contents, as disclosed in confirmation.
+    await verifyFolder();
+    if (!progress.folderDeleted) {
+      // A direct 404 can mean revoked access. Only an ambiguous request may
+      // authorize confirmation from a later metadata 404.
+      try {
+        await request(
+          `${api}/${encodeURIComponent(doc.photoFolderId)}`,
+          { method: 'DELETE' },
+          generation,
+          () => {
+            progress.folderAttempted = true;
+          },
+        );
+      } catch (error) {
+        if (error instanceof DriveRequestError && error.status === 404) throw folderUnavailable();
+        throw error;
+      }
+      progress.folderAttempted = true;
+      progress.folderDeleted = true;
+    }
   }
-  // drive.file can hide unrelated descendants, so an empty child listing cannot
-  // prove a folder is safe to delete. Retain folders and recheck document ownership.
-  const fresh = await metadata(id, generation);
-  if (
-    fresh.id !== id ||
-    fresh.mimeType !== 'application/json' ||
-    (legacy
-      ? fresh.appProperties?.app !== app || fresh.appProperties?.format !== 'tree-v1'
-      : !deletionOwned(fresh, 'tree', id))
-  )
-    throw Error('The backup ownership changed. The tree document was kept.');
+  await verifyDocument();
   progress.documentAttempted = true;
   await remove(id);
   progress.documentDeleted = true;
@@ -825,11 +946,28 @@ export function deleteDriveBackup(
       const completed = progress.deletedPortraitIds.length;
       if (progress.documentDeleted)
         throw Error(
-          `${message} The Drive backup was permanently deleted. Retry to finish browser cleanup.`,
+          `${message} The Drive backup was permanently deleted.${progress.folderDeleted ? ' The photos folder and files you own inside it were also permanently deleted.' : ''} Retry to finish browser cleanup.`,
           { cause: error },
         );
+      const portraitStatus = completed
+        ? `${completed} portrait file${completed === 1 ? '' : 's'} permanently deleted.`
+        : progress.folderDeleted
+          ? ''
+          : 'No files have been confirmed deleted.';
+      const folderStatus = progress.folderDeleted
+        ? 'The photos folder and files you own inside it were permanently deleted.'
+        : progress.photoFolderId
+          ? 'The photos folder has not been confirmed deleted.'
+          : '';
       throw Error(
-        `${message} ${completed ? `${completed} portrait file${completed === 1 ? '' : 's'} permanently deleted. The tree document has not been confirmed deleted.` : 'No files have been confirmed deleted.'} Retry to finish cleanup.`,
+        [
+          message,
+          portraitStatus,
+          folderStatus,
+          'The tree document has not been confirmed deleted. Retry to finish cleanup.',
+        ]
+          .filter(Boolean)
+          .join(' '),
         { cause: error },
       );
     })
