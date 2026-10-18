@@ -114,7 +114,6 @@ export function PortraitUpload({
         </span>
       </button>
       <div className="portrait-upload-details">
-        <p className="tiny">JPEG, PNG or WebP · processed locally</p>
         {!viewerOpen && picker}
         {!viewerOpen && status}
       </div>
@@ -122,7 +121,6 @@ export function PortraitUpload({
         <LocalDialog
           className="portrait-viewer"
           title={`Photo of ${person.name || 'Unnamed person'}`}
-          description="JPEG, PNG or WebP · processed locally"
           busy={false}
           onClose={() => setViewerOpen(false)}
         >

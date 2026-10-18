@@ -11,7 +11,7 @@ export function LocalDialog({
   className,
 }: {
   title: string;
-  description: string;
+  description?: string;
   busy: boolean;
   onClose: () => void;
   children: ReactNode;
@@ -44,7 +44,7 @@ export function LocalDialog({
       ref={dialogRef}
       className={['modal local-dialog', className].filter(Boolean).join(' ')}
       aria-labelledby={titleId}
-      aria-describedby={descriptionId}
+      aria-describedby={description ? descriptionId : undefined}
       aria-modal="true"
       aria-busy={busy}
       onCancel={(event) => {
@@ -93,7 +93,7 @@ export function LocalDialog({
           </button>
         )}
       </div>
-      <p id={descriptionId}>{description}</p>
+      {description && <p id={descriptionId}>{description}</p>}
       {children}
     </dialog>
   );
