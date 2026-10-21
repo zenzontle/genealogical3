@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, type ReactNode } from 'react';
+import type { NodeChange } from '@xyflow/react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -45,6 +46,7 @@ function setDriveConnection(connection: string) {
   driveState.listeners.forEach((listener) => listener());
 }
 type CanvasEvents = {
+  onNodesChange: (changes: NodeChange<PersonNode>[]) => void;
   onConnect: (connection: {
     source: string;
     target: string;
@@ -164,11 +166,17 @@ vi.mock('@xyflow/react', async (original) => ({
   ConnectionMode: { Loose: 'loose' },
   Background: () => null,
   Controls: () => null,
+  ViewportPortal: Fragment,
   ReactFlow: ({
     nodes,
     onInit,
+    children,
     ...events
-  }: CanvasEvents & { nodes: PersonNode[]; onInit: (instance: unknown) => void }) => {
+  }: CanvasEvents & {
+    nodes: PersonNode[];
+    onInit: (instance: unknown) => void;
+    children: ReactNode;
+  }) => {
     canvasEvents = events;
     const onMoveEnd = events.onMoveEnd;
     useEffect(() => {
@@ -185,16 +193,18 @@ vi.mock('@xyflow/react', async (original) => ({
         {nodes
           .filter((node) => node.type === 'person')
           .map((node) => (
-            <button key={node.id} onClick={() => node.data.onSelect(node.id)}>
+            <button
+              key={node.id}
+              data-x={node.position.x}
+              data-y={node.position.y}
+              onClick={() => node.data.onSelect(node.id)}
+            >
               Select {node.data.person.name}
             </button>
           ))}
+        {children}
       </div>
     );
-  },
-  useNodesState: (initial: PersonNode[]) => {
-    const [nodes, setNodes] = useState(initial);
-    return [nodes, setNodes, vi.fn()];
   },
 }));
 
@@ -305,6 +315,115 @@ const editorSnapshot = async () => {
   expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
   return vi.mocked(exportJson).mock.calls.at(-1)![0];
 };
+
+describe('card alignment while dragging', () => {
+  it('shows snapped positions and guides, saves the release, and supports undo/redo', async () => {
+    original.people[0].x = 100;
+    original.people[0].y = 50;
+    original.people[1].x = 400;
+    original.people[1].y = 300;
+    render(<App />);
+    await openOriginal();
+    const id = original.people[1].id;
+    act(() => canvasEvents.onNodeDragStart());
+    act(() =>
+      canvasEvents.onNodesChange([
+        { id, type: 'position', position: { x: 106, y: 300 }, dragging: true },
+      ]),
+    );
+    expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+      '100',
+    );
+    expect(document.querySelectorAll('.alignment-guides line')).toHaveLength(1);
+    expect((await editorSnapshot()).people[1].x).toBe(400);
+    const released = { id, position: { x: 106, y: 300 } } as PersonNode;
+    act(() => {
+      canvasEvents.onNodesChange([
+        { id, type: 'position', position: released.position, dragging: false },
+      ]);
+      canvasEvents.onNodeDragStop(null, released, [released]);
+    });
+    expect(document.querySelector('.alignment-guides')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+      '100',
+    );
+    expect((await editorSnapshot()).people[1]).toMatchObject({ x: 100, y: 300 });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect((await editorSnapshot()).people[1]).toMatchObject({ x: 100, y: 300 });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    expect(records.get(original.id)?.people[1]).toMatchObject({ x: 100, y: 300 });
+  });
+
+  it('releases snapping outside the threshold and clears its guides', async () => {
+    original.people[0].x = 100;
+    original.people[1].x = 400;
+    original.people[1].y = 300;
+    render(<App />);
+    await openOriginal();
+    const id = original.people[1].id;
+    act(() => canvasEvents.onNodeDragStart());
+    for (const [x, expected] of [
+      [106, 100],
+      [112, 112],
+    ]) {
+      act(() =>
+        canvasEvents.onNodesChange([
+          { id, type: 'position', position: { x, y: 300 }, dragging: true },
+        ]),
+      );
+      expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+        String(expected),
+      );
+    }
+    expect(document.querySelector('.alignment-guides')).toBeNull();
+  });
+
+  it('snaps a selected group by one offset without aligning its members to one another', async () => {
+    original.people[0].x = 0;
+    original.people[0].y = 300;
+    original.people[1].x = 200;
+    original.people[1].y = 500;
+    original.people.push(makePerson('Target', 100, 0));
+    render(<App />);
+    await openOriginal();
+    const moved = original.people.slice(0, 2).map(
+      (person) =>
+        ({
+          id: person.id,
+          position: { x: person.x + 106, y: person.y },
+        }) as PersonNode,
+    );
+    act(() => canvasEvents.onSelectionDragStart());
+    act(() =>
+      canvasEvents.onNodesChange(
+        moved.map((node) => ({
+          id: node.id,
+          type: 'position',
+          position: node.position,
+          dragging: true,
+        })),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Select Alex' }).getAttribute('data-x')).toBe('100');
+    expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+      '300',
+    );
+    act(() => canvasEvents.onSelectionDragStop(null, moved));
+    const saved = await editorSnapshot();
+    expect(saved.people.map(({ x, y }) => [x, y])).toEqual([
+      [100, 300],
+      [300, 500],
+      [100, 0],
+    ]);
+    expect(document.querySelector('.alignment-guides')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+  });
+});
 
 describe('canvas text selection', () => {
   const selectSidebarText = () => {

@@ -10,6 +10,7 @@ import {
   Controls,
   type Connection,
   type Edge,
+  type NodeChange,
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react';
@@ -33,6 +34,8 @@ import {
   X,
 } from 'lucide-react';
 import { PersonCard, type PersonNode } from '../components/PersonCard';
+import { AlignmentGuides } from '../components/AlignmentGuides';
+import { cardAlignment, type AlignmentGuide } from '../lib/cardAlignment';
 import { BrandMark } from '../components/BrandMark';
 import { PersonEditor, type ConnectMode } from '../components/PersonEditor';
 import { RelationshipEditor } from '../components/RelationshipEditor';
@@ -153,6 +156,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarRevealedBySelection, setSidebarRevealedBySelection] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
     navigation = useRef(0),
@@ -970,10 +974,24 @@ export default function App() {
     setMobilePanel(false);
   };
   const saveMovedNodes = (movedNodes: CanvasNode[]) => {
+    const moving = movedNodes.map((node) => ({ ...nodes.find((n) => n.id === node.id), ...node }));
+    const { offset } = cardAlignment(moving, nodes, flowRef.current?.getZoom() ?? 1);
+    const aligned = moving.map((node) => ({
+      ...node,
+      position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+    }));
+    const alignedPositions = new Map(aligned.map((node) => [node.id, node.position]));
+    setNodes((currentNodes) =>
+      currentNodes.map((node) => ({
+        ...node,
+        position: alignedPositions.get(node.id) ?? node.position,
+      })),
+    );
+    setAlignmentGuides([]);
     movingRef.current = false;
     const current = treeRef.current;
     if (!current) return;
-    const next = movePeopleToPositions(current, movedNodes);
+    const next = movePeopleToPositions(current, aligned);
     if (next === current || apply(() => next)) return;
     // A rejected layout edit must also restore the cards rendered during the drag.
     const positions = new Map(current.people.map((p) => [p.id, { x: p.x, y: p.y }]));
@@ -984,6 +1002,35 @@ export default function App() {
       })),
     );
   };
+  const onAlignedNodesChange = useCallback(
+    (changes: NodeChange<CanvasNode>[]) => {
+      const moving = changes.flatMap((change) => {
+        if (change.type !== 'position' || !change.dragging || !change.position) return [];
+        const node = nodes.find((node) => node.id === change.id);
+        return node ? [{ ...node, position: change.position }] : [];
+      });
+      if (!moving.length) {
+        if (changes.some((change) => change.type === 'position' && change.dragging === false)) {
+          setAlignmentGuides([]);
+        }
+        onNodesChange(changes);
+        return;
+      }
+      const { offset, guides } = cardAlignment(moving, nodes, flowRef.current?.getZoom() ?? 1);
+      setAlignmentGuides(guides);
+      onNodesChange(
+        changes.map((change) =>
+          change.type === 'position' && change.dragging && change.position
+            ? {
+                ...change,
+                position: { x: change.position.x + offset.x, y: change.position.y + offset.y },
+              }
+            : change,
+        ),
+      );
+    },
+    [nodes, onNodesChange],
+  );
   const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;
     const current = treeRef.current;
@@ -1328,7 +1375,7 @@ export default function App() {
                   edgeTypes={edgeTypes}
                   colorMode="dark"
                   connectionMode={ConnectionMode.Loose}
-                  onNodesChange={onNodesChange}
+                  onNodesChange={onAlignedNodesChange}
                   onConnect={connect}
                   onNodeDragStart={() => {
                     movingRef.current = true;
@@ -1371,6 +1418,7 @@ export default function App() {
                   proOptions={{ hideAttribution: false }}
                 >
                   <Background color="var(--border)" gap={24} size={1} />
+                  <AlignmentGuides guides={alignmentGuides} />
                   <Controls position="bottom-left" showInteractive={false} />
                 </ReactFlow>
               )}

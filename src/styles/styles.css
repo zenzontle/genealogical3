@@ -953,6 +953,16 @@ h2 {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+.alignment-guides {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
 .canvas-topbar > * {
   pointer-events: auto;
 }
