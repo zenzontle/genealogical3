@@ -301,7 +301,7 @@ export function HomeScreen({
                         <strong>Your family details</strong>
                         <p>
                           Names, dates, relationships, notes, and portraits stay in this browser's
-                          storage unless you export or save to Drive.
+                          storage.
                         </p>
                       </div>
                     </li>
@@ -322,40 +322,19 @@ export function HomeScreen({
                     <ArrowRight size={20} />
                   </div>
                   <strong>Only when you choose</strong>
-                  <p>
-                    Connect to see Drive trees in Workspace. Linked backups sync after data edits.
-                    Opening a Drive-only card or choosing Use Drive version downloads its contents.
-                    Older links are compared with their backups before sync begins.
-                  </p>
                 </div>
                 <div className="privacy-endpoint privacy-endpoint-optional privacy-detail privacy-detail-connections">
                   <Cloud size={28} aria-hidden="true" />
                   <h4>Outside this browser</h4>
-                  <p>
-                    Cloud backups are optional. Linked trees sync automatically after data edits.
-                  </p>
+                  <p>Optional cloud backups.</p>
                   <ul>
                     <li>
                       <Cloud size={17} aria-hidden="true" />
                       <div>
                         <strong>Your Google Drive, if you use it</strong>
                         <p>
-                          Connect Google Drive to see its trees in Workspace. Opening a linked tree
-                          resumes your local edits. To download again, duplicate local edits for
-                          safekeeping, delete the linked local copy, and reopen the remaining Drive
-                          card. Access is limited to files used with this app. A secure cookie
-                          remembers this browser's connection for up to 30 days, including refreshes
-                          and browser restarts. Google may require you to reconnect sooner.
-                        </p>
-                        <p>
-                          Disconnect Drive forgets this browser's connection without deleting files
-                          or revoking Google's permission.
-                        </p>
-                        <p>
-                          Keep the <code>genealogical3</code> Drive folder for app backups. Do not
-                          add personal files to its <code>.photos</code> folders: deleting a backup
-                          permanently deletes its photos folder and files you own inside it,
-                          including files added manually.
+                          Save a tree to your Google Drive. Linked trees sync edits automatically
+                          while connected. Access is limited to files used with this app.
                         </p>
                       </div>
                     </li>
