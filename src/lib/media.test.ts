@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exportPng, exportJson, portraitData } from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
-import { makePerson, makeTree, personCardSize, type Relation } from './model';
+import { makePerson, makeTree, personCardSize, validateTree, type Relation } from './model';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -10,6 +10,24 @@ afterEach(() => {
 });
 
 describe('portable portrait processing', () => {
+  it('exports and reimports approximate birth and death years with a version 3 document', async () => {
+    let output!: Blob;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      output = blob as Blob;
+      return 'blob:dates';
+    });
+    vi.stubGlobal('document', { createElement: () => ({ click: vi.fn() }) });
+    vi.useFakeTimers();
+    const person = {
+      ...makePerson(),
+      born: { precision: 'about' as const, year: 1920 },
+      died: { precision: 'about' as const, year: 1980 },
+    };
+    const tree = { ...makeTree(), people: [person] };
+    exportJson(tree);
+    expect(validateTree(JSON.parse(await output.text()))).toEqual({ ...tree, version: 3 });
+    vi.clearAllTimers();
+  });
   it.each([
     [2048, 1024, 512, 256],
     [600, 1200, 256, 512],
@@ -222,6 +240,22 @@ describe('shared connectors in PNG exports', () => {
       expect(ctx.fillText.mock.calls.some(([text]) => text.startsWith('Age '))).toBe(false);
       expect(nameRows.every(([, , y]) => y >= card[1] + 44)).toBe(true);
       expect(nameRows.every(([, , y]) => y < card[1] + card[3] - 20)).toBe(true);
+      c.born = { precision: 'about', year: 1910 };
+      c.died = { precision: 'about', year: 1980 };
+      c.lifeStatus = 'deceased';
+      ctx.fillText.mockClear();
+      ctx.roundRect.mockClear();
+      await exportPng(tree);
+      const dateRows = ctx.fillText.mock.calls
+        .map(([text]) => text)
+        .filter((text) => /About|1910|1980/.test(text));
+      expect(dateRows.join(' ')).toBe('About 1910 — About 1980');
+      expect(dateRows.every((text) => !text.includes('…') && text.length * 6 <= width - 24)).toBe(
+        true,
+      );
+      const expanded = ctx.roundRect.mock.calls.find(([x, y]) => x === 90 && y === 90)!;
+      const lastDateRow = ctx.fillText.mock.calls.find(([text]) => text.includes('About 1980'))!;
+      expect(lastDateRow[2]).toBeLessThan(expanded[1] + expanded[3] - 8);
     },
   );
 });

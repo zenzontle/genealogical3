@@ -197,6 +197,21 @@ it('still cancels Drive operations when the session changes while waiting for an
   expect(run).not.toHaveBeenCalled();
 });
 
+describe('approximate years in Drive backups', () => {
+  it('round-trips approximate birth/death years and later edits through Drive', async () => {
+    const remote = fakeDrive();
+    const tree = family([null]);
+    tree.people[0].born = { precision: 'about', year: 1920 };
+    tree.people[0].died = { precision: 'about', year: 1980 };
+    const file = await saveDriveTree(tree);
+    expect(remote.document(file.id).tree.version).toBe(3);
+    expect((await openDriveTree(file.id)).tree).toEqual({ ...tree, version: 3 });
+    tree.people[0].born = { precision: 'about', year: 1921 };
+    await saveDriveTree(tree, file.id);
+    expect((await openDriveTree(file.id)).tree.people).toEqual(tree.people);
+  });
+});
+
 describe('permanent Drive deletion', () => {
   it('blocks an already-preflighted cross-device save from committing after folder deletion', async () => {
     const remote = fakeDrive();

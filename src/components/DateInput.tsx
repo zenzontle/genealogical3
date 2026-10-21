@@ -18,7 +18,7 @@ export function DateInput({
   const savedValue =
     value.precision === 'full'
       ? value.value
-      : value.precision === 'year'
+      : value.precision === 'year' || value.precision === 'about'
         ? Number.isFinite(value.year)
           ? String(value.year)
           : ''
@@ -32,22 +32,32 @@ export function DateInput({
         {label}
         <select
           value={value.precision}
-          onChange={(e) =>
+          onChange={(e) => {
+            const precision = e.target.value;
             onChange(
-              e.target.value === 'year'
-                ? { precision: 'year', year: new Date().getFullYear() }
-                : e.target.value === 'full'
+              precision === 'year' || precision === 'about'
+                ? {
+                    precision,
+                    year:
+                      value.precision === 'year' || value.precision === 'about'
+                        ? value.year
+                        : value.precision === 'full'
+                          ? Number(value.value.slice(0, 4)) || NaN
+                          : new Date().getFullYear(),
+                  }
+                : precision === 'full'
                   ? { precision: 'full', value: '2000-01-01' }
                   : { precision: 'unknown' },
-            )
-          }
+            );
+          }}
         >
           <option value="unknown">Unknown</option>
           <option value="year">Year only</option>
           <option value="full">Full date</option>
+          <option value="about">Approximate</option>
         </select>
       </label>
-      {value.precision === 'year' && (
+      {(value.precision === 'year' || value.precision === 'about') && (
         <input
           ref={input}
           type="number"
@@ -59,7 +69,7 @@ export function DateInput({
           defaultValue={Number.isFinite(value.year) ? value.year : ''}
           onChange={(e) => {
             onChange({
-              precision: 'year',
+              precision: value.precision,
               year: e.currentTarget.valueAsNumber,
             });
           }}

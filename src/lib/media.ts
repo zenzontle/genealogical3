@@ -4,6 +4,7 @@ import {
   normalizeHomePerson,
   personCardSize,
   relationLabel,
+  treeDocumentVersion,
   type Tree,
 } from './model';
 import { relationshipIcons } from './relationshipIcons';
@@ -32,9 +33,12 @@ export function exportJson(tree: Tree) {
   assertValidLifeDates(tree);
   const normalized = normalizeHomePerson(tree);
   downloadBlob(
-    new Blob([JSON.stringify({ ...normalized, version: 2 }, null, 2)], {
-      type: 'application/json',
-    }),
+    new Blob(
+      [JSON.stringify({ ...normalized, version: treeDocumentVersion(normalized) }, null, 2)],
+      {
+        type: 'application/json',
+      },
+    ),
     `${safeName(tree.name)}.json`,
   );
 }

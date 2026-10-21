@@ -1,4 +1,10 @@
-import { assertValidLifeDates, duplicateTree, normalizeHomePerson, type Tree } from './model';
+import {
+  assertValidLifeDates,
+  duplicateTree,
+  normalizeHomePerson,
+  treeDocumentVersion,
+  type Tree,
+} from './model';
 import { normalizePersonNames } from './personNames';
 import type { RestoreWarning } from './drive';
 const DB = 'genealogical3';
@@ -114,7 +120,7 @@ export const saveTree = (tree: Tree, expected?: Tree) => {
         editedAt: Math.min(normalized.dataUpdatedAt, Date.now()),
       };
     }
-    return { tree: { ...normalized, version: 2 }, link };
+    return { tree: { ...normalized, version: treeDocumentVersion(normalized) }, link };
   }).then(() => tree.id);
 };
 /** Read/modify both records in one transaction; callbacks never await remote work. */

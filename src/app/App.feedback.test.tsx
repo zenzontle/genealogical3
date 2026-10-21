@@ -1317,6 +1317,52 @@ describe('local feedback integration', () => {
     expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
   });
 
+  it('edits approximate years, keeps invalid drafts unsaved, and restores estimates through undo/redo', async () => {
+    original.people[0].born = { precision: 'year', year: 1920 };
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Born', { exact: true }), {
+      target: { value: 'about' },
+    });
+    expect((await editorSnapshot()).people[0].born).toEqual({ precision: 'about', year: 1920 });
+    expect((await editorSnapshot()).version).toBe(3);
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '' } });
+    expect(screen.getByText(/valid birth year/)).toBeTruthy();
+    expect((await editorSnapshot()).people[0].born).toEqual({ precision: 'about', year: 1920 });
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '1921' } });
+    expect((await editorSnapshot()).people[0].born).toEqual({ precision: 'about', year: 1921 });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByLabelText('Born year')).toHaveProperty('value', '1920');
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(screen.getByLabelText('Born year')).toHaveProperty('value', '1921');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'deceased' },
+    });
+    fireEvent.change(screen.getByLabelText('Died', { exact: true }), {
+      target: { value: 'about' },
+    });
+    fireEvent.change(screen.getByLabelText('Died year'), { target: { value: '1980' } });
+    const deceased = (await editorSnapshot()).people[0];
+    expect(deceased.died).toEqual({ precision: 'about', year: 1980 });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'living' },
+    });
+    expect((await editorSnapshot()).people[0].died).toEqual({ precision: 'unknown' });
+    expect(screen.queryByLabelText('Died', { exact: true })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people[0]).toEqual(deceased);
+    expect(screen.getByLabelText('Died year')).toHaveProperty('value', '1980');
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    await waitFor(() =>
+      expect(records.get(original.id)?.people[0].died).toEqual({ precision: 'unknown' }),
+    );
+    fireEvent.change(screen.getByLabelText('Born', { exact: true }), {
+      target: { value: 'unknown' },
+    });
+    expect((await editorSnapshot()).people[0].born).toEqual({ precision: 'unknown' });
+  });
+
   it('counts a completed group drag once and advances undo/redo from the current clock', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
     render(<App />);

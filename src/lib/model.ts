@@ -3,6 +3,7 @@ import { normalizePersonNames, splitPersonName } from './personNames';
 export type DateValue =
   | { precision: 'unknown' }
   | { precision: 'year'; year: number }
+  | { precision: 'about'; year: number }
   | { precision: 'full'; value: string };
 export type LifeStatus = 'living' | 'deceased';
 export type Person = {
@@ -51,7 +52,7 @@ export type Relation =
       targetHandle: HandleSide;
     };
 export type Tree = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   id: string;
   name: string;
   people: Person[];
@@ -63,6 +64,9 @@ export type Tree = {
 };
 export const uid = () => crypto.randomUUID();
 export const unknownDate = (): DateValue => ({ precision: 'unknown' });
+/** Older readers must not interpret approximate years as exact dates. */
+export const treeDocumentVersion = (tree: Pick<Tree, 'people'>): 2 | 3 =>
+  tree.people.some((p) => p.born.precision === 'about' || p.died.precision === 'about') ? 3 : 2;
 export const makePerson = (name = 'New person', x = 0, y = 0): Person => ({
   id: uid(),
   name,
@@ -105,7 +109,7 @@ export function duplicateTree(tree: Tree): Tree {
   const now = Date.now();
   return {
     ...structuredClone(tree),
-    version: 2,
+    version: treeDocumentVersion(tree),
     id: uid(),
     name: `${tree.name} (copy)`,
     updatedAt: now,
@@ -113,8 +117,15 @@ export function duplicateTree(tree: Tree): Tree {
   };
 }
 export const dateLabel = (date: DateValue) =>
-  date.precision === 'unknown' ? '' : date.precision === 'year' ? String(date.year) : date.value;
-export const dateYearLabel = (date: DateValue) => dateLabel(date).slice(0, 4);
+  date.precision === 'unknown'
+    ? ''
+    : date.precision === 'about'
+      ? `About ${date.year}`
+      : date.precision === 'year'
+        ? String(date.year)
+        : date.value;
+export const dateYearLabel = (date: DateValue) =>
+  date.precision === 'full' ? date.value.slice(0, 4) : dateLabel(date);
 /** Missing fields in older local trees and backups mean no home designation. */
 export function normalizeHomePerson(
   tree: Omit<Tree, 'homePersonId'> & { homePersonId?: unknown },
@@ -177,13 +188,20 @@ export function lifeDatesError({ born, died, lifeStatus }: LifeDates): string {
   ] as const) {
     const precision = date.precision;
     if (!isDate(date))
-      return precision === 'year'
+      return precision === 'year' || precision === 'about'
         ? `Enter a valid ${label} year from 1 to 9999.`
         : `Enter a complete, valid ${label} date.`;
   }
   if (lifeStatus === 'living' && died.precision !== 'unknown')
     return 'Living people cannot have a death date.';
-  if (born.precision === 'unknown' || died.precision === 'unknown') return '';
+  // An estimate has no implied tolerance, so it cannot establish a definite ordering.
+  if (
+    born.precision === 'unknown' ||
+    died.precision === 'unknown' ||
+    born.precision === 'about' ||
+    died.precision === 'about'
+  )
+    return '';
   const earliestBirth =
     born.precision === 'year' ? `${String(born.year).padStart(4, '0')}-01-01` : born.value;
   const latestDeath =
@@ -198,11 +216,16 @@ export function assertValidLifeDates(tree: Tree) {
   }
 }
 export function personAgeLabel(person: LifeDates, today = new Date()): string {
-  if (person.born.precision === 'unknown') return '';
+  if (
+    person.born.precision === 'unknown' ||
+    person.born.precision === 'about' ||
+    person.died.precision === 'about'
+  )
+    return '';
   if (person.died.precision === 'unknown' && personLifeStatus(person) !== 'living') return '';
   type CalendarDate = [number, number, number];
   const bounds = (
-    date: Exclude<DateValue, { precision: 'unknown' }>,
+    date: Exclude<DateValue, { precision: 'unknown' | 'about' }>,
   ): [CalendarDate, CalendarDate] => {
     if (date.precision === 'year')
       return [
@@ -410,7 +433,7 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const isDate = (v: unknown): v is DateValue =>
   isObj(v) &&
   (v.precision === 'unknown' ||
-    (v.precision === 'year' &&
+    ((v.precision === 'year' || v.precision === 'about') &&
       Number.isInteger(v.year) &&
       Number(v.year) >= 1 &&
       Number(v.year) <= 9999) ||
@@ -425,7 +448,7 @@ export function validateTree(input: unknown): Tree {
     throw Error(
       'This Drive document stores photos separately. Use Google Drive cards in Workspace to retrieve its photos, then export a portable JSON backup.',
     );
-  if (!isObj(input) || (input.version !== 1 && input.version !== 2))
+  if (!isObj(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3))
     throw Error('Unsupported tree file version.');
   if (
     typeof input.id !== 'string' ||
@@ -478,7 +501,7 @@ export function validateTree(input: unknown): Tree {
   let checked: Tree = normalizePersonNames(
     normalizeHomePerson({
       ...(input as Tree),
-      version: 2,
+      version: treeDocumentVersion(input as Tree),
       relations: [],
     }),
   );
@@ -511,7 +534,7 @@ export function validateTree(input: unknown): Tree {
         !['married', 'unmarried', 'unspecified'].includes(String(r.union))
       )
         throw Error('A partner relationship refers to a missing person or has an invalid type.');
-    } else if (r.type === 'unassigned' && input.version === 2) {
+    } else if (r.type === 'unassigned' && input.version !== 1) {
       if (
         typeof r.personA !== 'string' ||
         typeof r.personB !== 'string' ||

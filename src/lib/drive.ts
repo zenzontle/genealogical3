@@ -1,7 +1,12 @@
 import type { Tree } from './model';
 import { driveContent } from './driveContent';
 import { retryAfterDelay } from './retryAfter';
-import { assertValidLifeDates, normalizeHomePerson, validateTree } from './model';
+import {
+  assertValidLifeDates,
+  normalizeHomePerson,
+  treeDocumentVersion,
+  validateTree,
+} from './model';
 import {
   DriveAuthenticationError,
   driveAccessToken,
@@ -540,7 +545,11 @@ async function saveSnapshot(
     backupId,
     photoFolderId: folderId,
     revision: options.revision || crypto.randomUUID(),
-    tree: { ...tree, people: tree.people.map((person) => ({ ...person, portrait: null })) },
+    tree: {
+      ...tree,
+      version: treeDocumentVersion(tree),
+      people: tree.people.map((person) => ({ ...person, portrait: null })),
+    },
     portraits,
   };
   const meta = {
