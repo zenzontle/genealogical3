@@ -975,7 +975,12 @@ export default function App() {
   };
   const saveMovedNodes = (movedNodes: CanvasNode[]) => {
     const moving = movedNodes.map((node) => ({ ...nodes.find((n) => n.id === node.id), ...node }));
-    const { offset } = cardAlignment(moving, nodes, flowRef.current?.getZoom() ?? 1);
+    const { offset } = cardAlignment(
+      moving,
+      nodes,
+      flowRef.current?.getZoom() ?? 1,
+      tree?.relations,
+    );
     const aligned = moving.map((node) => ({
       ...node,
       position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
@@ -1016,7 +1021,12 @@ export default function App() {
         onNodesChange(changes);
         return;
       }
-      const { offset, guides } = cardAlignment(moving, nodes, flowRef.current?.getZoom() ?? 1);
+      const { offset, guides } = cardAlignment(
+        moving,
+        nodes,
+        flowRef.current?.getZoom() ?? 1,
+        tree?.relations,
+      );
       setAlignmentGuides(guides);
       onNodesChange(
         changes.map((change) =>
@@ -1029,7 +1039,7 @@ export default function App() {
         ),
       );
     },
-    [nodes, onNodesChange],
+    [nodes, onNodesChange, tree?.relations],
   );
   const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;

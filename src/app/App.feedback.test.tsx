@@ -382,6 +382,83 @@ describe('card alignment while dragging', () => {
     expect(document.querySelector('.alignment-guides')).toBeNull();
   });
 
+  it('snaps a card to a partner heart and preserves the alignment through release and undo/redo', async () => {
+    original.people[0].x = 100;
+    original.people[0].y = 50;
+    original.people[1].x = 500;
+    original.people[1].y = 50;
+    const child = makePerson('Child', 800, 400);
+    original.people.push(child);
+    render(<App />);
+    await openOriginal();
+    const released = { id: child.id, position: { x: 306, y: 400 } } as PersonNode;
+    act(() => canvasEvents.onNodeDragStart());
+    act(() =>
+      canvasEvents.onNodesChange([
+        { id: child.id, type: 'position', position: released.position, dragging: true },
+      ]),
+    );
+    expect(screen.getByRole('button', { name: 'Select Child' }).getAttribute('data-x')).toBe('300');
+    expect(document.querySelector('.alignment-guides line')?.getAttribute('x1')).toBe('390');
+    act(() => {
+      canvasEvents.onNodesChange([
+        { id: child.id, type: 'position', position: released.position, dragging: false },
+      ]);
+      canvasEvents.onNodeDragStop(null, released, [released]);
+    });
+    expect(document.querySelector('.alignment-guides')).toBeNull();
+    expect((await editorSnapshot()).people[2]).toMatchObject({ x: 300, y: 400 });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect((await editorSnapshot()).people[2]).toMatchObject({ x: 300, y: 400 });
+  });
+
+  it('snaps a moving couple by its heart and saves both positions as one edit', async () => {
+    original.people[0].x = 0;
+    original.people[0].y = 300;
+    original.people[1].x = 400;
+    original.people[1].y = 300;
+    original.people.push(makePerson('Target', 300, 0));
+    render(<App />);
+    await openOriginal();
+    const moved = original.people.slice(0, 2).map(
+      (person) =>
+        ({
+          id: person.id,
+          position: { x: person.x + 106, y: person.y },
+        }) as PersonNode,
+    );
+    act(() => canvasEvents.onSelectionDragStart());
+    act(() =>
+      canvasEvents.onNodesChange(
+        moved.map((node) => ({
+          id: node.id,
+          type: 'position',
+          position: node.position,
+          dragging: true,
+        })),
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Select Alex' }).getAttribute('data-x')).toBe('100');
+    expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+      '500',
+    );
+    expect(document.querySelector('.alignment-guides line')?.getAttribute('x1')).toBe('390');
+    act(() => canvasEvents.onSelectionDragStop(null, moved));
+    expect((await editorSnapshot()).people.map(({ x, y }) => [x, y])).toEqual([
+      [100, 300],
+      [500, 300],
+      [300, 0],
+    ]);
+    expect(document.querySelector('.alignment-guides')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+    expect((await editorSnapshot()).people.map(({ x }) => x)).toEqual([100, 500, 300]);
+  });
+
   it('snaps a selected group by one offset without aligning its members to one another', async () => {
     original.people[0].x = 0;
     original.people[0].y = 300;
