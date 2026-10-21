@@ -20,7 +20,8 @@ export function WorkspaceDeletionDialog({
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
   const locked = useRef(false);
   const group = useId(),
-    guidance = useId();
+    guidance = useId(),
+    descriptionId = useId();
   const { entry } = action;
   const linked = entry.kind === 'local' && !!entry.link;
   const name =
@@ -42,7 +43,7 @@ export function WorkspaceDeletionDialog({
   return (
     <LocalDialog
       title="Delete tree?"
-      description={explanation[scope] + (scope === 'local' ? '' : folderWarning)}
+      aria-describedby={descriptionId}
       busy={busy}
       onClose={onClose}
     >
@@ -90,6 +91,9 @@ export function WorkspaceDeletionDialog({
             ))}
           </fieldset>
         )}
+        <p id={descriptionId} className="dialog-description">
+          {explanation[scope] + (scope === 'local' ? '' : folderWarning)}
+        </p>
         {driveUnavailable && (linked || scope === 'drive') && (
           <p id={guidance}>Connect Drive in Workspace to enable permanent Drive deletion.</p>
         )}

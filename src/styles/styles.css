@@ -1735,7 +1735,8 @@ h2 {
 .modal h2 {
   margin: 0;
 }
-.modal > p {
+.modal > p,
+.modal .dialog-description {
   font-size: 0.8rem;
   color: var(--text-muted);
   line-height: 1.6;
