@@ -336,7 +336,9 @@ export default function App() {
   const activeDriveLink = tree
     ? (syncViews[tree.id]?.link ?? driveLinks.find((link) => link.treeId === tree.id))
     : undefined;
-  const driveSyncOff = activeDriveLink?.syncEnabled === false;
+  const driveSyncOff =
+    activeDriveLink?.syncEnabled === false ||
+    (tree ? syncViews[tree.id]?.syncChange === false : false);
   const commit = useCallback(
     (
       next: Tree,
@@ -730,7 +732,7 @@ export default function App() {
     }
   };
   const doDrive = async () => {
-    if (!driveReady || driveOperationBusy.current || !treeRef.current) return;
+    if (!driveReady || driveSyncOff || driveOperationBusy.current || !treeRef.current) return;
     const snapshot = cloneTree(treeRef.current);
     const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
     if (restoreWarnings.length) {

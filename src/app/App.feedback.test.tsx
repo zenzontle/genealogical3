@@ -201,6 +201,7 @@ let records: Map<string, Tree>;
 let links: Map<string, DriveLink>;
 beforeEach(() => {
   vi.clearAllMocks();
+  syncState.views = {};
   vi.mocked(driveSync.manualSave).mockReset().mockImplementation(defaultManualSave);
   vi.mocked(afterPaint).mockReset().mockResolvedValue(undefined);
   driveState.configured = false;
@@ -1427,6 +1428,72 @@ describe('per-tree Drive sync controls inside the editor', () => {
           false,
         );
       }
+    },
+  );
+
+  it.each(['success', 'failure'])(
+    'blocks desktop/mobile saves during a pending switch off ending in %s',
+    async (outcome) => {
+      driveState.configured = true;
+      const link: DriveLink = {
+        treeId: original.id,
+        id: 'backup',
+        name: 'Family.json',
+        modifiedTime: '',
+        syncEnabled: true,
+      };
+      links.set(original.id, link);
+      let finish!: () => void;
+      vi.mocked(driveSync.setSyncEnabled).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            syncState.views = {
+              [original.id]: { status: 'synced', pending: false, link, syncChange: false },
+            };
+            finish = () => {
+              const committed = outcome === 'success' ? { ...link, syncEnabled: false } : link;
+              links.set(original.id, committed);
+              syncState.views = {
+                [original.id]: {
+                  status: outcome === 'success' ? 'disabled' : 'synced',
+                  pending: false,
+                  link: committed,
+                },
+              };
+              if (outcome === 'success') resolve();
+              else reject(Error('Preference could not be saved'));
+            };
+          }),
+      );
+      const { rerender } = render(<App />);
+      await openOriginal();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Save to Drive' })).toHaveProperty(
+          'disabled',
+          false,
+        ),
+      );
+      fireEvent.click(screen.getByRole('switch', { name: 'Google Drive sync for Family' }));
+      rerender(<App />);
+      expect(screen.getByText('Turning off…')).toBeTruthy();
+      expect(links.get(original.id)?.syncEnabled).toBe(true);
+      for (const name of ['Save to Drive', 'Drive']) {
+        const save = screen.getByRole('button', { name });
+        expect(save).toHaveProperty('disabled', true);
+        fireEvent.click(save);
+      }
+      expect(authorizeDrive).not.toHaveBeenCalled();
+      expect(driveSync.manualSave).not.toHaveBeenCalled();
+      await act(async () => finish());
+      rerender(<App />);
+      for (const name of ['Save to Drive', 'Drive'])
+        expect(screen.getByRole('button', { name })).toHaveProperty(
+          'disabled',
+          outcome === 'success',
+        );
+      if (outcome === 'failure')
+        expect(screen.getByText('Preference could not be saved')).toBeTruthy();
+      else expect(screen.getByText('Drive sync off')).toBeTruthy();
     },
   );
 
