@@ -248,7 +248,14 @@ describe('home designation in browser storage', () => {
       retryAt: 10000,
       upload: { revision: 'upload', dataUpdatedAt: 200, content: 'snapshot' },
     };
-    await saveDriveLink({ treeId: tree.id, id: 'backup', name: '', modifiedTime: '', sync });
+    await saveDriveLink({
+      treeId: tree.id,
+      id: 'backup',
+      name: '',
+      modifiedTime: '',
+      syncEnabled: false,
+      sync,
+    });
     await saveTree({ ...tree, viewport: { x: 40, y: 0, zoom: 2 }, updatedAt: 900 });
     expect((await getDriveLink(tree.id))?.sync).toEqual(sync);
     await saveTree({ ...tree, name: 'Newer', dataUpdatedAt: 300 });
@@ -263,6 +270,7 @@ describe('home designation in browser storage', () => {
       },
     }));
     expect((await getDriveLink(tree.id))?.sync?.pending).toBe(true);
+    expect((await getDriveLink(tree.id))?.syncEnabled).toBe(false);
     expect((await getTree(tree.id))?.name).toBe('Newer');
   });
   it.each(['local', 'drive', 'both'] as const)(

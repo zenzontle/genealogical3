@@ -33,6 +33,8 @@ export type DriveLink = {
   modifiedTime: string;
   restoreWarnings?: RestoreWarning[];
   cleanupWarnings?: string[];
+  // Browser-local preference; legacy associations default to enabled.
+  syncEnabled?: boolean;
   sync?: DriveSync;
 };
 // Navigation and local-save timestamps do not identify a different data version.

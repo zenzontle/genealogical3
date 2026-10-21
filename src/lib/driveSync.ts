@@ -28,7 +28,13 @@ import {
 import type { Tree } from './model';
 
 export type SyncStatus =
-  'pending' | 'syncing' | 'synced' | 'waiting for connection' | 'retrying' | 'needs attention';
+  | 'pending'
+  | 'syncing'
+  | 'synced'
+  | 'waiting for connection'
+  | 'retrying'
+  | 'needs attention'
+  | 'disabled';
 export type SyncView = {
   status: SyncStatus;
   pending: boolean;
@@ -36,6 +42,7 @@ export type SyncView = {
   warning?: string;
   conflict?: SyncConflict;
   link: DriveLink;
+  syncChange?: boolean;
 };
 export const retryableDriveError = (error: unknown): error is DriveRequestError =>
   error instanceof DriveRequestError && error.retryable;
@@ -70,6 +77,7 @@ export class DriveSyncCoordinator {
   private running = false;
   private activeId?: string;
   private edits = new Map<string, number>();
+  private syncChanges = new Map<string, boolean>();
   private refreshId = 0;
   private disposed = false;
   constructor(private d: Dependencies = dependencies) {}
@@ -95,14 +103,41 @@ export class DriveSyncCoordinator {
           ...view,
           pending: true,
           conflict: view.conflict ? { ...view.conflict, localDataUpdatedAt: timestamp } : undefined,
-          status: view.conflict || view.error ? 'needs attention' : 'pending',
+          status:
+            view.link.syncEnabled === false
+              ? 'disabled'
+              : view.conflict || view.error
+                ? 'needs attention'
+                : 'pending',
         },
       };
       this.publish();
     }
   }
   hasPending = () =>
-    Object.entries(this.views).some(([id, view]) => view.pending || this.edits.has(id));
+    Object.entries(this.views).some(
+      ([id, view]) => view.link.syncEnabled !== false && (view.pending || this.edits.has(id)),
+    );
+  async setSyncEnabled(id: string, enabled: boolean) {
+    if (this.syncChanges.has(id)) throw Error('Google Drive sync preference is already changing.');
+    this.syncChanges.set(id, enabled);
+    if (this.views[id]) {
+      this.views = { ...this.views, [id]: { ...this.views[id], syncChange: enabled } };
+      this.publish();
+    }
+    try {
+      // Preference changes share the transfer lock, even when Drive is disconnected.
+      await this.d.lock(undefined, () =>
+        this.d.updateLinkedTree(id, (tree, link) => {
+          if (!tree || !link) throw Error('This tree is no longer linked to Google Drive.');
+          return { link: { ...link, syncEnabled: enabled } };
+        }),
+      );
+    } finally {
+      this.syncChanges.delete(id);
+      await this.refresh();
+    }
+  }
   async discardEdits(id: string) {
     this.edits.delete(id);
     await this.refresh();
@@ -132,17 +167,19 @@ export class DriveSyncCoordinator {
         (this.d.connection() === 'connected' ||
           (this.d.connection() === 'error' && !!sync?.retryAt));
       const status: SyncStatus =
-        this.activeId === tree.id
-          ? 'syncing'
-          : attention || sync?.conflict
-            ? 'needs attention'
-            : !pending && !this.edits.has(tree.id)
-              ? 'synced'
-              : !available
-                ? 'waiting for connection'
-                : sync?.retryAt && sync.retryAt > this.d.now()
-                  ? 'retrying'
-                  : 'pending';
+        link.syncEnabled === false
+          ? 'disabled'
+          : this.activeId === tree.id
+            ? 'syncing'
+            : attention || sync?.conflict
+              ? 'needs attention'
+              : !pending && !this.edits.has(tree.id)
+                ? 'synced'
+                : !available
+                  ? 'waiting for connection'
+                  : sync?.retryAt && sync.retryAt > this.d.now()
+                    ? 'retrying'
+                    : 'pending';
       next[tree.id] = {
         status,
         pending: !!unacknowledged || this.edits.has(tree.id),
@@ -152,8 +189,16 @@ export class DriveSyncCoordinator {
           ? { ...sync.conflict, localDataUpdatedAt: this.edits.get(tree.id) ?? tree.dataUpdatedAt }
           : undefined,
         link,
+        syncChange: this.syncChanges.get(tree.id),
       };
-      if (pending && available && !attention && !sync?.conflict && !this.edits.has(tree.id)) {
+      if (
+        link.syncEnabled !== false &&
+        pending &&
+        available &&
+        !attention &&
+        !sync?.conflict &&
+        !this.edits.has(tree.id)
+      ) {
         earliest = Math.min(
           earliest,
           Math.max(sync?.retryAt || 0, bypassDebounce ? 0 : (sync?.editedAt || 0) + 3000),
@@ -244,6 +289,10 @@ export class DriveSyncCoordinator {
       const tree = await this.d.getTree(id),
         link = await this.d.getDriveLink(id);
       if (!tree || (!link && !manual)) return {};
+      if (link?.syncEnabled === false) {
+        if (manual) throw Error('Enable Google Drive sync for this tree first.');
+        return {};
+      }
       if (
         (expectedBackupId !== undefined && (link?.id ?? null) !== expectedBackupId) ||
         (reviewed && !link)
@@ -254,9 +303,12 @@ export class DriveSyncCoordinator {
       if (
         !this.d.online() ||
         (this.d.connection() !== 'connected' &&
-          !(this.d.connection() === 'error' && link?.sync?.retryAt))
-      )
+          (manual || !(this.d.connection() === 'error' && link?.sync?.retryAt)))
+      ) {
+        if (manual)
+          throw Error('Connect Drive and go online to sync. Your local changes remain saved.');
         return {};
+      }
       if (link?.restoreWarnings?.length)
         throw Error(
           'Missing portraits require attention. Duplicate local edits in Workspace for safekeeping.',
@@ -493,8 +545,6 @@ export class DriveSyncCoordinator {
         ? ((await this.d.getDriveLink(id))?.id ?? null)
         : expectedBackupId;
     for (;;) {
-      if (!this.d.online() || this.d.connection() !== 'connected')
-        throw Error('Connect Drive and go online to sync. Your local changes remain saved.');
       if (generation !== this.d.generation())
         throw Error('Drive connection changed. Retry in the intended account.');
       const outcome = await this.attempt(
@@ -515,10 +565,14 @@ export class DriveSyncCoordinator {
   async retry(id?: string, recovery = false) {
     for (const link of await this.d.listDriveLinks()) {
       if (id && link.treeId !== id) continue;
+      if (link.syncEnabled === false) {
+        if (id && !recovery) throw Error('Enable Google Drive sync for this tree first.');
+        continue;
+      }
       if (link.sync?.conflict || link.restoreWarnings?.length) continue;
       if (recovery && link.sync?.attention && !link.sync.retryable) continue;
       await this.d.updateLinkedTree(link.treeId, (_tree, fresh) =>
-        fresh?.id === link.id
+        fresh?.id === link.id && fresh.syncEnabled !== false
           ? {
               link: {
                 ...fresh,
@@ -538,12 +592,13 @@ export class DriveSyncCoordinator {
   async useDrive(id: string, reviewed: SyncConflict): Promise<Tree | undefined> {
     const generation = this.d.generation();
     const result = await this.d.lock(generation, async () => {
+      const link = await this.d.getDriveLink(id),
+        tree = await this.d.getTree(id);
+      if (link?.syncEnabled === false) throw Error('Enable Google Drive sync for this tree first.');
       if (!this.d.online() || this.d.connection() !== 'connected')
         throw Error(
           'Connect Drive and go online before using the Drive version. Your local tree is unchanged.',
         );
-      const link = await this.d.getDriveLink(id),
-        tree = await this.d.getTree(id);
       if (!link || !tree) return;
       const remote = await this.d.inspect(link.id, generation);
       if (
