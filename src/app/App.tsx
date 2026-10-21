@@ -1238,7 +1238,22 @@ export default function App() {
             </div>
           )}
           <div className={`editor-layout ${sidebarIsCollapsed ? 'sidebar-collapsed' : ''}`}>
-            <div className="canvas-wrap" ref={canvasRef}>
+            <div
+              className="canvas-wrap"
+              ref={canvasRef}
+              onPointerDownCapture={(event) => {
+                if (
+                  event.shiftKey &&
+                  event.button === 0 &&
+                  event.target instanceof Element &&
+                  event.target.classList.contains('react-flow__pane')
+                ) {
+                  // Stop native text selection before it can extend from the sidebar.
+                  window.getSelection()?.removeAllRanges();
+                  event.preventDefault();
+                }
+              }}
+            >
               <div className="canvas-topbar">
                 <div className="canvas-label">
                   <span className="canvas-label-dot" /> FAMILY CANVAS

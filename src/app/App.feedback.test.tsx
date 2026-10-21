@@ -181,7 +181,7 @@ vi.mock('@xyflow/react', async (original) => ({
       });
     }, [onInit, nodes, onMoveEnd]);
     return (
-      <div>
+      <div className="react-flow__pane" data-testid="canvas-pane">
         {nodes
           .filter((node) => node.type === 'person')
           .map((node) => (
@@ -305,6 +305,104 @@ const editorSnapshot = async () => {
   expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
   return vi.mocked(exportJson).mock.calls.at(-1)![0];
 };
+
+describe('canvas text selection', () => {
+  const selectSidebarText = () => {
+    const text = screen.getByText('Stories take shape together.');
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    expect(selection.toString()).toBe(text.textContent);
+    return selection;
+  };
+
+  afterEach(() => window.getSelection()?.removeAllRanges());
+
+  it('clears sidebar text and prevents default before the Shift-left press reaches the pane', async () => {
+    render(<App />);
+    await openOriginal();
+    const selection = selectSidebarText();
+    const pane = screen.getByTestId('canvas-pane');
+    const onPointerDown = vi.fn((event: Event) => ({
+      defaultPrevented: event.defaultPrevented,
+      rangeCount: selection.rangeCount,
+    }));
+    pane.addEventListener('pointerdown', onPointerDown);
+
+    const event = new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      shiftKey: true,
+      button: 0,
+    });
+    expect(fireEvent(pane, event)).toBe(false);
+    expect(onPointerDown).toHaveBeenCalledOnce();
+    expect(onPointerDown).toHaveReturnedWith({ defaultPrevented: true, rangeCount: 0 });
+  });
+
+  it.each([
+    { shiftKey: false, button: 0 },
+    { shiftKey: true, button: 1 },
+    { shiftKey: true, button: 2 },
+  ])('preserves text selection for a pane press with %o', async (modifiers) => {
+    render(<App />);
+    await openOriginal();
+    const selection = selectSidebarText();
+    const text = selection.toString();
+    const event = new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      ...modifiers,
+    });
+    expect(fireEvent(screen.getByTestId('canvas-pane'), event)).toBe(true);
+    expect(selection.toString()).toBe(text);
+  });
+
+  it('leaves Shift-left presses on sidebar text, cards, controls, and forms alone', async () => {
+    render(<App />);
+    await openOriginal();
+    const selection = selectSidebarText();
+    const text = selection.toString();
+    for (const target of [
+      screen.getByText('Stories take shape together.'),
+      screen.getByRole('button', { name: 'Select Alex' }),
+      screen.getByRole('button', { name: 'Center on home person' }),
+    ]) {
+      expect(
+        fireEvent(
+          target,
+          new MouseEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            shiftKey: true,
+            button: 0,
+          }),
+        ),
+      ).toBe(true);
+      expect(selection.toString()).toBe(text);
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    const input = screen.getByLabelText('Nickname');
+    const removeAllRanges = vi.spyOn(selection, 'removeAllRanges');
+    expect(
+      fireEvent(
+        input,
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          shiftKey: true,
+          button: 0,
+        }),
+      ),
+    ).toBe(true);
+    expect(removeAllRanges).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: 'Still editable' } });
+    expect(input).toHaveProperty('value', 'Still editable');
+  });
+});
 
 describe('operation toast integration', () => {
   it.each(['JSON', 'PNG'] as const)(
