@@ -7,6 +7,7 @@ export type PersonNode = Node<
   {
     person: Person;
     selected: boolean;
+    deleteCount?: number;
     homeName: string | null;
     isHome: boolean;
     kinship?: KinshipResult;
@@ -18,6 +19,9 @@ export type PersonNode = Node<
 export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
   const p = data.person;
   const life = personLifeLabel(p);
+  const deleteCount = data.deleteCount ?? 1;
+  const deleteLabel =
+    deleteCount > 1 ? `Delete ${deleteCount} selected people` : `Delete ${p.name || 'this person'}`;
   const kinship = data.isHome || data.kinship?.paths.length ? data.kinship : undefined;
   return (
     <>
@@ -25,14 +29,19 @@ export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
         <button
           className="person-delete nodrag nopan"
           type="button"
-          aria-label={`Delete ${p.name || 'this person'}`}
-          title="Delete person"
+          aria-label={deleteLabel}
+          title={deleteCount > 1 ? deleteLabel : 'Delete person'}
           onClick={(event) => {
             event.stopPropagation();
             data.onDelete(p.id);
           }}
         >
           <Trash2 size={16} aria-hidden="true" />
+          {deleteCount > 1 && (
+            <span className="person-delete-count" aria-hidden="true">
+              {deleteCount}
+            </span>
+          )}
         </button>
       )}
       <div

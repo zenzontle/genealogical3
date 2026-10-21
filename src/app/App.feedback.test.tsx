@@ -47,6 +47,7 @@ function setDriveConnection(connection: string) {
 }
 type CanvasEvents = {
   onNodesChange: (changes: NodeChange<PersonNode>[]) => void;
+  onSelectionChange: (selection: { nodes: PersonNode[] }) => void;
   onConnect: (connection: {
     source: string;
     target: string;
@@ -60,6 +61,7 @@ type CanvasEvents = {
   onSelectionDragStop: (_: unknown, nodes: PersonNode[]) => void;
 };
 let canvasEvents: CanvasEvents;
+let canvasNodes: PersonNode[];
 
 const syncState = vi.hoisted(() => ({ views: {} }));
 vi.mock('../lib/driveSync', () => ({
@@ -178,7 +180,12 @@ vi.mock('@xyflow/react', async (original) => ({
     children: ReactNode;
   }) => {
     canvasEvents = events;
+    canvasNodes = nodes;
     const onMoveEnd = events.onMoveEnd;
+    const onSelectionChange = events.onSelectionChange;
+    useEffect(() => {
+      onSelectionChange({ nodes: nodes.filter((node) => node.selected) });
+    }, [nodes, onSelectionChange]);
     useEffect(() => {
       onInit({
         getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
@@ -193,14 +200,48 @@ vi.mock('@xyflow/react', async (original) => ({
         {nodes
           .filter((node) => node.type === 'person')
           .map((node) => (
-            <button
-              key={node.id}
-              data-x={node.position.x}
-              data-y={node.position.y}
-              onClick={() => node.data.onSelect(node.id)}
-            >
-              Select {node.data.person.name}
-            </button>
+            <Fragment key={node.id}>
+              <button
+                key={node.id}
+                data-x={node.position.x}
+                data-y={node.position.y}
+                data-selected={!!node.selected}
+                onClick={(event) => {
+                  node.data.onSelect(node.id);
+                  events.onNodesChange(
+                    nodes
+                      .filter((item) => item.type === 'person')
+                      .map((item) => ({
+                        type: 'select',
+                        id: item.id,
+                        selected:
+                          item.id === node.id
+                            ? event.shiftKey
+                              ? !item.selected
+                              : true
+                            : event.shiftKey
+                              ? !!item.selected
+                              : false,
+                      })),
+                  );
+                }}
+              >
+                Select {node.data.person.name}
+              </button>
+              {node.data.selected && node.selected && (
+                <button
+                  aria-label={
+                    node.data.deleteCount! > 1
+                      ? `Delete ${node.data.deleteCount} selected people`
+                      : `Delete ${node.data.person.name}`
+                  }
+                  title="Canvas delete"
+                  onClick={() => node.data.onDelete(node.id)}
+                >
+                  Trash
+                </button>
+              )}
+            </Fragment>
           ))}
         {children}
       </div>
@@ -1596,6 +1637,170 @@ describe('local feedback integration', () => {
     );
     expect(screen.getByText('2 people · 1 connections')).toBeTruthy();
     expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
+  });
+
+  it.each(['canvas', 'sidebar'])(
+    'deletes a selected group through %s in one undo/redo step',
+    async (entry) => {
+      const sam = makePerson('Sam'),
+        lee = makePerson('Lee');
+      original.people.push(sam, lee);
+      const unrelated = {
+        id: 'unrelated',
+        type: 'parent' as const,
+        parentId: sam.id,
+        childId: lee.id,
+        kind: 'biological' as const,
+      };
+      original.relations.push(unrelated, {
+        id: 'incident',
+        type: 'parent',
+        parentId: original.people[0].id,
+        childId: sam.id,
+        kind: 'biological',
+      });
+      render(<App />);
+      await openOriginal();
+      fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }), { shiftKey: true });
+      expect(screen.getByLabelText('First name')).toHaveProperty('value', 'Taylor');
+      expect(screen.getAllByRole('button', { name: 'Delete 2 selected people' })).toHaveLength(2);
+      // A selected relationship connector never contributes to the people count.
+      act(() =>
+        canvasEvents.onSelectionChange({
+          nodes: [
+            ...canvasNodes.filter((node) => node.selected),
+            { id: partnerNodeId('partner'), type: 'partnerConnector' } as unknown as PersonNode,
+          ],
+        }),
+      );
+      const trigger =
+        entry === 'canvas'
+          ? screen.getByTitle('Canvas delete')
+          : screen.getAllByRole('button', { name: 'Delete 2 selected people' })[1];
+      fireEvent.click(trigger);
+      expect(screen.getByRole('dialog').textContent).toContain('Delete 2 people?');
+      expect(screen.getByRole('dialog').textContent).toContain('relationships will be removed');
+      expect(screen.getByRole('dialog').textContent).toContain(
+        'clears the home person designation',
+      );
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+      const form = screen.getByRole('dialog').querySelector('form')!;
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      const deleted = await editorSnapshot();
+      expect(deleted.people).toEqual([sam, lee]);
+      expect(deleted.relations).toEqual([unrelated]);
+      expect(deleted.homePersonId).toBeNull();
+      expect(screen.queryByLabelText('First name')).toBeNull();
+      expect(canvasNodes.some((node) => node.selected)).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      const restored = await editorSnapshot();
+      expect(restored.people).toEqual(original.people);
+      expect(restored.relations).toEqual(original.relations);
+      expect(restored.homePersonId).toBe(original.homePersonId);
+      expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+      expect(canvasNodes.some((node) => node.selected)).toBe(false);
+      fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+      expect((await editorSnapshot()).people).toEqual(deleted.people);
+      expect((await editorSnapshot()).relations).toEqual([unrelated]);
+    },
+  );
+
+  it('moves the only trash icon after active deselection and preserves selection on cancel', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }), { shiftKey: true });
+    expect(canvasNodes.find((node) => node.data.selected)?.data.person.name).toBe('Taylor');
+    fireEvent.click(screen.getByTitle('Canvas delete'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(canvasNodes.filter((node) => node.selected)).toHaveLength(2);
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }), { shiftKey: true });
+    expect(screen.getByLabelText('First name')).toHaveProperty('value', 'Alex');
+    expect(screen.getByRole('button', { name: 'Delete Alex' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete person' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Delete 2 selected people' })).toBeNull();
+    fireEvent.click(screen.getByTitle('Canvas delete'));
+    expect(screen.getByRole('dialog').textContent).toContain('Delete person?');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await editorSnapshot()).people.map((p) => p.name)).toEqual(['Taylor']);
+  });
+
+  it('deletes every person and restores them without selection or date drafts', async () => {
+    original.people[0].born = { precision: 'year', year: 1980 };
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByLabelText('Born year'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }), { shiftKey: true });
+    fireEvent.click(screen.getByTitle('Canvas delete'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('Start with someone you know.')).toBeTruthy();
+    expect((await editorSnapshot()).relations).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    expect(screen.getByLabelText('Born year')).toHaveProperty('value', '1980');
+    expect(screen.queryByText(/date changes haven't been saved/)).toBeNull();
+  });
+
+  it('uses the dialog snapshot after selection changes and preserves an unselected home', async () => {
+    const sam = makePerson('Sam');
+    original.people.push(sam);
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Sam' }), { shiftKey: true });
+    fireEvent.click(screen.getByTitle('Canvas delete'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('clears the home');
+    // Model a selection update arriving after the dialog captured its targets.
+    act(() =>
+      canvasEvents.onNodesChange(
+        canvasNodes
+          .filter((node) => node.type === 'person')
+          .map((node) => ({
+            type: 'select',
+            id: node.id,
+            selected: node.id === original.homePersonId,
+          })),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const result = await editorSnapshot();
+    expect(result.people).toEqual([original.people[0]]);
+    expect(result.homePersonId).toBe(original.homePersonId);
+    expect(canvasNodes.some((node) => node.selected)).toBe(false);
+  });
+
+  it('rejects a stale group atomically when one target disappears before confirmation', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }), { shiftKey: true });
+    fireEvent.click(screen.getByTitle('Canvas delete'));
+    // Simulate an editor update arriving while the modal is open.
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      expect.stringContaining('not all found'),
+    );
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      expect.stringContaining('not all found'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    expect((await editorSnapshot()).relations).toEqual(original.relations);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
   });
 
   it('finishes pending writes before returning to the library and deleting the last tree', async () => {

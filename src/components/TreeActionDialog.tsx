@@ -5,7 +5,8 @@ import { errorMessage, type FeedbackState } from '../lib/feedback';
 
 export type TreeAction =
   | { kind: 'rename'; treeId: string; name: string }
-  | { kind: 'delete-person'; treeId: string; personId: string; name: string; isHome: boolean };
+  | { kind: 'delete-person'; treeId: string; personId: string; name: string; isHome: boolean }
+  | { kind: 'delete-people'; treeId: string; personIds: string[]; isHome: boolean };
 
 export function TreeActionDialog({
   action,
@@ -16,17 +17,21 @@ export function TreeActionDialog({
   onSubmit: (name: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [name, setName] = useState(action.name);
+  const [name, setName] = useState(action.kind === 'delete-people' ? '' : action.name);
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
   const locked = useRef(false);
   const inputId = useId(),
     errorId = useId();
   const rename = action.kind === 'rename';
   const busy = feedback.status === 'pending';
-  const title = rename ? 'Rename tree' : 'Delete person?';
+  const title = rename
+    ? 'Rename tree'
+    : action.kind === 'delete-people'
+      ? `Delete ${action.personIds.length} people?`
+      : 'Delete person?';
   const description = rename
     ? 'Choose a name for this family tree.'
-    : `Delete ${action.name || 'this person'} and their relationships?${action.isHome ? ' This also clears the home person designation.' : ''} You can undo this change.`;
+    : `${action.kind === 'delete-people' ? 'These people and their relationships will be removed.' : `Delete ${action.name || 'this person'} and their relationships?`}${action.isHome ? ' This also clears the home person designation.' : ''} You can undo this change.`;
   return (
     <LocalDialog title={title} description={description} busy={busy} onClose={onClose}>
       <form

@@ -29,6 +29,7 @@ export function PersonEditor({
   onChange,
   onPortraitChange,
   onDelete,
+  deleteCount = 1,
   onAddRelative,
   connectMode,
   setConnectMode,
@@ -48,6 +49,7 @@ export function PersonEditor({
   onChange: (p: Person) => void;
   onPortraitChange: (portrait: string | null) => void;
   onDelete: () => void;
+  deleteCount?: number;
   onAddRelative: (type: Exclude<ConnectMode, null>) => void;
   connectMode: ConnectMode;
   setConnectMode: (mode: ConnectMode) => void;
@@ -305,7 +307,8 @@ export function PersonEditor({
         </div>
       </details>
       <button className="button danger" onClick={onDelete}>
-        <Trash2 size={16} /> Delete person
+        <Trash2 size={16} />{' '}
+        {deleteCount > 1 ? `Delete ${deleteCount} selected people` : 'Delete person'}
       </button>
     </div>
   );

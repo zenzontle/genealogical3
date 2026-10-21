@@ -1459,6 +1459,22 @@ h2 {
 .person-delete:hover {
   background: var(--surface-hover);
 }
+.person-delete-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  background: var(--danger-surface);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 700;
+}
 .person-card.is-home {
   box-shadow: inset 0 0 0 1px var(--copper);
 }

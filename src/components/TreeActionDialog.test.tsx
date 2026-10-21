@@ -12,6 +12,39 @@ afterEach(() => {
 });
 
 describe('local action dialogs', () => {
+  it.each([true, false])('confirms a group once with Cancel focused (home: %s)', async (isHome) => {
+    let finish!: () => void;
+    const submit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const close = vi.fn();
+    render(
+      <TreeActionDialog
+        action={{ kind: 'delete-people', treeId: 'tree', personIds: ['alex', 'taylor'], isHome }}
+        onSubmit={submit}
+        onClose={close}
+      />,
+    );
+    expect(screen.getByRole('dialog', { name: 'Delete 2 people?' })).toBeTruthy();
+    expect(screen.getByRole('dialog').textContent).toContain(
+      'These people and their relationships will be removed.',
+    );
+    expect(screen.getByRole('dialog').textContent).toContain('You can undo this change.');
+    expect(
+      screen.getByRole('dialog').textContent?.includes('clears the home person designation'),
+    ).toBe(isHome);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+    const form = screen.getByRole('dialog').querySelector('form')!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(submit).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty('disabled', true);
+    finish();
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  });
   it('validates rename, retains the entered name after failure, and retries a trimmed name', async () => {
     const submit = vi
       .fn()
