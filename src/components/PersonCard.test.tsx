@@ -26,6 +26,18 @@ function props(count: number, active = true, selected = true): NodeProps<PersonN
   } as unknown as NodeProps<PersonNode>;
 }
 
+describe('approximate years on person cards', () => {
+  it('renders About for both life dates and retains the complete tooltip', () => {
+    const node = props(1);
+    node.data.person.born = { precision: 'about', year: 1920 };
+    node.data.person.died = { precision: 'about', year: 1980 };
+    render(<PersonCard {...node} />);
+    const label = 'About 1920 — About 1980';
+    expect(screen.getByText(label).title).toBe(label);
+    expect(screen.queryByText(/Died at/)).toBeNull();
+  });
+});
+
 describe('person deletion control', () => {
   it('preserves the single person label and tooltip without a badge', () => {
     const node = props(1);

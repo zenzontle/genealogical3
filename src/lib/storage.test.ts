@@ -137,6 +137,21 @@ function browserStorage(initial: unknown[]) {
   return { records, links, put, modes, storeNames, failure };
 }
 
+describe('approximate years in browser storage', () => {
+  it('saves and reloads approximate birth and death years without changing their meaning', async () => {
+    browserStorage([]);
+    const person = {
+      ...makePerson('Research'),
+      born: { precision: 'about' as const, year: 1920 },
+      died: { precision: 'about' as const, year: 1980 },
+    };
+    const tree = { ...makeTree(), people: [person] };
+    await saveTree(tree);
+    expect(await getTree(tree.id)).toEqual({ ...tree, version: 3 });
+    expect(await listTrees()).toEqual([{ ...tree, version: 3 }]);
+  });
+});
+
 describe('home designation in browser storage', () => {
   it.each(['new timestamp', 'same timestamp', 'removed'] as const)(
     'rejects a stale editor save atomically after a replacement with %s',

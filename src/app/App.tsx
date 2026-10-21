@@ -70,6 +70,7 @@ import {
   updateRelation,
   updatePerson,
   timestampDataChange,
+  treeDocumentVersion,
   uid,
   type HandleSide,
   type LifeDates,
@@ -371,7 +372,7 @@ export default function App() {
       }
       const updated = {
         ...stamped,
-        version: 2 as const,
+        version: treeDocumentVersion(stamped),
       };
       treeRef.current = updated;
       setTree(updated);
