@@ -1426,8 +1426,10 @@ h2 {
   position: relative;
 }
 .person-card.selected {
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 0 4px var(--focus-ring);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 0 0 4px var(--focus-ring);
 }
 .person-delete {
   position: absolute;
@@ -1460,6 +1462,7 @@ h2 {
 .person-card.is-home.selected {
   box-shadow:
     inset 0 0 0 1px var(--copper),
+    0 0 0 1px var(--accent),
     0 0 0 4px var(--focus-ring);
 }
 .person-info .person-kinship {
@@ -1624,6 +1627,16 @@ h2 {
   box-shadow: 0 0 0 1px var(--accent) !important;
   opacity: var(--connector-opacity, 0);
   transition: opacity 120ms ease-out;
+}
+.family-handle::after {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: inherit;
 }
 .partner-handle {
   background: var(--partner) !important;
