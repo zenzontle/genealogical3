@@ -20,6 +20,7 @@ import {
 } from '../lib/storage';
 import { exportJson, exportPng, portraitData } from '../lib/media';
 import type { PersonNode } from '../components/PersonCard';
+import { partnerNodeId } from '../lib/partnerConnectors';
 import { afterPaint } from '../lib/feedback';
 import { mockDialogs } from '../test/dialogTestSetup';
 import {
@@ -181,11 +182,13 @@ vi.mock('@xyflow/react', async (original) => ({
     }, [onInit, nodes, onMoveEnd]);
     return (
       <div>
-        {nodes.map((node) => (
-          <button key={node.id} onClick={() => node.data.onSelect(node.id)}>
-            Select {node.data.person.name}
-          </button>
-        ))}
+        {nodes
+          .filter((node) => node.type === 'person')
+          .map((node) => (
+            <button key={node.id} onClick={() => node.data.onSelect(node.id)}>
+              Select {node.data.person.name}
+            </button>
+          ))}
       </div>
     );
   },
@@ -758,6 +761,64 @@ describe('local feedback integration', () => {
       expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     },
   );
+
+  it.each([false, true])(
+    'connects a child from a heart in one undoable edit (reversed=%s)',
+    async (reversed) => {
+      const child = makePerson('Child', 100, 300);
+      original.people.push(child);
+      render(<App />);
+      await openOriginal();
+      const heart = partnerNodeId('partner');
+      act(() =>
+        canvasEvents.onConnect({
+          source: reversed ? child.id : heart,
+          target: reversed ? heart : child.id,
+          sourceHandle: reversed ? 'top' : 'child',
+          targetHandle: reversed ? 'child' : 'top',
+        }),
+      );
+      const connected = await editorSnapshot();
+      expect(connected.relations.filter((r) => r.type === 'parent')).toEqual(
+        original.people.slice(0, 2).map((p) => ({
+          id: expect.any(String),
+          type: 'parent',
+          parentId: p.id,
+          childId: child.id,
+          kind: 'unspecified',
+        })),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+      expect((await editorSnapshot()).relations).toEqual(original.relations);
+      fireEvent.click(screen.getByRole('button', { name: 'Redo' }));
+      expect((await editorSnapshot()).relations).toEqual(connected.relations);
+    },
+  );
+
+  it('rejects a heart connection atomically when the second parent would create a cycle', async () => {
+    const child = makePerson('Ancestor', 100, 300);
+    original.people.push(child);
+    original.relations.push({
+      id: 'ancestor',
+      type: 'parent',
+      parentId: child.id,
+      childId: original.people[1].id,
+      kind: 'unspecified',
+    });
+    render(<App />);
+    await openOriginal();
+    act(() =>
+      canvasEvents.onConnect({
+        source: partnerNodeId('partner'),
+        target: child.id,
+        sourceHandle: 'child',
+        targetHandle: 'top',
+      }),
+    );
+    await screen.findByText('That connection would create an ancestry cycle.');
+    expect((await editorSnapshot()).relations).toEqual(original.relations);
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveProperty('disabled', true);
+  });
 
   it('tracks adding people and relationships, including the first edit of a draft', async () => {
     render(<App />);

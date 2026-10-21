@@ -48,12 +48,15 @@ import { useTreeImport } from '../hooks/useTreeImport';
 import { useTreeExport } from '../hooks/useTreeExport';
 import { RelationshipEdge } from '../components/RelationshipEdge';
 import { FamilyEdge } from '../components/FamilyEdge';
+import { PartnerConnector, type PartnerNode } from '../components/PartnerConnector';
+import { partnerConnectors, partnerNodeId } from '../lib/partnerConnectors';
 import { relationshipEdges } from '../lib/relationshipEdges';
 import { calculateKinships, type KinshipResult } from '../lib/kinship';
 import { movePeopleToPositions, personPositionAtViewCenter } from '../lib/canvasPosition';
 import { useConnectorProximity } from '../hooks/useConnectorProximity';
 import {
   addRelation,
+  addChildToPartners,
   lifeDatesError,
   makePerson,
   makeTree,
@@ -96,7 +99,8 @@ import {
   type PhotoProgress,
 } from '../lib/drive';
 
-const nodeTypes = { person: PersonCard };
+type CanvasNode = PersonNode | PartnerNode;
+const nodeTypes = { person: PersonCard, partnerConnector: PartnerConnector };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 type SaveState = 'draft' | 'saved' | 'saving' | 'error';
@@ -148,7 +152,7 @@ export default function App() {
   const [mobilePanel, setMobilePanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarRevealedBySelection, setSidebarRevealedBySelection] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState<PersonNode>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
   const history = useRef<Tree[]>([]),
     future = useRef<Tree[]>([]),
     navigation = useRef(0),
@@ -162,7 +166,7 @@ export default function App() {
     persistedTrees = useRef(new Map<string, Tree>()),
     saveEpochs = useRef(new Map<string, number>()),
     fileInput = useRef<HTMLInputElement>(null),
-    flowRef = useRef<ReactFlowInstance<PersonNode> | null>(null),
+    flowRef = useRef<ReactFlowInstance<CanvasNode> | null>(null),
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
@@ -554,6 +558,13 @@ export default function App() {
     const a = connection.source,
       b = connection.target;
     if (!a || !b || !connection.sourceHandle || !connection.targetHandle) return;
+    const partner = treeRef.current?.relations.find(
+      (r) => r.type === 'partner' && (partnerNodeId(r.id) === a || partnerNodeId(r.id) === b),
+    );
+    if (partner) {
+      apply((t) => addChildToPartners(t, partner.id, partnerNodeId(partner.id) === a ? b : a));
+      return;
+    }
     const sh = connection.sourceHandle.replace('-target', ''),
       th = connection.targetHandle.replace('-target', '');
     const relation = relationFromConnection(a, b, sh as HandleSide, th as HandleSide);
@@ -663,8 +674,13 @@ export default function App() {
     },
     [setNodes],
   );
-  const edges = useMemo<Edge[]>(() => {
-    if (!tree) return [];
+  const selectPartner = useCallback((id: string) => {
+    setSelectedRelationId(id);
+    setSelectedId(null);
+    setSidebarRevealedBySelection(true);
+  }, []);
+  const canvas = useMemo(() => {
+    if (!tree) return { edges: [] as Edge[], nodes };
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
     const sizes = new Map(
       nodes.flatMap((node) =>
@@ -673,8 +689,11 @@ export default function App() {
           : [],
       ),
     );
-    return relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes);
-  }, [tree, nodes, selectedRelationId, selectPerson]);
+    return {
+      edges: relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes),
+      nodes: [...nodes, ...partnerConnectors(tree, positions, selectPartner, sizes)],
+    };
+  }, [tree, nodes, selectedRelationId, selectPerson, selectPartner]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation = tree?.relations.find((r) => r.id === selectedRelationId) || null;
   // Selection temporarily reveals details without changing the toggle preference.
@@ -950,7 +969,7 @@ export default function App() {
     setSelectedId(null);
     setMobilePanel(false);
   };
-  const saveMovedNodes = (movedNodes: PersonNode[]) => {
+  const saveMovedNodes = (movedNodes: CanvasNode[]) => {
     movingRef.current = false;
     const current = treeRef.current;
     if (!current) return;
@@ -1288,8 +1307,8 @@ export default function App() {
               </div>
               {tree && (
                 <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
+                  nodes={canvas.nodes}
+                  edges={canvas.edges}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
                   colorMode="dark"
@@ -1427,9 +1446,9 @@ export default function App() {
                     <Plus size={16} /> Add a person
                   </button>
                   <div className="panel-hint">
-                    <span>TIP</span> Top and bottom handles connect parents and children. Side
-                    handles connect partners. Other connections can be assigned a relationship
-                    later.
+                    <span>TIP</span> Top and bottom handles connect parents and children. Drag a
+                    heart to a child to connect both parents. Side handles connect partners. Other
+                    connections can be assigned a relationship later.
                   </div>
                 </div>
               )}

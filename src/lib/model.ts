@@ -345,6 +345,25 @@ export const hasAncestorPath = (
   };
   return walk(startId);
 };
+/** Add both ordinary parent links atomically, preserving any existing parent details. */
+export function addChildToPartners(tree: Tree, partnerId: string, childId: string): Tree {
+  const partner = tree.relations.find((r) => r.id === partnerId);
+  if (partner?.type !== 'partner') throw Error('Choose a partner connection.');
+  if (!tree.people.some((p) => p.id === childId)) throw Error('Choose a person in this tree.');
+  let next = tree;
+  for (const parentId of [partner.personA, partner.personB]) {
+    if (
+      tree.relations.some(
+        (r) => r.type === 'parent' && r.parentId === parentId && r.childId === childId,
+      )
+    )
+      continue;
+    next = addRelation(next, { id: uid(), type: 'parent', parentId, childId, kind: 'unspecified' });
+  }
+  if (next === tree) throw Error('That parent connection already exists.');
+  return next;
+}
+
 export function addRelation(tree: Tree, relation: Relation): Tree {
   const [a, b] = relationEndpoints(relation);
   if (a === b) throw Error('A person cannot be linked to themselves.');
