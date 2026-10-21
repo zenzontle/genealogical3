@@ -9,6 +9,7 @@ export function LocalDialog({
   children,
   hideClose = false,
   className,
+  'aria-describedby': ariaDescribedBy,
 }: {
   title: string;
   description?: string;
@@ -17,6 +18,7 @@ export function LocalDialog({
   children: ReactNode;
   hideClose?: boolean;
   className?: string;
+  'aria-describedby'?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId(),
@@ -44,7 +46,7 @@ export function LocalDialog({
       ref={dialogRef}
       className={['modal local-dialog', className].filter(Boolean).join(' ')}
       aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
+      aria-describedby={description ? descriptionId : ariaDescribedBy}
       aria-modal="true"
       aria-busy={busy}
       onCancel={(event) => {
