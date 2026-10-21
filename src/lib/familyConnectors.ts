@@ -18,8 +18,8 @@ const pairKey = (ids: string[]) => JSON.stringify([...ids].sort());
 
 // Match the side handles and midpoint used by the canvas partner edge.
 export function partnerGeometry(
-  a: Person,
-  b: Person,
+  a: Pick<Person, 'id' | 'x' | 'y'>,
+  b: Pick<Person, 'id' | 'x' | 'y'>,
   size: CardSize,
   sizes: Map<string, CardSize> = new Map(),
 ) {

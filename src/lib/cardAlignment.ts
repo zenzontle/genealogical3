@@ -1,4 +1,5 @@
-import { personCardSize } from './model';
+import { partnerGeometry } from './familyConnectors';
+import { personCardSize, type Relation } from './model';
 
 type AlignmentNode = {
   id: string;
@@ -14,51 +15,86 @@ export type AlignmentGuide = {
   end: number;
 };
 
+function alignmentAnchors(nodes: AlignmentNode[], relations: Relation[]) {
+  const cards = nodes.filter((node) => node.type === 'person');
+  const byId = new Map(cards.map((node) => [node.id, node]));
+  const sizes = new Map(
+    cards.map((node) => [
+      node.id,
+      {
+        width: node.measured?.width ?? personCardSize.width,
+        height: node.measured?.height ?? personCardSize.height,
+      },
+    ]),
+  );
+  return [
+    ...cards.map((node) => {
+      const size = sizes.get(node.id)!;
+      return {
+        position: {
+          x: node.position.x + size.width / 2,
+          y: node.position.y + size.height / 2,
+        },
+        start: node.position,
+        end: { x: node.position.x + size.width, y: node.position.y + size.height },
+      };
+    }),
+    ...relations.flatMap((relation) => {
+      if (relation.type !== 'partner') return [];
+      const a = byId.get(relation.personA),
+        b = byId.get(relation.personB);
+      if (!a || !b) return [];
+      const { midpoint } = partnerGeometry(
+        { id: a.id, ...a.position },
+        { id: b.id, ...b.position },
+        personCardSize,
+        sizes,
+      );
+      return [{ position: midpoint, start: midpoint, end: midpoint }];
+    }),
+  ];
+}
+
 /** Snap each axis independently within eight screen pixels, preserving group spacing. */
-export function cardAlignment(movingNodes: AlignmentNode[], nodes: AlignmentNode[], zoom: number) {
+export function cardAlignment(
+  movingNodes: AlignmentNode[],
+  nodes: AlignmentNode[],
+  zoom: number,
+  relations: Relation[] = [],
+) {
   const movingIds = new Set(movingNodes.map((node) => node.id));
-  const targets = nodes.filter((node) => node.type === 'person' && !movingIds.has(node.id));
+  // Only hearts with both partners in the same set move by a shared offset.
+  const movingAnchors = alignmentAnchors(movingNodes, relations);
+  const targets = alignmentAnchors(
+    nodes.filter((node) => !movingIds.has(node.id)),
+    relations,
+  );
   const threshold = 8 / zoom;
   const offset = { x: 0, y: 0 };
   const guides: AlignmentGuide[] = [];
 
   for (const axis of ['x', 'y'] as const) {
-    const size = axis === 'x' ? 'width' : 'height';
     const otherAxis = axis === 'x' ? 'y' : 'x';
-    const otherSize = axis === 'x' ? 'height' : 'width';
     let closest: { distance: number; guide: AlignmentGuide } | undefined;
 
-    for (const moving of movingNodes) {
-      if (moving.type !== 'person') continue;
+    for (const moving of movingAnchors) {
       for (const target of targets) {
-        // Prefer center guides when equal-sized cards have several matching anchors.
-        for (const anchor of [0.5, 0, 1]) {
-          const position =
-            target.position[axis] + (target.measured?.[size] ?? personCardSize[size]) * anchor;
-          const distance =
-            position -
-            moving.position[axis] -
-            (moving.measured?.[size] ?? personCardSize[size]) * anchor;
-          if (
-            Math.abs(distance) > threshold ||
-            (closest && Math.abs(distance) >= Math.abs(closest.distance))
-          )
-            continue;
-          closest = {
-            distance,
-            guide: {
-              axis,
-              position,
-              start: Math.min(moving.position[otherAxis], target.position[otherAxis]),
-              end: Math.max(
-                moving.position[otherAxis] +
-                  (moving.measured?.[otherSize] ?? personCardSize[otherSize]),
-                target.position[otherAxis] +
-                  (target.measured?.[otherSize] ?? personCardSize[otherSize]),
-              ),
-            },
-          };
-        }
+        const position = target.position[axis];
+        const distance = position - moving.position[axis];
+        if (
+          Math.abs(distance) > threshold ||
+          (closest && Math.abs(distance) >= Math.abs(closest.distance))
+        )
+          continue;
+        closest = {
+          distance,
+          guide: {
+            axis,
+            position,
+            start: Math.min(moving.start[otherAxis], target.start[otherAxis]),
+            end: Math.max(moving.end[otherAxis], target.end[otherAxis]),
+          },
+        };
       }
     }
     if (closest) {
