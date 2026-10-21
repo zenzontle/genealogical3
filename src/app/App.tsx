@@ -1137,33 +1137,27 @@ export default function App() {
                 <FileImage size={16} />
                 <span>PNG</span>
               </button>
-              <div className="drive-menu">
-                <button
-                  className="button header-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured || driveSyncOff}
-                  title={
-                    driveConfigured
-                      ? 'Save to Google Drive'
-                      : 'Google Drive is not configured for this deployment'
-                  }
-                  onClick={() => void doDrive()}
-                  aria-disabled={restoreWarnings.length > 0}
-                >
-                  Save to Drive
-                </button>
-                <button
-                  className="button mobile-drive-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured || driveSyncOff}
-                  title={
-                    driveConfigured
-                      ? 'Save to Google Drive'
-                      : 'Google Drive is not configured for this deployment'
-                  }
-                  onClick={() => void doDrive()}
-                >
-                  Drive
-                </button>
-              </div>
+              {driveConfigured && (
+                <div className="drive-menu">
+                  <button
+                    className="button header-button"
+                    disabled={driveBusy || !driveReady || driveSyncOff}
+                    title="Save to Google Drive"
+                    onClick={() => void doDrive()}
+                    aria-disabled={restoreWarnings.length > 0}
+                  >
+                    Save to Drive
+                  </button>
+                  <button
+                    className="button mobile-drive-button"
+                    disabled={driveBusy || !driveReady || driveSyncOff}
+                    title="Save to Google Drive"
+                    onClick={() => void doDrive()}
+                  >
+                    Drive
+                  </button>
+                </div>
+              )}
               <button
                 className="icon-button sidebar-toggle"
                 aria-label={sidebarIsCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
