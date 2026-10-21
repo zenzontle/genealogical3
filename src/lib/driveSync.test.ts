@@ -82,6 +82,7 @@ function harness(shared?: Store) {
       );
       if (next.tree) store.trees.set(id, next.tree);
       if (next.link) store.links.set(id, next.link);
+      window.dispatchEvent(new Event('tree-storage-changed'));
     },
     getLastDriveAttempt: async () => store.last,
     setLastDriveAttempt: async (at) => {
@@ -868,6 +869,258 @@ describe('sync recovery boundaries', () => {
     });
     expect(await h.coordinator.useDrive(h.tree.id, reviewed)).toBeUndefined();
     expect(h.store.trees.get(h.tree.id)?.name).toBe('During download');
+  });
+});
+
+describe('per-tree Drive sync preference', () => {
+  it('defaults legacy and newly saved links to enabled', async () => {
+    const h = harness();
+    await h.coordinator.refresh();
+    expect(h.coordinator.snapshot()[h.tree.id].status).toBe('synced');
+    h.store.links.clear();
+    await h.coordinator.manualSave(h.tree.id);
+    expect(h.store.links.get(h.tree.id)?.syncEnabled).not.toBe(false);
+    await h.coordinator.refresh();
+    expect(h.coordinator.snapshot()[h.tree.id].status).toBe('synced');
+  });
+
+  it('persists while disconnected, tracks edits after reopening, and excludes Drive leave warnings', async () => {
+    const h = harness();
+    h.disconnect();
+    await h.coordinator.setSyncEnabled(h.tree.id, false);
+    const before = structuredClone(h.store.links.get(h.tree.id));
+    await h.edit();
+    h.coordinator.noteEdit(h.tree.id, Date.now() + 1);
+    expect(h.coordinator.snapshot()[h.tree.id].status).toBe('disabled');
+    expect(h.coordinator.hasPending()).toBe(false);
+    const reopened = harness(h.store);
+    await reopened.coordinator.refresh();
+    expect(reopened.coordinator.snapshot()[h.tree.id]).toMatchObject({
+      status: 'disabled',
+      pending: true,
+    });
+    expect(h.store.links.get(h.tree.id)).toMatchObject({
+      ...before,
+      sync: { ...before!.sync, pending: true, editedAt: Date.now() },
+    });
+    await reopened.coordinator.flush();
+    await tick(200000);
+    expect(reopened.save).not.toHaveBeenCalled();
+  });
+
+  it('blocks timers, recovery, retries, manual saves, and stale conflict dialogs without changing bookkeeping', async () => {
+    const h = harness();
+    await h.edit();
+    const link = h.store.links.get(h.tree.id)!;
+    const reviewed = {
+      localDataUpdatedAt: h.tree.dataUpdatedAt,
+      remoteDataUpdatedAt: 900000,
+      revision: 'changed',
+    };
+    link.sync = {
+      ...link.sync,
+      conflict: reviewed,
+      retries: 2,
+      retryAt: Date.now() + 10000,
+      attention: 'Keep this warning',
+      retryable: true,
+    };
+    link.cleanupWarnings = ['Cleanup warning'];
+    await h.coordinator.setSyncEnabled(h.tree.id, false);
+    const disabled = structuredClone(link.sync);
+    h.disconnect();
+    h.offline();
+    await expect(h.coordinator.manualSave(h.tree.id)).rejects.toThrow(
+      'Enable Google Drive sync for this tree first.',
+    );
+    await expect(h.coordinator.manualSave(h.tree.id, undefined, reviewed)).rejects.toThrow(
+      'Enable Google Drive sync for this tree first.',
+    );
+    await expect(h.coordinator.useDrive(h.tree.id, reviewed)).rejects.toThrow(
+      'Enable Google Drive sync for this tree first.',
+    );
+    await expect(h.coordinator.retry(h.tree.id)).rejects.toThrow(
+      'Enable Google Drive sync for this tree first.',
+    );
+    h.reconnect();
+    h.online();
+    await h.coordinator.retry(undefined, true);
+    await h.coordinator.flush();
+    await tick(200000);
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.inspect).not.toHaveBeenCalled();
+    expect(h.restore).not.toHaveBeenCalled();
+    expect(h.store.links.get(h.tree.id)?.sync).toEqual(disabled);
+    expect(h.coordinator.snapshot()[h.tree.id].warning).toBe('Cleanup warning');
+  });
+
+  it('keeps other trees syncing and resumes pending edits with normal revision checks', async () => {
+    const h = harness();
+    const other = { ...h.tree, id: 'other' };
+    h.store.trees.set(other.id, other);
+    h.store.links.set(other.id, {
+      ...h.store.links.get(h.tree.id)!,
+      treeId: other.id,
+      id: 'other-backup',
+    });
+    await h.coordinator.setSyncEnabled(h.tree.id, false);
+    await h.edit('Disabled');
+    await h.edit('Other edit', other.id);
+    await tick(3000);
+    expect(h.save).toHaveBeenCalledOnce();
+    expect(h.save.mock.calls[0][2]).toBe('other-backup');
+    await h.coordinator.setSyncEnabled(h.tree.id, true);
+    await tick(10000);
+    expect(h.save).toHaveBeenCalledTimes(2);
+    expect(h.save.mock.calls[1][0].name).toBe('Disabled');
+    expect(h.store.links.get(h.tree.id)?.syncEnabled).toBe(true);
+    expect(h.coordinator.hasPending()).toBe(false);
+  });
+
+  it('retains conflict protection when Drive changes while disabled', async () => {
+    const h = harness();
+    await h.coordinator.setSyncEnabled(h.tree.id, false);
+    await h.edit();
+    h.remoteEdit();
+    await h.coordinator.setSyncEnabled(h.tree.id, true);
+    await tick(3000);
+    expect(h.save).not.toHaveBeenCalled();
+    expect(h.coordinator.snapshot()[h.tree.id].conflict?.revision).toBe('remote-edit');
+    const before = structuredClone(h.store.links.get(h.tree.id));
+    await h.coordinator.setSyncEnabled(h.tree.id, false);
+    await h.coordinator.setSyncEnabled(h.tree.id, true);
+    await tick(100000);
+    expect(h.store.links.get(h.tree.id)).toEqual(before);
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('waits for an active transfer and its acknowledgement before reporting off', async () => {
+    const h = harness();
+    let release!: () => void;
+    const save = h.save.getMockImplementation()!;
+    h.save.mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return save(...args);
+    });
+    await h.edit();
+    await tick(3000);
+    const switching = h.coordinator.setSyncEnabled(h.tree.id, false);
+    expect(h.coordinator.snapshot()[h.tree.id]).toMatchObject({
+      status: 'syncing',
+      syncChange: false,
+    });
+    expect(h.store.links.get(h.tree.id)?.syncEnabled).not.toBe(false);
+    release();
+    await switching;
+    expect(h.coordinator.snapshot()[h.tree.id]).toMatchObject({
+      status: 'disabled',
+      syncChange: undefined,
+    });
+    expect(h.store.links.get(h.tree.id)?.sync).toMatchObject({
+      pending: false,
+      revision: expect.any(String),
+    });
+    expect(h.store.links.get(h.tree.id)?.syncEnabled).toBe(false);
+  });
+
+  it.each(['automatic', 'manual', 'replace Drive', 'use Drive'])(
+    're-reads disabled preferences under the shared lock for queued %s operations',
+    async (action) => {
+      const h = harness();
+      const other = harness(h.store);
+      let release!: () => void;
+      h.store.operations = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await h.edit();
+      await other.coordinator.refresh();
+      const switching = h.coordinator.setSyncEnabled(h.tree.id, false);
+      const reviewed = {
+        localDataUpdatedAt: Date.now(),
+        remoteDataUpdatedAt: 900000,
+        revision: 'remote-edit',
+      };
+      let result: Promise<unknown> | undefined;
+      if (action === 'automatic') await tick(3000);
+      else
+        result = (
+          action === 'use Drive'
+            ? other.coordinator.useDrive(h.tree.id, reviewed)
+            : other.coordinator.manualSave(
+                h.tree.id,
+                undefined,
+                action === 'replace Drive' ? reviewed : undefined,
+              )
+        ).catch((error: unknown) => error);
+      // Let manualSave enqueue after its asynchronous association read.
+      await tick(0);
+      release();
+      await switching;
+      if (result)
+        expect(await result).toEqual(Error('Enable Google Drive sync for this tree first.'));
+      await tick(0);
+      expect(h.save).not.toHaveBeenCalled();
+      expect(other.save).not.toHaveBeenCalled();
+      expect(other.inspect).not.toHaveBeenCalled();
+      expect(other.restore).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not recreate a deleted link or claim a failed preference commit succeeded', async () => {
+    const h = harness();
+    await h.coordinator.refresh();
+    h.atNextCommit(() => {
+      throw Error('Storage failed');
+    });
+    await expect(h.coordinator.setSyncEnabled(h.tree.id, false)).rejects.toThrow('Storage failed');
+    expect(h.coordinator.snapshot()[h.tree.id].link.syncEnabled).not.toBe(false);
+    expect(h.coordinator.snapshot()[h.tree.id].syncChange).toBeUndefined();
+    h.atNextCommit(() => h.store.links.delete(h.tree.id));
+    await expect(h.coordinator.setSyncEnabled(h.tree.id, false)).rejects.toThrow(
+      'no longer linked',
+    );
+    expect(h.store.links.size).toBe(0);
+  });
+
+  it('refreshes another coordinator through storage events and received cross-tab broadcasts', async () => {
+    const channels: {
+      onmessage?: () => void;
+      postMessage: ReturnType<typeof vi.fn>;
+      close: ReturnType<typeof vi.fn>;
+    }[] = [];
+    vi.stubGlobal(
+      'BroadcastChannel',
+      class {
+        onmessage?: () => void;
+        postMessage = vi.fn();
+        close = vi.fn();
+        constructor() {
+          channels.push(this);
+        }
+      },
+    );
+    const h = harness(),
+      other = harness(h.store);
+    const stop = h.coordinator.start(),
+      stopOther = other.coordinator.start();
+    try {
+      await tick(0);
+      await h.coordinator.setSyncEnabled(h.tree.id, false);
+      await tick(0);
+      expect(other.coordinator.snapshot()[h.tree.id].status).toBe('disabled');
+      expect(channels[0].postMessage).toHaveBeenCalledWith('changed');
+      // A commit from another tab emits a broadcast, not a local DOM event.
+      h.store.links.get(h.tree.id)!.syncEnabled = true;
+      channels[1].onmessage?.();
+      await tick(0);
+      expect(other.coordinator.snapshot()[h.tree.id].status).toBe('synced');
+    } finally {
+      stop();
+      stopOther();
+      vi.unstubAllGlobals();
+    }
   });
 });
 

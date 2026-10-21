@@ -95,6 +95,7 @@ export function WorkspaceCard({
       {local && link && (
         <DriveSyncStatus
           view={syncView}
+          link={link}
           onReview={() => onReviewConflict?.(local.id)}
           onRetry={() => onRetrySync?.(local.id)}
         />

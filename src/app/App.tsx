@@ -333,6 +333,12 @@ export default function App() {
     await queueSave(treeRef.current);
   }, [queueSave]);
   const syncViews = useDriveSync(persistOnClose, showError);
+  const activeDriveLink = tree
+    ? (syncViews[tree.id]?.link ?? driveLinks.find((link) => link.treeId === tree.id))
+    : undefined;
+  const driveSyncOff =
+    activeDriveLink?.syncEnabled === false ||
+    (tree ? syncViews[tree.id]?.syncChange === false : false);
   const commit = useCallback(
     (
       next: Tree,
@@ -726,7 +732,7 @@ export default function App() {
     }
   };
   const doDrive = async () => {
-    if (!driveReady || driveOperationBusy.current || !treeRef.current) return;
+    if (!driveReady || driveSyncOff || driveOperationBusy.current || !treeRef.current) return;
     const snapshot = cloneTree(treeRef.current);
     const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
     if (restoreWarnings.length) {
@@ -1134,7 +1140,7 @@ export default function App() {
               <div className="drive-menu">
                 <button
                   className="button header-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured}
+                  disabled={driveBusy || !driveReady || !driveConfigured || driveSyncOff}
                   title={
                     driveConfigured
                       ? 'Save to Google Drive'
@@ -1147,7 +1153,7 @@ export default function App() {
                 </button>
                 <button
                   className="button mobile-drive-button"
-                  disabled={driveBusy || !driveReady || !driveConfigured}
+                  disabled={driveBusy || !driveReady || !driveConfigured || driveSyncOff}
                   title={
                     driveConfigured
                       ? 'Save to Google Drive'
@@ -1192,7 +1198,15 @@ export default function App() {
           </header>
           <div className="editor-drive-status">
             <DriveSyncStatus
+              key={tree?.id}
               view={tree ? syncViews[tree.id] : undefined}
+              link={activeDriveLink}
+              treeName={tree?.name}
+              onSyncEnabledChange={
+                tree && activeDriveLink
+                  ? (enabled) => driveSync.setSyncEnabled(tree.id, enabled)
+                  : undefined
+              }
               onReview={() => setConflictTreeId(tree?.id || null)}
               onRetry={() => {
                 if (tree) void driveSync.retry(tree.id).catch(showError);
@@ -1452,28 +1466,31 @@ export default function App() {
           </div>
         </div>
       )}
-      {conflictTreeId && syncViews[conflictTreeId]?.conflict && (
-        <DriveConflictDialog
-          name={library.find((item) => item.id === conflictTreeId)?.name || 'Family tree'}
-          conflict={syncViews[conflictTreeId].conflict!}
-          onClose={() => setConflictTreeId(null)}
-          onResolve={async (action, reviewed) => {
-            await saveNow(true);
-            if (action === 'local') {
-              const result = await driveSync.manualSave(conflictTreeId, undefined, reviewed);
+      {conflictTreeId &&
+        syncViews[conflictTreeId]?.conflict &&
+        syncViews[conflictTreeId].link.syncEnabled !== false &&
+        syncViews[conflictTreeId].syncChange === undefined && (
+          <DriveConflictDialog
+            name={library.find((item) => item.id === conflictTreeId)?.name || 'Family tree'}
+            conflict={syncViews[conflictTreeId].conflict!}
+            onClose={() => setConflictTreeId(null)}
+            onResolve={async (action, reviewed) => {
+              await saveNow(true);
+              if (action === 'local') {
+                const result = await driveSync.manualSave(conflictTreeId, undefined, reviewed);
+                await refreshLibrary();
+                return !!result;
+              }
+              const replacement = await driveSync.useDrive(conflictTreeId, reviewed);
+              if (replacement && treeRef.current?.id === replacement.id) {
+                treeRef.current = replacement;
+                await openTree(replacement.id);
+              }
               await refreshLibrary();
-              return !!result;
-            }
-            const replacement = await driveSync.useDrive(conflictTreeId, reviewed);
-            if (replacement && treeRef.current?.id === replacement.id) {
-              treeRef.current = replacement;
-              await openTree(replacement.id);
-            }
-            await refreshLibrary();
-            return !!replacement;
-          }}
-        />
-      )}
+              return !!replacement;
+            }}
+          />
+        )}
       {treeAction && (
         <TreeActionDialog
           action={treeAction}

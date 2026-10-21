@@ -16,7 +16,8 @@ vi.mock('../lib/driveSync', () => ({
       return () => state.listeners.delete(listener);
     },
     snapshot: () => state.views,
-    hasPending: () => Object.values(state.views).some((view) => view.pending),
+    hasPending: () =>
+      Object.values(state.views).some((view) => view.link.syncEnabled !== false && view.pending),
     start: state.start,
     flush: state.flush,
   },
@@ -28,6 +29,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('Drive lifecycle persistence and native warnings', () => {
+  it('keeps local persistence on page hiding without a Drive leave warning for disabled trees', async () => {
+    state.views = {
+      disabled: {
+        status: 'disabled',
+        pending: true,
+        link: { treeId: 'disabled', id: 'backup', name: '', modifiedTime: '', syncEnabled: false },
+      },
+    };
+    const persist = vi.fn(async () => {});
+    renderHook(() => useDriveSync(persist, vi.fn()));
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    expect(leaving.defaultPrevented).toBe(false);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => window.dispatchEvent(new Event('pagehide')));
+    expect(persist).toHaveBeenCalledTimes(2);
+  });
   it.each(['waiting for connection', 'needs attention', 'pending', 'syncing'] as const)(
     'warns for %s changes outside the editor and unregisters after acknowledgement',
     async (status) => {
