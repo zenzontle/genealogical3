@@ -1368,6 +1368,17 @@ describe('local feedback integration', () => {
 
 // Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
 describe('per-tree Drive sync controls inside the editor', () => {
+  it('hides desktop and mobile Drive saves when the deployment has no Drive configuration', async () => {
+    render(<App />);
+    await openOriginal();
+
+    expect(screen.queryByRole('button', { name: 'Save to Drive' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Drive' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Export PNG' })).toHaveProperty('disabled', false);
+    expect(restoreDrive).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     'persists switches while connected=%s and gates desktop/mobile saves',
     async (connected) => {
