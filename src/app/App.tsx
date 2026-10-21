@@ -64,7 +64,7 @@ import {
   makePerson,
   makeTree,
   personCardSize,
-  removePerson,
+  removePeople,
   setHomePerson,
   relationFromConnection,
   updateRelation,
@@ -546,17 +546,28 @@ export default function App() {
         ),
       );
   };
-  const deletePerson = useCallback((id: string) => {
+  const deletePeople = useCallback((ids: string[]) => {
     const current = treeRef.current;
-    const person = current?.people.find((p) => p.id === id);
-    if (!current || !person) return;
-    setTreeAction({
-      kind: 'delete-person',
-      treeId: current.id,
-      personId: id,
-      name: person.name,
-      isHome: current.homePersonId === id,
-    });
+    const selected = new Set(ids);
+    const targets = current?.people.filter((p) => selected.has(p.id));
+    if (!current || !targets?.length) return;
+    const person = targets[0];
+    setTreeAction(
+      targets.length > 1
+        ? {
+            kind: 'delete-people',
+            treeId: current.id,
+            personIds: targets.map((p) => p.id),
+            isHome: targets.some((p) => p.id === current.homePersonId),
+          }
+        : {
+            kind: 'delete-person',
+            treeId: current.id,
+            personId: person.id,
+            name: person.name,
+            isHome: current.homePersonId === person.id,
+          },
+    );
   }, []);
   const connect = (connection: Connection) => {
     const a = connection.source,
@@ -653,7 +664,7 @@ export default function App() {
           isHome: tree.homePersonId === p.id,
           kinship: kinships.get(p.id),
           selected: selectedId === p.id,
-          onDelete: deletePerson,
+          onDelete: (id: string) => deletePeople([id]),
           onSelect: (id: string) => {
             setSelectedId(id);
             setSelectedRelationId(null);
@@ -663,7 +674,7 @@ export default function App() {
         draggable: true,
       }));
     });
-  }, [tree, kinships, home, selectedId, setNodes, deletePerson]);
+  }, [tree, kinships, home, selectedId, setNodes, deletePeople]);
   const selectPerson = useCallback(
     (id: string) => {
       setNodes((current) =>
@@ -683,6 +694,22 @@ export default function App() {
     setSelectedId(null);
     setSidebarRevealedBySelection(true);
   }, []);
+  const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
+    const ids = selection.filter((node) => node.type === 'person').map((node) => node.id);
+    setSelectedId((active) => (active && ids.includes(active) ? active : (ids[0] ?? null)));
+    if (ids.length) {
+      setSelectedRelationId(null);
+      setSidebarRevealedBySelection(true);
+    }
+  }, []);
+  const selectedPersonIds = useMemo(() => {
+    const currentPeople = new Set(people?.map((person) => person.id));
+    return nodes
+      .filter((node) => node.type === 'person' && node.selected && currentPeople.has(node.id))
+      .map((node) => node.id);
+  }, [nodes, people]);
+  const deletionAnchorId =
+    selectedId && selectedPersonIds.includes(selectedId) ? selectedId : selectedPersonIds[0];
   const canvas = useMemo(() => {
     if (!tree) return { edges: [] as Edge[], nodes };
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
@@ -695,9 +722,33 @@ export default function App() {
     );
     return {
       edges: relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes),
-      nodes: [...nodes, ...partnerConnectors(tree, positions, selectPartner, sizes)],
+      nodes: [
+        ...nodes.map((node) =>
+          node.type === 'person'
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  selected: node.id === deletionAnchorId,
+                  deleteCount: selectedPersonIds.length,
+                  onDelete: () => deletePeople(selectedPersonIds),
+                },
+              }
+            : node,
+        ),
+        ...partnerConnectors(tree, positions, selectPartner, sizes),
+      ],
     };
-  }, [tree, nodes, selectedRelationId, selectPerson, selectPartner]);
+  }, [
+    tree,
+    nodes,
+    selectedRelationId,
+    selectPerson,
+    selectPartner,
+    deletionAnchorId,
+    selectedPersonIds,
+    deletePeople,
+  ]);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation = tree?.relations.find((r) => r.id === selectedRelationId) || null;
   // Selection temporarily reveals details without changing the toggle preference.
@@ -903,22 +954,36 @@ export default function App() {
   const submitTreeAction = async (name: string) => {
     const action = treeAction;
     if (!action) return;
-    if (action.kind === 'delete-person') {
+    if (action.kind === 'delete-person' || action.kind === 'delete-people') {
       const current = treeRef.current;
+      const ids = action.kind === 'delete-person' ? [action.personId] : action.personIds;
+      const currentPeople = new Set(current?.people.map((person) => person.id));
       if (
         !current ||
         current.id !== action.treeId ||
-        !current.people.some((person) => person.id === action.personId)
+        !ids.length ||
+        !ids.every((id) => currentPeople.has(id))
       )
-        throw Error('This person was not found in the current tree.');
-      commit(removePerson(current, action.personId), 'data');
+        throw Error(
+          action.kind === 'delete-person'
+            ? 'This person was not found in the current tree.'
+            : 'The selected people were not all found in the current tree. Close this dialog and select people again.',
+        );
+      commit(removePeople(current, ids), 'data');
+      const targets = new Set(ids);
       setDateDrafts((previous) => {
         const next = { ...previous };
-        delete next[action.personId];
+        ids.forEach((id) => delete next[id]);
         return next;
       });
+      setNodes((currentNodes) =>
+        currentNodes
+          .filter((node) => !targets.has(node.id))
+          .map((node) => ({ ...node, selected: false })),
+      );
       setSelectedId(null);
       setSelectedRelationId(null);
+      setConnectMode(null);
       return;
     }
     const active = treeRef.current?.id === action.treeId;
@@ -1386,6 +1451,7 @@ export default function App() {
                   colorMode="dark"
                   connectionMode={ConnectionMode.Loose}
                   onNodesChange={onAlignedNodesChange}
+                  onSelectionChange={onSelectionChange}
                   onConnect={connect}
                   onNodeDragStart={() => {
                     movingRef.current = true;
@@ -1477,7 +1543,8 @@ export default function App() {
                       return person ? updatePerson(t, { ...person, portrait }) : t;
                     });
                   }}
-                  onDelete={() => deletePerson(selected.id)}
+                  onDelete={() => deletePeople(selectedPersonIds)}
+                  deleteCount={selectedPersonIds.length}
                   onAddRelative={addPerson}
                   connectMode={connectMode}
                   setConnectMode={setConnectMode}

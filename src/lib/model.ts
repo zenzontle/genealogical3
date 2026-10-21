@@ -145,11 +145,15 @@ export function updatePerson(tree: Tree, person: Person): Tree {
   return { ...tree, people: tree.people.map((p) => (p.id === person.id ? person : p)) };
 }
 export function removePerson(tree: Tree, personId: string): Tree {
+  return removePeople(tree, [personId]);
+}
+export function removePeople(tree: Tree, personIds: readonly string[]): Tree {
+  const targets = new Set(personIds);
   return {
     ...tree,
-    homePersonId: tree.homePersonId === personId ? null : tree.homePersonId,
-    people: tree.people.filter((p) => p.id !== personId),
-    relations: tree.relations.filter((r) => !relationEndpoints(r).includes(personId)),
+    homePersonId: tree.homePersonId && targets.has(tree.homePersonId) ? null : tree.homePersonId,
+    people: tree.people.filter((p) => !targets.has(p.id)),
+    relations: tree.relations.filter((r) => !relationEndpoints(r).some((id) => targets.has(id))),
   };
 }
 export const personCardSize = { width: 180, height: 136 } as const;
