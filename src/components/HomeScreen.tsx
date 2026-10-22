@@ -89,6 +89,9 @@ export function HomeScreen({
   const showHero = libraryState === 'ready' && entries.length === 0 && !driveLoading && !driveError;
   return (
     <div className={`home${showHero ? '' : ' home-workspace'}`}>
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
       <header id="top" className="site-header" tabIndex={-1}>
         <div className="brand">
           <BrandMark />
@@ -97,7 +100,7 @@ export function HomeScreen({
           </span>
         </div>
         <div className="site-header-actions">
-          <nav>
+          <nav aria-label="Main navigation">
             <a href="#how-it-works">How it works</a>
             <a href="#privacy">Privacy</a>
           </nav>
@@ -106,7 +109,7 @@ export function HomeScreen({
           )}
         </div>
       </header>
-      <main>
+      <main id="main-content" tabIndex={-1}>
         {showHero && (
           <div className="hero">
             <div className="hero-copy">
@@ -139,13 +142,13 @@ export function HomeScreen({
                     <Upload size={18} aria-hidden="true" /> Import a tree
                   </button>
                 </div>
-                <span>No account needed.</span>
+                <span className="hero-reassurance">
+                  <ShieldCheck size={16} aria-hidden="true" /> No account needed.
+                </span>
               </div>
             </div>
             <div className="hero-art" aria-hidden="true">
               <HeroBranches />
-              <div className="hero-leaf leaf-one">✻</div>
-              <div className="hero-leaf leaf-two">✻</div>
               <div className="hero-tree">
                 <svg className="hero-connectors" width="440" height="540" viewBox="0 0 440 540">
                   <path className="hero-parent-line" d="M220 88V206M220 342V390" />
@@ -179,6 +182,9 @@ export function HomeScreen({
                 <h1 id="library-heading" tabIndex={-1} data-dialog-fallback>
                   Your family trees
                 </h1>
+                <p className="workspace-description">
+                  Pick up where you left off, or begin a new family story.
+                </p>
               </div>
               <div className="library-actions">
                 <button className="button outline" disabled={importBusy} onClick={onImportTree}>
@@ -230,13 +236,16 @@ export function HomeScreen({
             </div>
           </section>
         )}
-        <section id="how-it-works" className="how-section">
-          <h2>Simple to start. Yours to keep.</h2>
+        <section id="how-it-works" className="how-section" aria-labelledby="how-heading">
+          <h2 id="how-heading">Simple to start. Yours to keep.</h2>
           <div className="how-grid">
             <div>
-              <span className="how-icon how-icon-peach">
-                <Users size={27} />
-              </span>
+              <div className="how-step" aria-hidden="true">
+                <span className="how-icon how-icon-peach">
+                  <Users size={25} />
+                </span>
+                <span className="step-number">01</span>
+              </div>
               <h3>Make it yours</h3>
               <p>
                 Add names, dates, photos, and the little notes that make a person more than a name
@@ -244,9 +253,12 @@ export function HomeScreen({
               </p>
             </div>
             <div>
-              <span className="how-icon how-icon-sage">
-                <Link2 size={27} />
-              </span>
+              <div className="how-step" aria-hidden="true">
+                <span className="how-icon how-icon-sage">
+                  <Link2 size={25} />
+                </span>
+                <span className="step-number">02</span>
+              </div>
               <h3>See how you connect</h3>
               <p>
                 Draw the lines between generations. Move things around until your family story feels
@@ -254,9 +266,12 @@ export function HomeScreen({
               </p>
             </div>
             <div>
-              <span className="how-icon how-icon-lilac">
-                <Download size={27} />
-              </span>
+              <div className="how-step" aria-hidden="true">
+                <span className="how-icon how-icon-lilac">
+                  <Download size={25} />
+                </span>
+                <span className="step-number">03</span>
+              </div>
               <h3>Save and share</h3>
               <p>
                 Your edits save in this browser. Download a JSON backup, export a PNG to share with
