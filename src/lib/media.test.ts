@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exportPng, exportJson, portraitData } from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
 import { makePerson, makeTree, personCardSize, validateTree, type Relation } from './model';
+import { relationshipIcons } from './relationshipIcons';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -77,16 +78,16 @@ describe('portable portrait processing', () => {
   });
 });
 
-describe('shared connectors in PNG exports', () => {
+describe('print-friendly PNG exports', () => {
   it.each([
     { hasHome: false, count: 1 },
     { hasHome: true, count: 1 },
     { hasHome: false, count: 2 },
     { hasHome: true, count: 2 },
   ])(
-    'uses canvas geometry and includes connector extents (home=$hasHome, children=$count)',
+    'uses print colors and preserves canvas geometry (home=$hasHome, children=$count)',
     async ({ hasHome, count }) => {
-      const a = makePerson('A', 0, 0),
+      const a = makePerson('Alex', 0, 0),
         b = makePerson('B', 350, 0);
       const c = makePerson('C', 0, -100),
         d = makePerson('D', 400, 260);
@@ -129,6 +130,8 @@ describe('shared connectors in PNG exports', () => {
         targetHandle: 'top',
       };
       const ctx = {
+        fillStyle: '',
+        strokeStyle: '',
         fillRect: vi.fn(),
         save: vi.fn(),
         restore: vi.fn(),
@@ -146,6 +149,11 @@ describe('shared connectors in PNG exports', () => {
         measureText: (text: string) => ({ width: text.length * 6 }),
         scale: vi.fn(),
       };
+      // Record the active color at draw time, before subsequent operations change it.
+      ctx.fillRect.mockImplementation(() => ctx.fillStyle);
+      ctx.fill.mockImplementation(() => ctx.fillStyle);
+      ctx.fillText.mockImplementation(() => ctx.fillStyle);
+      ctx.stroke.mockImplementation(() => ctx.strokeStyle);
       const canvas = {
         width: 0,
         height: 0,
@@ -164,9 +172,10 @@ describe('shared connectors in PNG exports', () => {
         createElement: (tag: string) => (tag === 'canvas' ? canvas : anchor),
         body: { append: vi.fn() },
       });
-      vi.stubGlobal('getComputedStyle', () => ({
-        getPropertyValue: () => '#123456',
+      const getComputedStyle = vi.fn(() => ({
+        getPropertyValue: () => (hasHome ? '#ffffff' : '#123456'),
       }));
+      vi.stubGlobal('getComputedStyle', getComputedStyle);
       vi.stubGlobal('URL', {
         createObjectURL: vi.fn(() => 'blob:test'),
         revokeObjectURL: vi.fn(),
@@ -178,6 +187,38 @@ describe('shared connectors in PNG exports', () => {
         },
       );
       await exportPng(tree);
+      expect(getComputedStyle).not.toHaveBeenCalled();
+      expect(ctx.fillRect.mock.results.map(({ value }) => value)).toEqual(['#ffffff', '#ffffff']);
+      expect(ctx.fillRect.mock.calls[0]).toEqual([0, 0, canvas.width / 2, canvas.height / 2]);
+      expect(ctx.fill.mock.results.map(({ value }) => value)).toEqual([
+        '#4a4a4a',
+        ...tree.people.flatMap(() => ['#ffffff', '#f2f2f2']),
+      ]);
+      expect(ctx.fill.mock.calls[0][0]).toEqual({ path: relationshipIcons.partner.paths[0] });
+      const heartStroke = ctx.stroke.mock.calls.findIndex(
+        ([path]) => path?.path === relationshipIcons.partner.paths[0],
+      );
+      expect(heartStroke).toBeGreaterThanOrEqual(0);
+      expect(ctx.stroke.mock.results[heartStroke].value).toBe('#4a4a4a');
+      expect(ctx.stroke.mock.results.slice(0, 2).map(({ value }) => value)).toEqual([
+        '#4a4a4a',
+        '#4a4a4a',
+      ]);
+      expect(ctx.stroke.mock.results.filter(({ value }) => value === '#777777')).toHaveLength(
+        tree.people.length,
+      );
+      expect(
+        ctx.stroke.mock.results.every(({ value }) =>
+          ['#333333', '#4a4a4a', '#777777'].includes(value),
+        ),
+      ).toBe(true);
+      expect(
+        ctx.fillText.mock.results.every(({ value }) =>
+          ['#1a1a1a', '#333333', '#4a4a4a'].includes(value),
+        ),
+      ).toBe(true);
+      const nameRow = ctx.fillText.mock.calls.findIndex(([text]) => text === a.name);
+      expect(ctx.fillText.mock.results[nameRow].value).toBe('#1a1a1a');
       const { width, height } = personCardSize;
       const [family] = familyConnectors(tree.people, tree.relations, personCardSize);
       const expected = [
@@ -210,6 +251,10 @@ describe('shared connectors in PNG exports', () => {
       expect(ctx.moveTo).toHaveBeenCalledWith(98, 205);
       expect(ctx.lineTo).toHaveBeenCalledWith(106, 198);
       expect(ctx.fillText.mock.calls.map(([text]) => text)).toContain('1930 — Deceased');
+      const dateRow = ctx.fillText.mock.calls.findIndex(([text]) => text === '1930 — Deceased');
+      expect(ctx.fillText.mock.results[dateRow].value).toBe('#4a4a4a');
+      expect(ctx.fillRect.mock.results.every(({ value }) => value === '#ffffff')).toBe(true);
+      expect(ctx.stroke.mock.results.every(({ value }) => value !== '#123456')).toBe(true);
       expect(ctx.fillText.mock.calls.some(([text]) => text.startsWith('Age '))).toBe(false);
       c.name =
         'Jorge Alejandro Maximiliano Sebastián Fernández Villaseñor Montemayor Valderrama Santamaría Domínguez';
