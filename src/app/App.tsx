@@ -46,7 +46,9 @@ import { TreeActionDialog, type TreeAction } from '../components/TreeActionDialo
 import { WorkspaceDeletionDialog } from '../components/WorkspaceDeletionDialog';
 import { useWorkspaceDeletion } from '../hooks/useWorkspaceDeletion';
 import { driveTreeName, type WorkspaceEntry } from '../lib/workspaceEntries';
-import { OperationFeedback } from '../components/OperationFeedback';
+import { FeedbackToast } from '../components/FeedbackToast';
+import { Toaster } from '../components/Toaster';
+import { useToast } from '../hooks/useToast';
 import { useTreeImport } from '../hooks/useTreeImport';
 import { useTreeExport } from '../hooks/useTreeExport';
 import { RelationshipEdge } from '../components/RelationshipEdge';
@@ -138,7 +140,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
-  const [notice, setNotice] = useState('');
+  const { feedback: notice, notify, dismiss: dismissNotice } = useToast();
   const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
   const [restoreWarnings, setRestoreWarnings] = useState<RestoreWarning[]>([]);
@@ -234,9 +236,12 @@ export default function App() {
       setLibraryState('ready');
     },
   );
-  const showError = useCallback((error: unknown) => {
-    setNotice(error instanceof Error ? error.message : 'Something went wrong.');
-  }, []);
+  const showError = useCallback(
+    (error: unknown) => {
+      notify(error instanceof Error ? error.message : 'Something went wrong.', 'error');
+    },
+    [notify],
+  );
   const refreshLibrary = useCallback(async () => {
     const request = ++libraryRefresh.current;
     try {
@@ -288,7 +293,7 @@ export default function App() {
         setSelectedId(null);
         setSelectedRelationId(null);
         setScreen('home');
-        setNotice(message);
+        notify(message, 'error');
       };
       // Hold saves until the stored version is checked, then reject stale queued snapshots.
       storageRefresh.current = storageRefresh.current.then(async () => {
@@ -314,7 +319,7 @@ export default function App() {
       window.removeEventListener('tree-storage-changed', refreshLibrary);
       window.removeEventListener('tree-storage-refreshed', refreshFromAnotherTab);
     };
-  }, [refreshLibrary, showError]);
+  }, [refreshLibrary, showError, notify]);
   const queueSave = useCallback((value: Tree, expected?: Tree) => {
     const epoch = saveEpochs.current.get(value.id) || 0;
     const queued = saveQueue.current
@@ -450,7 +455,7 @@ export default function App() {
       setRestoreWarnings(link?.restoreWarnings || []);
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
-      setNotice('');
+      dismissNotice();
       return true;
     } catch (error) {
       if (request === navigation.current) showError(error);
@@ -466,14 +471,14 @@ export default function App() {
       if (!treeRef.current) return false;
       try {
         commit(update(treeRef.current), 'data', { record });
-        setNotice('');
+        dismissNotice();
         return true;
       } catch (error) {
         showError(error);
         return false;
       }
     },
-    [commit, showError],
+    [commit, showError, dismissNotice],
   );
   const editLifeDates = (personId: string, changes: Partial<LifeDates>) => {
     const current = treeRef.current?.people.find((p) => p.id === personId);
@@ -811,8 +816,9 @@ export default function App() {
     const snapshot = cloneTree(treeRef.current);
     const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
     if (restoreWarnings.length) {
-      setNotice(
+      notify(
         'This local copy has missing portraits. Duplicate it in Workspace for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again.',
+        'error',
       );
       return;
     }
@@ -834,15 +840,16 @@ export default function App() {
           setDriveFile(file);
           setRestoreWarnings([]);
         }
-        setNotice(
+        notify(
           [
             `Saved to Google Drive as ${driveTreeName(file.name, file.description)}.`,
             ...file.cleanupWarnings,
           ].join(' '),
+          file.cleanupWarnings.length ? 'error' : 'success',
         );
       } else if (driveSync.snapshot()[snapshot.id]?.conflict) setConflictTreeId(snapshot.id);
       else if (driveSync.snapshot()[snapshot.id]?.status === 'synced')
-        setNotice('Your Drive backup is up to date.');
+        notify('Your Drive backup is up to date.');
       await refreshLibrary();
       void driveWorkspace.refresh();
     } catch (error) {
@@ -902,10 +909,11 @@ export default function App() {
       if (!(await openTree(copy.id))) return;
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
-      setNotice(
+      notify(
         result.restoreWarnings.length
           ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
           : 'Opened a local working copy. Future data edits sync to Drive automatically.',
+        result.restoreWarnings.length ? 'error' : 'success',
       );
     } catch (error) {
       if (origin === navigation.current) showError(error);
@@ -920,7 +928,7 @@ export default function App() {
     setDriveBusy(true);
     try {
       await disconnectDrive();
-      setNotice('Forgot Google Drive access in this browser. Your local tree is still saved.');
+      notify('Forgot Google Drive access in this browser. Your local tree is still saved.');
     } catch (error) {
       showError(error);
     } finally {
@@ -940,7 +948,7 @@ export default function App() {
       const copy = await duplicateSavedTree(item.id);
       // Keep the persisted copy visible even if the subsequent library read fails.
       setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
-      if (await refreshLibrary()) setNotice(`Created ${copy.name}.`);
+      if (await refreshLibrary()) notify(`Created ${copy.name}.`);
     } catch (error) {
       showError(error);
     } finally {
@@ -1133,7 +1141,7 @@ export default function App() {
             ? 'Saving locally…'
             : 'Local save failed · export JSON';
   return (
-    <>
+    <Toaster>
       <input
         ref={fileInput}
         className="sr-only"
@@ -1214,7 +1222,7 @@ export default function App() {
           driveBusy={driveBusy}
           onRetryLibrary={() => {
             setLibraryState('loading');
-            setNotice('');
+            dismissNotice();
             void refreshLibrary();
           }}
           duplicatingTreeId={duplicatingTreeId}
@@ -1660,49 +1668,37 @@ export default function App() {
           onClose={deletion.close}
         />
       )}
-      <div className="toast-stack" id="operation-toasts">
-        {notice && (
-          <div className="toast" role="alert">
-            <span>{notice}</span>
-            <button aria-label="Dismiss message" onClick={() => setNotice('')}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        <OperationFeedback
-          presentation="toast"
-          autoDismissMs={5000}
-          state={exports.feedback.status === 'pending' ? { status: 'idle' } : exports.feedback}
-          onDismiss={exports.dismiss}
-          action={
-            exports.feedback.status === 'error'
-              ? { label: 'Retry', onClick: exports.retry }
-              : undefined
-          }
-        />
-        <OperationFeedback
-          presentation="toast"
-          state={imports.feedback}
-          onDismiss={imports.dismiss}
-          action={
-            imports.feedback.status === 'success' && imports.importedId
+      <FeedbackToast state={notice} onDismiss={dismissNotice} />
+      <FeedbackToast
+        state={exports.feedback.status === 'pending' ? { status: 'idle' } : exports.feedback}
+        onDismiss={exports.dismiss}
+        action={
+          exports.feedback.status === 'error'
+            ? { label: 'Retry', onClick: exports.retry }
+            : undefined
+        }
+      />
+      <FeedbackToast
+        state={imports.feedback}
+        onDismiss={imports.dismiss}
+        action={
+          imports.feedback.status === 'success' && imports.importedId
+            ? {
+                label: 'Open tree',
+                onClick: () => {
+                  void openTree(imports.importedId!);
+                  imports.dismiss();
+                },
+              }
+            : imports.feedback.status === 'error'
               ? {
-                  label: 'Open tree',
-                  onClick: () => {
-                    void openTree(imports.importedId!);
-                    imports.dismiss();
-                  },
+                  label: imports.canRetry ? 'Retry' : 'Choose another file',
+                  onClick: () =>
+                    imports.canRetry ? void imports.run() : fileInput.current?.click(),
                 }
-              : imports.feedback.status === 'error'
-                ? {
-                    label: imports.canRetry ? 'Retry' : 'Choose another file',
-                    onClick: () =>
-                      imports.canRetry ? void imports.run() : fileInput.current?.click(),
-                  }
-                : undefined
-          }
-        />
-      </div>
+              : undefined
+        }
+      />
       {driveBusy && !deletion.action && (
         <div className="export-feedback" role="status" aria-live="polite">
           {photoProgress
@@ -1710,6 +1706,6 @@ export default function App() {
             : 'Connecting to Google Drive…'}
         </div>
       )}
-    </>
+    </Toaster>
   );
 }
