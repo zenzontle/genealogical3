@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Fragment, useEffect, type ReactNode } from 'react';
 import type { NodeChange } from '@xyflow/react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { driveSync } from '../lib/driveSync';
@@ -642,6 +642,22 @@ describe('canvas text selection', () => {
 });
 
 describe('operation toast integration', () => {
+  it('uses timed status feedback for general success notices', async () => {
+    const copy = { ...original, id: 'copy', name: 'Family (copy)' };
+    vi.mocked(duplicateSavedTree).mockResolvedValueOnce(copy);
+    render(<App />);
+    const duplicate = await screen.findByRole('button', { name: 'Duplicate Family' });
+    vi.useFakeTimers();
+    await act(async () => fireEvent.click(duplicate));
+    const notice = screen.getByText('Created Family (copy).');
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+    expect(notice.closest('.toast-stack')?.id).toBe('operation-toasts');
+    await act(() => vi.advanceTimersByTimeAsync(4999));
+    expect(screen.getByText('Created Family (copy).')).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(screen.queryByText('Created Family (copy).')).toBeNull();
+  });
+
   it.each(['JSON', 'PNG'] as const)(
     'withholds %s progress toasts and shows failure, retry and timed completion',
     async (format) => {
@@ -785,10 +801,14 @@ describe('operation toast integration', () => {
     const chooseFile = vi.spyOn(input, 'click');
     fireEvent.click(screen.getByRole('button', { name: 'Choose another file' }));
     expect(chooseFile).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss feedback' }));
+    fireEvent.click(
+      within(
+        screen.getByRole('button', { name: 'Choose another file' }).closest('.toast')!,
+      ).getByRole('button', { name: 'Dismiss feedback' }),
+    );
     expect(stack.querySelectorAll('.toast')).toHaveLength(1);
     expect(screen.getByText('Could not duplicate this tree.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss message' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss feedback' }));
     expect(stack.querySelectorAll('.toast')).toHaveLength(0);
   });
 });
