@@ -1,5 +1,21 @@
 # Corepack uses the package.json pin; keep pnpm's own version out of the lockfile.
 pmOnFail: ignore
 
+# Enforce the release delay even when no older version satisfies a requested range.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# Legacy releases without provenance; registry signatures and lockfile integrity
+# verified on 2026-10-21. Review these exact-version exceptions by 2026-11-21.
+trustPolicyExclude:
+  - semver@6.3.1
+  - undici-types@6.21.0
+# Recheck locked packages against the policy, including frozen installs in CI.
+trustLockfile: false
+
+strictDepBuilds: true
 allowBuilds:
-  esbuild: true
+  esbuild@0.25.12: true
