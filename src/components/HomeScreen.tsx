@@ -113,7 +113,6 @@ export function HomeScreen({
         {showHero && (
           <div className="hero">
             <div className="hero-copy">
-              <p className="eyebrow">A PLACE FOR YOUR FAMILY STORY</p>
               <h1>
                 Every family has
                 <br />
@@ -144,14 +143,12 @@ export function HomeScreen({
                   </button>
                 </div>
                 <span className="hero-reassurance">
-                  <ShieldCheck size={16} aria-hidden="true" /> No account needed. Saved in your
-                  browser.
+                  <ShieldCheck size={16} aria-hidden="true" /> No account needed.
                 </span>
               </div>
             </div>
             <div className="hero-art" aria-hidden="true">
               <HeroBranches />
-              <span className="art-label">ROOTED IN CONNECTION</span>
               <div className="hero-tree">
                 <svg className="hero-connectors" width="440" height="540" viewBox="0 0 440 540">
                   <path className="hero-parent-line" d="M220 88V206M220 342V390" />
@@ -240,7 +237,6 @@ export function HomeScreen({
           </section>
         )}
         <section id="how-it-works" className="how-section" aria-labelledby="how-heading">
-          <p className="eyebrow">FROM A NAME TO A FAMILY STORY</p>
           <h2 id="how-heading">Simple to start. Yours to keep.</h2>
           <div className="how-grid">
             <div>
@@ -291,7 +287,6 @@ export function HomeScreen({
                 <ShieldCheck size={27} />
               </span>
               <div>
-                <p className="eyebrow">YOUR HISTORY, IN YOUR HANDS</p>
                 <h2 id="privacy-heading">
                   Private by default.
                   <br />
