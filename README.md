@@ -55,7 +55,20 @@ Each page receives a canonical link generated from `PUBLIC_APP_URL` and its file
 
 Discovery skips hidden files and directories, `node_modules`, `dist`, `coverage`, `public`, `src`, `server`, `api`, and `scripts`. Keep page HTML outside those directories; files in `public` are copied unchanged rather than processed as pages.
 
-The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile. `pnpm-workspace.yaml` allows esbuild's install script, which Vite needs.
+The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile.
+
+### Dependency security
+
+`pnpm-workspace.yaml` applies [pnpm's supply chain mitigations](https://pnpm.io/supply-chain-security) locally and in CI:
+
+- Package versions must be at least seven days old (`minimumReleaseAge: 10080` minutes). Resolution fails when no eligible version satisfies the requested range or publication timestamps are missing.
+- Exotic transitive dependencies, such as untrusted Git repositories and direct tarball URLs, are blocked.
+- `trustPolicy: no-downgrade` rejects releases with weaker publishing trust evidence than earlier releases. Frozen installs recheck the lockfile against the release-age and trust policies.
+- Unreviewed dependency install scripts fail installation. Only `esbuild@0.25.12` is approved to run its install script, which prepares Vite's binary. New esbuild versions require a fresh script review and an updated approval.
+
+CI runs `pnpm install --frozen-lockfile --ignore-scripts`, disabling all install scripts while retaining the release-age and trust checks. Local installs use the script approval policy above. When a dependency update is blocked, review its release metadata, provenance, source, and install scripts before changing the policy. Keep any necessary exception limited to an exact package version and document the reason; do not disable the protections globally. Commit policy and lockfile changes together. Run `pnpm audit` before releases to check known advisories; the trust policy does not replace an advisory audit.
+
+The existing lockfile needs trust exceptions for `semver@6.3.1` (published July 10, 2023) and `undici-types@6.21.0` (published November 13, 2024). These releases lack provenance even though earlier releases of those packages had it. On October 21, 2026, their npm registry signatures were verified against the registry's public keys, their signed integrity hashes matched the committed lockfile, and neither declared an install lifecycle script. The exceptions cover only these exact versions and do not bypass release-age or script checks. Review them by November 21, 2026; remove them when parent dependency updates stop requiring these releases.
 
 ### Linting
 
@@ -73,7 +86,13 @@ For editor formatting, enable the Prettier integration in your editor and use th
 
 ### Dependency audit
 
-The October 1, 2026 npm audit reported no high or critical findings. Vitest and its mocker have a moderate [path traversal advisory](https://github.com/advisories/GHSA-82fw-gwwq-j7x9). These are development dependencies; the test command runs in batch mode and does not expose a test server, and they are excluded from the production bundle. A major test-runner upgrade is deferred pending compatibility testing. Review this deferral by November 1, 2026, and do not expose a Vitest server to untrusted networks.
+The October 21, 2026 `pnpm audit` reported 2 critical, 2 high, 6 moderate, and 1 low findings in development dependencies. `pnpm audit signatures` verified all 453 locked packages with no missing or invalid signatures. Signature verification and the supply chain policies above do not resolve known vulnerabilities.
+
+- `tinypool@1.1.1`, used by Vitest, has two critical prototype-pollution gadgets affecting [worker options](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3) and [task options](https://github.com/advisories/GHSA-85c8-ppgw-ccpr). Exploitation requires a separate prototype-pollution primitive and an attacker-controlled module. The app does not use the pool at runtime; tests run repository-controlled code in batch mode. A fix requires moving beyond Vitest's declared tinypool range, so a compatible test-runner upgrade is deferred for separate testing rather than forcing a transitive major upgrade.
+- `source-map-js@1.2.1`, used through Vite/PostCSS, has a high [denial-of-service advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) when consuming malicious indexed source maps. It processes project and dependency build inputs rather than imported family-tree data. Version 1.2.2 contains a fix; updating the build dependency lockfile is deferred to a separate dependency-remediation change.
+- `vite@6.4.3` has a high Windows [editor command-injection advisory](https://github.com/advisories/GHSA-587h-7wmj-h5pm), plus moderate and low development-server findings. Version 6.4.4 contains fixes. Development-server exposure is relevant on this Windows project; until upgraded, keep Vite on a trusted machine and network and use `pnpm dev --host 127.0.0.1` to avoid listening on every network interface. These server paths are excluded from the production bundle. The patch upgrade is deferred to the same dependency-remediation change.
+
+Vitest and its mocker also have moderate [path traversal](https://github.com/advisories/GHSA-82fw-gwwq-j7x9) and [mock registration injection](https://github.com/advisories/GHSA-qxg6-89mg-rqv8) findings. Batch tests do not expose a Vitest server; do not expose one to untrusted networks. Review all advisory deferrals by November 1, 2026. The pnpm-policy change preserves existing dependency versions and does not mark these findings as fixed.
 
 ## Vercel Web Analytics
 
