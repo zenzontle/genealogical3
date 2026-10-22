@@ -138,17 +138,17 @@ export async function exportPng(tree: Tree) {
   const scale = Math.min(2, 8192 / width, 8192 / height, Math.sqrt(28_000_000 / (width * height)));
   canvas.width = Math.max(1, Math.floor(width * scale));
   canvas.height = Math.max(1, Math.floor(height * scale));
-  const styles = getComputedStyle(document.documentElement);
+  // Keep downloaded trees legible on paper, independently of the editor theme.
   const palette = {
-    background: styles.getPropertyValue('--bg').trim(),
-    surface: styles.getPropertyValue('--surface').trim(),
-    border: styles.getPropertyValue('--border').trim(),
-    avatar: styles.getPropertyValue('--accent-surface').trim(),
-    text: styles.getPropertyValue('--text').trim(),
-    muted: styles.getPropertyValue('--text-muted').trim(),
-    accent: styles.getPropertyValue('--accent').trim(),
-    copper: styles.getPropertyValue('--copper').trim(),
-    partner: styles.getPropertyValue('--partner').trim(),
+    background: '#ffffff',
+    surface: '#ffffff',
+    border: '#777777',
+    avatar: '#f2f2f2',
+    text: '#1a1a1a',
+    muted: '#4a4a4a',
+    accent: '#333333',
+    copper: '#4a4a4a',
+    partner: '#4a4a4a',
   };
   ctx.scale(scale, scale);
   ctx.fillStyle = palette.background;
@@ -234,14 +234,14 @@ export async function exportPng(tree: Tree) {
       ctx.translate(lx - 12, ly - 12);
       ctx.fillStyle = palette.background;
       ctx.fillRect(-4, -4, 32, 32);
-      ctx.strokeStyle = icon.color;
-      ctx.fillStyle = icon.fill;
+      ctx.strokeStyle = palette.partner;
+      ctx.fillStyle = palette.partner;
       ctx.lineWidth = 1.8;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       for (const d of icon.paths) {
         const path = new Path2D(d);
-        if (icon.fill !== 'none') ctx.fill(path);
+        ctx.fill(path);
         ctx.stroke(path);
       }
       ctx.restore();
