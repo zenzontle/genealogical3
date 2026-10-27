@@ -122,7 +122,7 @@ export function HeaderPersonSearch({
               setOpen(true);
             }}
           />
-          {open && (
+          {open && query && (
             <button
               className="icon-button"
               type="button"
