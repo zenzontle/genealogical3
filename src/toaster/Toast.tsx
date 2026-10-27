@@ -1,42 +1,25 @@
-import { CheckCircle2, CircleAlert, LoaderCircle, X } from 'lucide-react';
+import { CheckCircle2, CircleAlert, Info, LoaderCircle, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import type { FeedbackState } from '../lib/feedback';
+import type { Toast as ToastData } from './store';
 
-export function OperationFeedback({
-  state,
-  action,
-  onDismiss,
-  presentation = 'inline',
-  autoDismissMs,
-}: {
-  state: FeedbackState;
-  action?: { label: string; onClick: () => void };
-  onDismiss: () => void;
-  presentation?: 'inline' | 'toast';
-  autoDismissMs?: number;
-}) {
+const icons = { info: Info, pending: LoaderCircle, success: CheckCircle2, error: CircleAlert };
+
+export function Toast({ toast, onDismiss }: { toast: ToastData; onDismiss: () => void }) {
   const container = useRef<HTMLDivElement>(null);
   const hovered = useRef(false);
   const focused = useRef(false);
   const updateTimer = useRef<(() => void) | null>(null);
   const dismiss = useRef(onDismiss);
-  const actionable = !!action;
 
   useEffect(() => {
     dismiss.current = onDismiss;
   }, [onDismiss]);
 
+  // Only plain successes dismiss themselves; pending work, errors and actions wait for the user.
   useEffect(() => {
-    if (state.status === 'idle') hovered.current = false;
     focused.current = container.current?.contains(document.activeElement) ?? false;
-    if (
-      presentation !== 'toast' ||
-      state.status !== 'success' ||
-      actionable ||
-      !autoDismissMs ||
-      autoDismissMs <= 0
-    )
-      return;
+    const { status, action, autoDismissMs } = toast;
+    if (status !== 'success' || action || !autoDismissMs || autoDismissMs <= 0) return;
 
     let remaining = autoDismissMs;
     let started = 0;
@@ -59,15 +42,14 @@ export function OperationFeedback({
       clearTimeout(timer);
       updateTimer.current = null;
     };
-  }, [state, presentation, autoDismissMs, actionable]);
+  }, [toast]);
 
-  if (state.status === 'idle') return null;
-  const pending = state.status === 'pending';
-  const Icon = pending ? LoaderCircle : state.status === 'error' ? CircleAlert : CheckCircle2;
+  const pending = toast.status === 'pending';
+  const Icon = icons[toast.status];
   return (
     <div
       ref={container}
-      className={presentation === 'toast' ? 'toast' : `operation-feedback ${state.status}`}
+      className={`toast ${toast.status}`}
       aria-busy={pending}
       onMouseEnter={() => {
         hovered.current = true;
@@ -87,21 +69,21 @@ export function OperationFeedback({
         updateTimer.current?.();
       }}
     >
-      <div className="operation-message" role={state.status === 'error' ? 'alert' : 'status'}>
+      <div className="toast-message" role={toast.status === 'error' ? 'alert' : 'status'}>
         <Icon size={17} className={pending ? 'busy-icon' : undefined} aria-hidden="true" />
-        <span>{state.message}</span>
+        <span>{toast.message}</span>
       </div>
       {!pending && (
-        <div className="operation-actions">
-          {action && (
-            <button type="button" className="text-button" onClick={action.onClick}>
-              {action.label}
+        <div className="toast-actions">
+          {toast.action && (
+            <button type="button" className="text-button" onClick={toast.action.onClick}>
+              {toast.action.label}
             </button>
           )}
           <button
             type="button"
             className="icon-button"
-            aria-label="Dismiss feedback"
+            aria-label={toast.dismissLabel ?? 'Dismiss feedback'}
             onClick={onDismiss}
           >
             <X size={16} />

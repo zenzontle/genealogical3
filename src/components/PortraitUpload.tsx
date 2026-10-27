@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Eye, ImagePlus } from 'lucide-react';
 import type { Person } from '../lib/model';
 import { portraitData } from '../lib/media';
-import { FeedbackToast } from './FeedbackToast';
 import { LocalDialog } from './LocalDialog';
 import { afterPaint, errorMessage, type FeedbackState } from '../lib/feedback';
+import { APP_REGION, Toaster, useToast } from '../toaster';
 
 export function PortraitUpload({
   person,
@@ -20,6 +20,7 @@ export function PortraitUpload({
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
   const [canRetry, setCanRetry] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const viewerRegion = useId();
   useEffect(() => {
     const counter = request;
     counter.current++;
@@ -78,22 +79,19 @@ export function PortraitUpload({
       }}
     />
   );
-  const status = (
-    <FeedbackToast
-      withinDialog={viewerOpen}
-      state={feedback}
-      onDismiss={dismiss}
-      action={
-        feedback.status === 'error'
-          ? {
-              label: canRetry ? 'Retry' : 'Choose another photo',
-              onClick: () =>
-                canRetry && file.current ? void process(file.current) : input.current?.click(),
-            }
-          : undefined
-      }
-    />
-  );
+  useToast(feedback, {
+    // Modal dialogs make the rest of the document inert, so keep their actions in the dialog.
+    region: viewerOpen ? viewerRegion : APP_REGION,
+    onDismiss: dismiss,
+    action:
+      feedback.status === 'error'
+        ? {
+            label: canRetry ? 'Retry' : 'Choose another photo',
+            onClick: () =>
+              canRetry && file.current ? void process(file.current) : input.current?.click(),
+          }
+        : undefined,
+  });
   return (
     <div className="portrait-upload">
       <button
@@ -113,10 +111,7 @@ export function PortraitUpload({
           {person.portrait ? <Eye size={16} /> : <ImagePlus size={16} />}
         </span>
       </button>
-      <div className="portrait-upload-details">
-        {!viewerOpen && picker}
-        {!viewerOpen && status}
-      </div>
+      <div className="portrait-upload-details">{!viewerOpen && picker}</div>
       {viewerOpen && person.portrait && (
         <LocalDialog
           className="portrait-viewer"
@@ -154,7 +149,7 @@ export function PortraitUpload({
               Remove photo
             </button>
           </div>
-          {status}
+          <Toaster region={viewerRegion} />
         </LocalDialog>
       )}
     </div>

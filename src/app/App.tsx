@@ -46,7 +46,7 @@ import { TreeActionDialog, type TreeAction } from '../components/TreeActionDialo
 import { WorkspaceDeletionDialog } from '../components/WorkspaceDeletionDialog';
 import { useWorkspaceDeletion } from '../hooks/useWorkspaceDeletion';
 import { driveTreeName, type WorkspaceEntry } from '../lib/workspaceEntries';
-import { OperationFeedback } from '../components/OperationFeedback';
+import { Toaster, useToast, type ToastState } from '../toaster';
 import { useTreeImport } from '../hooks/useTreeImport';
 import { useTreeExport } from '../hooks/useTreeExport';
 import { RelationshipEdge } from '../components/RelationshipEdge';
@@ -107,6 +107,7 @@ type CanvasNode = PersonNode | PartnerNode;
 const nodeTypes = { person: PersonCard, partnerConnector: PartnerConnector };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
+const IDLE: ToastState = { status: 'idle' };
 type SaveState = 'draft' | 'saved' | 'saving' | 'error';
 type TreeChange = 'data' | 'navigation';
 type CommitOptions = {
@@ -138,7 +139,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<ToastState>({ status: 'idle' });
   const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
   const [restoreWarnings, setRestoreWarnings] = useState<RestoreWarning[]>([]);
@@ -235,7 +236,10 @@ export default function App() {
     },
   );
   const showError = useCallback((error: unknown) => {
-    setNotice(error instanceof Error ? error.message : 'Something went wrong.');
+    setNotice({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Something went wrong.',
+    });
   }, []);
   const refreshLibrary = useCallback(async () => {
     const request = ++libraryRefresh.current;
@@ -288,7 +292,7 @@ export default function App() {
         setSelectedId(null);
         setSelectedRelationId(null);
         setScreen('home');
-        setNotice(message);
+        setNotice({ status: 'info', message });
       };
       // Hold saves until the stored version is checked, then reject stale queued snapshots.
       storageRefresh.current = storageRefresh.current.then(async () => {
@@ -450,7 +454,7 @@ export default function App() {
       setRestoreWarnings(link?.restoreWarnings || []);
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
-      setNotice('');
+      setNotice({ status: 'idle' });
       return true;
     } catch (error) {
       if (request === navigation.current) showError(error);
@@ -466,7 +470,7 @@ export default function App() {
       if (!treeRef.current) return false;
       try {
         commit(update(treeRef.current), 'data', { record });
-        setNotice('');
+        setNotice({ status: 'idle' });
         return true;
       } catch (error) {
         showError(error);
@@ -811,9 +815,11 @@ export default function App() {
     const snapshot = cloneTree(treeRef.current);
     const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
     if (restoreWarnings.length) {
-      setNotice(
-        'This local copy has missing portraits. Duplicate it in Workspace for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again.',
-      );
+      setNotice({
+        status: 'info',
+        message:
+          'This local copy has missing portraits. Duplicate it in Workspace for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again.',
+      });
       return;
     }
     driveOperationBusy.current = true;
@@ -834,15 +840,16 @@ export default function App() {
           setDriveFile(file);
           setRestoreWarnings([]);
         }
-        setNotice(
-          [
+        setNotice({
+          status: 'info',
+          message: [
             `Saved to Google Drive as ${driveTreeName(file.name, file.description)}.`,
             ...file.cleanupWarnings,
           ].join(' '),
-        );
+        });
       } else if (driveSync.snapshot()[snapshot.id]?.conflict) setConflictTreeId(snapshot.id);
       else if (driveSync.snapshot()[snapshot.id]?.status === 'synced')
-        setNotice('Your Drive backup is up to date.');
+        setNotice({ status: 'info', message: 'Your Drive backup is up to date.' });
       await refreshLibrary();
       void driveWorkspace.refresh();
     } catch (error) {
@@ -902,11 +909,12 @@ export default function App() {
       if (!(await openTree(copy.id))) return;
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
-      setNotice(
-        result.restoreWarnings.length
+      setNotice({
+        status: 'info',
+        message: result.restoreWarnings.length
           ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
           : 'Opened a local working copy. Future data edits sync to Drive automatically.',
-      );
+      });
     } catch (error) {
       if (origin === navigation.current) showError(error);
     } finally {
@@ -920,7 +928,10 @@ export default function App() {
     setDriveBusy(true);
     try {
       await disconnectDrive();
-      setNotice('Forgot Google Drive access in this browser. Your local tree is still saved.');
+      setNotice({
+        status: 'info',
+        message: 'Forgot Google Drive access in this browser. Your local tree is still saved.',
+      });
     } catch (error) {
       showError(error);
     } finally {
@@ -940,7 +951,7 @@ export default function App() {
       const copy = await duplicateSavedTree(item.id);
       // Keep the persisted copy visible even if the subsequent library read fails.
       setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
-      if (await refreshLibrary()) setNotice(`Created ${copy.name}.`);
+      if (await refreshLibrary()) setNotice({ status: 'info', message: `Created ${copy.name}.` });
     } catch (error) {
       showError(error);
     } finally {
@@ -1132,6 +1143,46 @@ export default function App() {
           : saveState === 'saving'
             ? 'Saving locally…'
             : 'Local save failed · export JSON';
+  useToast(notice, {
+    dismissLabel: 'Dismiss message',
+    onDismiss: () => setNotice({ status: 'idle' }),
+  });
+  // Export buttons show their own progress, so only results reach the toaster.
+  useToast(exports.feedback.status === 'pending' ? IDLE : exports.feedback, {
+    onDismiss: exports.dismiss,
+    action:
+      exports.feedback.status === 'error' ? { label: 'Retry', onClick: exports.retry } : undefined,
+  });
+  useToast(imports.feedback, {
+    onDismiss: imports.dismiss,
+    action:
+      imports.feedback.status === 'success' && imports.importedId
+        ? {
+            label: 'Open tree',
+            onClick: () => {
+              void openTree(imports.importedId!);
+              imports.dismiss();
+            },
+          }
+        : imports.feedback.status === 'error'
+          ? {
+              label: imports.canRetry ? 'Retry' : 'Choose another file',
+              onClick: () => (imports.canRetry ? void imports.run() : fileInput.current?.click()),
+            }
+          : undefined,
+  });
+  const driveMessage =
+    driveBusy && !deletion.action
+      ? photoProgress
+        ? `${photoProgress.direction === 'upload' ? 'Uploading' : 'Downloading'} photos: ${photoProgress.completed} of ${photoProgress.total}`
+        : 'Connecting to Google Drive…'
+      : '';
+  useToast(
+    useMemo(
+      (): ToastState => (driveMessage ? { status: 'pending', message: driveMessage } : IDLE),
+      [driveMessage],
+    ),
+  );
   return (
     <>
       <input
@@ -1214,7 +1265,7 @@ export default function App() {
           driveBusy={driveBusy}
           onRetryLibrary={() => {
             setLibraryState('loading');
-            setNotice('');
+            setNotice({ status: 'idle' });
             void refreshLibrary();
           }}
           duplicatingTreeId={duplicatingTreeId}
@@ -1660,56 +1711,7 @@ export default function App() {
           onClose={deletion.close}
         />
       )}
-      <div className="toast-stack" id="operation-toasts">
-        {notice && (
-          <div className="toast" role="alert">
-            <span>{notice}</span>
-            <button aria-label="Dismiss message" onClick={() => setNotice('')}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        <OperationFeedback
-          presentation="toast"
-          autoDismissMs={5000}
-          state={exports.feedback.status === 'pending' ? { status: 'idle' } : exports.feedback}
-          onDismiss={exports.dismiss}
-          action={
-            exports.feedback.status === 'error'
-              ? { label: 'Retry', onClick: exports.retry }
-              : undefined
-          }
-        />
-        <OperationFeedback
-          presentation="toast"
-          state={imports.feedback}
-          onDismiss={imports.dismiss}
-          action={
-            imports.feedback.status === 'success' && imports.importedId
-              ? {
-                  label: 'Open tree',
-                  onClick: () => {
-                    void openTree(imports.importedId!);
-                    imports.dismiss();
-                  },
-                }
-              : imports.feedback.status === 'error'
-                ? {
-                    label: imports.canRetry ? 'Retry' : 'Choose another file',
-                    onClick: () =>
-                      imports.canRetry ? void imports.run() : fileInput.current?.click(),
-                  }
-                : undefined
-          }
-        />
-      </div>
-      {driveBusy && !deletion.action && (
-        <div className="export-feedback" role="status" aria-live="polite">
-          {photoProgress
-            ? `${photoProgress.direction === 'upload' ? 'Uploading' : 'Downloading'} photos: ${photoProgress.completed} of ${photoProgress.total}`
-            : 'Connecting to Google Drive…'}
-        </div>
-      )}
+      <Toaster id="operation-toasts" />
     </>
   );
 }

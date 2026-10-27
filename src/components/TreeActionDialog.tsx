@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { LocalDialog } from './LocalDialog';
-import { FeedbackToast } from './FeedbackToast';
 import { errorMessage, type FeedbackState } from '../lib/feedback';
+import { Toaster, useToast } from '../toaster';
 
 export type TreeAction =
   | { kind: 'rename'; treeId: string; name: string }
@@ -19,6 +19,9 @@ export function TreeActionDialog({
 }) {
   const [name, setName] = useState(action.kind === 'delete-people' ? '' : action.name);
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
+  const region = useId();
+  // Modal dialogs make the rest of the document inert, so their toasts render inside them.
+  useToast(feedback, { region, onDismiss: () => setFeedback({ status: 'idle' }) });
   const locked = useRef(false);
   const inputId = useId(),
     errorId = useId();
@@ -72,11 +75,7 @@ export function TreeActionDialog({
           </label>
         )}
         <div id={errorId}>
-          <FeedbackToast
-            withinDialog
-            state={feedback}
-            onDismiss={() => setFeedback({ status: 'idle' })}
-          />
+          <Toaster region={region} />
         </div>
         <div className="dialog-actions">
           <button
