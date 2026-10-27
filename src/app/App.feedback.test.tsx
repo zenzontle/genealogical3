@@ -1395,6 +1395,27 @@ describe('local feedback integration', () => {
     expect(records.get(original.id)?.dataUpdatedAt).toBe(redone.dataUpdatedAt);
   });
 
+  it('arranges the tree as one undoable edit around the home person', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange' }));
+    const arranged = await editorSnapshot();
+    expect(arranged.people.map((p) => [p.x, p.y])).toEqual([
+      [0, 0],
+      [300, 0],
+    ]);
+    expect(arranged.dataUpdatedAt).toBeGreaterThan(original.dataUpdatedAt);
+    expect(screen.getByRole('button', { name: 'Select Taylor' }).getAttribute('data-x')).toBe(
+      '300',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    expect((await editorSnapshot()).people).toEqual(original.people);
+  });
+
   it('preserves data timestamps during navigation, panels, selection and ordinary saves', async () => {
     render(<App />);
     await openOriginal();
