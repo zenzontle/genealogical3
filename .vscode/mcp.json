@@ -3,7 +3,7 @@
     "codegraph": {
       "type": "stdio",
       "command": "codegraph",
-      "args": ["serve", "--mcp", "--path", "C:\\Dev\\genealogical3"]
+      "args": ["serve", "--mcp", "--path", "${workspaceFolder}"]
     }
   }
 }
