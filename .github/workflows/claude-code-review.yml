@@ -10,6 +10,11 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+# A new push makes the review of the previous commit obsolete.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     # Optional: Filter by PR author
@@ -26,6 +31,11 @@ jobs:
       id-token: write
 
     steps:
+      # Comments from earlier runs on the same commit must not affect this run.
+      - name: Record review start
+        id: review-start
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -42,3 +52,60 @@ jobs:
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
+
+      # Claude posts inline comments for findings, or a "No issues found" summary otherwise.
+      - name: Fail if Claude reported issues
+        uses: actions/github-script@v9
+        env:
+          REVIEW_START: ${{ steps.review-start.outputs.at }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pull_number = context.payload.pull_request.number;
+            const headSha = context.payload.pull_request.head.sha;
+            const since = process.env.REVIEW_START;
+            const claudeLogin = 'claude[bot]';
+
+            const reviewComments = await github.paginate(
+              github.rest.pulls.listReviewComments,
+              { owner, repo, pull_number, per_page: 100 }
+            );
+            const findings = reviewComments.filter(comment =>
+              comment.user?.login === claudeLogin &&
+              comment.original_commit_id === headSha &&
+              comment.created_at >= since
+            );
+
+            if (findings.length) {
+              core.setFailed(
+                `Claude reported ${findings.length} issue(s) on ${headSha}:\n` +
+                findings
+                  .map(comment =>
+                    `- ${comment.path}:${comment.original_line ?? comment.line ?? '?'} ` +
+                    comment.html_url
+                  )
+                  .join('\n')
+              );
+              return;
+            }
+
+            const issueComments = await github.paginate(
+              github.rest.issues.listComments,
+              { owner, repo, issue_number: pull_number, since, per_page: 100 }
+            );
+            const summaryWithFindings = issueComments.find(comment =>
+              comment.user?.login === claudeLogin &&
+              comment.created_at >= since &&
+              comment.body?.startsWith('## Code review') &&
+              !comment.body.includes('No issues found')
+            );
+
+            if (summaryWithFindings) {
+              core.setFailed(
+                `Claude reported issues on ${headSha}: ${summaryWithFindings.html_url}`
+              );
+              return;
+            }
+
+            core.info(`Claude found no issues on ${headSha}.`);
