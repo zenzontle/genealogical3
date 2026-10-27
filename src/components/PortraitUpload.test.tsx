@@ -7,6 +7,7 @@ import { PortraitUpload } from './PortraitUpload';
 import { portraitData } from '../lib/media';
 import { makePerson, type Person } from '../lib/model';
 import { mockDialogs } from '../test/dialogTestSetup';
+import { Toaster } from '../toaster';
 
 vi.mock('../lib/media', () => ({ portraitData: vi.fn() }));
 vi.mock('../lib/feedback', async (original) => ({
@@ -15,6 +16,7 @@ vi.mock('../lib/feedback', async (original) => ({
 }));
 beforeEach(() => {
   mockDialogs();
+  render(<Toaster />);
   vi.mocked(portraitData).mockReset();
 });
 afterEach(() => {

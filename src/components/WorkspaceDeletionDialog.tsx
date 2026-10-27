@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { LocalDialog } from './LocalDialog';
-import { FeedbackToast } from './FeedbackToast';
 import { errorMessage, type FeedbackState } from '../lib/feedback';
+import { Toaster, useToast } from '../toaster';
 import { driveTreeName, type DeletionScope } from '../lib/workspaceEntries';
 import type { WorkspaceDeletion } from '../hooks/useWorkspaceDeletion';
 
@@ -18,6 +18,9 @@ export function WorkspaceDeletionDialog({
 }) {
   const [scope, setScope] = useState(action.scope);
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
+  const region = useId();
+  // Modal dialogs make the rest of the document inert, so their toasts render inside them.
+  useToast(feedback, { region, onDismiss: () => setFeedback({ status: 'idle' }) });
   const locked = useRef(false);
   const group = useId(),
     guidance = useId(),
@@ -100,11 +103,7 @@ export function WorkspaceDeletionDialog({
         {browserCleanup && (
           <p role="status">Drive deletion is complete. Retry to finish browser cleanup.</p>
         )}
-        <FeedbackToast
-          withinDialog
-          state={feedback}
-          onDismiss={() => setFeedback({ status: 'idle' })}
-        />
+        <Toaster region={region} />
         <div className="dialog-actions">
           <button
             type="button"
