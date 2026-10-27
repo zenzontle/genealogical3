@@ -1797,6 +1797,13 @@ h2 {
 .react-flow__handle-right {
   top: 50% !important;
 }
+/* React Flow's group-selection overlay sits above the nodes and would cover the
+   delete button; selected cards are already highlighted and drag as a group. */
+.react-flow__nodesselection-rect {
+  pointer-events: none;
+  border: none;
+  background: none;
+}
 .react-flow__controls {
   border: 1px solid var(--border);
   box-shadow: 0 3px 15px var(--shadow);
