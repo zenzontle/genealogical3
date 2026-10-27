@@ -26,6 +26,7 @@ import {
   Heart,
   Home,
   Menu,
+  Network,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -56,6 +57,7 @@ import { partnerConnectors, partnerNodeId } from '../lib/partnerConnectors';
 import { relationshipEdges } from '../lib/relationshipEdges';
 import { calculateKinships, type KinshipResult } from '../lib/kinship';
 import { movePeopleToPositions, personPositionAtViewCenter } from '../lib/canvasPosition';
+import { arrangeTree } from '../lib/treeLayout';
 import { useConnectorProximity } from '../hooks/useConnectorProximity';
 import {
   addRelation,
@@ -1084,6 +1086,27 @@ export default function App() {
       })),
     );
   };
+  const fitTree = () =>
+    flowRef.current?.fitView({
+      padding: 0.25,
+      maxZoom: 1.1,
+      duration: 500,
+    });
+  const arrangeCanvas = () => {
+    const sizes = new Map(
+      nodes.flatMap((node) =>
+        node.measured?.width && node.measured.height
+          ? [[node.id, { width: node.measured.width, height: node.measured.height }] as const]
+          : [],
+      ),
+    );
+    const current = treeRef.current;
+    if (!current) return;
+    const next = arrangeTree(current, sizes);
+    if (next !== current && !apply(() => next)) return;
+    // Fit after React Flow has rendered the new positions.
+    requestAnimationFrame(() => requestAnimationFrame(fitTree));
+  };
   const onAlignedNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
       const moving = changes.flatMap((change) => {
@@ -1481,15 +1504,16 @@ export default function App() {
                     </span>
                   )}
                   <button
+                    type="button"
                     className="button subtle"
-                    onClick={() =>
-                      flowRef.current?.fitView({
-                        padding: 0.25,
-                        maxZoom: 1.1,
-                        duration: 500,
-                      })
-                    }
+                    onClick={arrangeCanvas}
+                    disabled={(tree?.people.length ?? 0) < 2}
+                    title="Automatically arrange the tree by generation"
                   >
+                    <Network size={16} aria-hidden="true" />
+                    Arrange
+                  </button>
+                  <button className="button subtle" onClick={fitTree}>
                     Fit tree
                   </button>
                 </div>
