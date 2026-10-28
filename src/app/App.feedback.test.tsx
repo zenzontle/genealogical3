@@ -642,6 +642,22 @@ describe('canvas text selection', () => {
 });
 
 describe('operation toast integration', () => {
+  it('dismisses plain confirmations after five seconds', async () => {
+    const copy = { ...original, id: 'copy', name: 'Family (copy)' };
+    vi.mocked(duplicateSavedTree).mockImplementationOnce(async () => {
+      records.set(copy.id, copy);
+      return copy;
+    });
+    render(<App />);
+    const duplicate = await screen.findByRole('button', { name: 'Duplicate Family' });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fireEvent.click(duplicate);
+    const notice = await screen.findByText('Created Family (copy).');
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.queryByText('Created Family (copy).')).toBeNull();
+  });
+
   it.each(['JSON', 'PNG'] as const)(
     'withholds %s progress toasts and shows failure, retry and timed completion',
     async (format) => {
@@ -2177,6 +2193,11 @@ describe('Drive portrait feedback and associations', () => {
         ? 'Saved to Google Drive as García family, but this browser could not remember the file link. Open its Google Drive card in Workspace next time.'
         : 'Saved to Google Drive as García family.';
       await screen.findByText(`${notice} Photo cleanup could not be completed.`);
+      // Cleanup warnings keep the notice until the user dismisses it.
+      vi.useFakeTimers();
+      await act(() => vi.advanceTimersByTimeAsync(10000));
+      expect(screen.getByText(`${notice} Photo cleanup could not be completed.`)).toBeTruthy();
+      vi.useRealTimers();
       expect(links.has(original.id)).toBe(!linkFails);
       expect(screen.queryByText(/Saved to Google Drive as remote-1/)).toBeNull();
     },
