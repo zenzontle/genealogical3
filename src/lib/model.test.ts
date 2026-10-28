@@ -346,3 +346,80 @@ describe('tree document and relationship rules', () => {
     expect(() => validateTree({ ...tree, version: 99 })).toThrow(/version/);
   });
 });
+
+describe('partner and parent links between the same pair', () => {
+  const pair = () => {
+    const a = makePerson('A'),
+      b = makePerson('B');
+    return { a, b, tree: { ...makeTree(), people: [a, b] } };
+  };
+  const partner = (a: string, b: string): Relation => ({
+    id: uid(),
+    type: 'partner',
+    personA: a,
+    personB: b,
+    status: 'unspecified',
+    union: 'unspecified',
+  });
+  const parent = (parentId: string, childId: string): Extract<Relation, { type: 'parent' }> => ({
+    id: uid(),
+    type: 'parent',
+    parentId,
+    childId,
+    kind: 'unspecified',
+  });
+
+  it('rejects linking partners as parent and child in either order', () => {
+    const { a, b, tree } = pair();
+    expect(() => addRelation(addRelation(tree, partner(a.id, b.id)), parent(a.id, b.id))).toThrow(
+      'Partners cannot also be linked as parent and child.',
+    );
+    expect(() => addRelation(addRelation(tree, parent(b.id, a.id)), partner(a.id, b.id))).toThrow(
+      'Partners cannot also be linked as parent and child.',
+    );
+  });
+
+  it('still opens and edits older trees that contain both links', () => {
+    const { a, b, tree } = pair();
+    const link = parent(a.id, b.id);
+    const legacy = validateTree({ ...tree, relations: [partner(a.id, b.id), link] });
+    expect(legacy.relations).toHaveLength(2);
+    const edited = updateRelation(legacy, { ...link, kind: 'biological' });
+    expect(edited.relations.find((r) => r.id === link.id)).toMatchObject({ kind: 'biological' });
+  });
+});
+
+describe('tree file field handling', () => {
+  it('drops unrecognized fields and fills a missing navigation timestamp', () => {
+    const person = { ...makePerson('Ada'), extra: 'x', born: { precision: 'unknown', junk: 1 } };
+    const other = makePerson('Bo');
+    const input = {
+      ...makeTree('Family'),
+      format: 'something-else',
+      unknown: { nested: true },
+      updatedAt: 'yesterday',
+      people: [person, other],
+      relations: [{ ...parentLink(person.id, other.id), note: 'ignored' }],
+    };
+    const tree = validateTree(input);
+    expect(tree).not.toHaveProperty('format');
+    expect(tree).not.toHaveProperty('unknown');
+    expect(tree.updatedAt).toBe(input.dataUpdatedAt);
+    expect(tree.people[0]).not.toHaveProperty('extra');
+    expect(tree.people[0].born).toEqual({ precision: 'unknown' });
+    expect(tree.relations[0]).not.toHaveProperty('note');
+  });
+
+  it('shows years before 1000 without leading zeros', () => {
+    expect(dateYearLabel({ precision: 'full', value: '0012-03-04' })).toBe('12');
+    expect(dateYearLabel({ precision: 'full', value: '1987-05-06' })).toBe('1987');
+  });
+});
+
+const parentLink = (parentId: string, childId: string): Relation => ({
+  id: uid(),
+  type: 'parent',
+  parentId,
+  childId,
+  kind: 'unspecified',
+});

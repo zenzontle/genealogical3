@@ -26,8 +26,10 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 export const safeName = (name: string) =>
   name
+    .normalize('NFC')
     .trim()
-    .replace(/[^a-z0-9-_ ]/gi, '')
+    // Keep letters and digits from any script; drop characters filesystems reject.
+    .replace(/[^\p{L}\p{M}\p{N}\-_ ]/gu, '')
     .replace(/\s+/g, '-') || 'family-tree';
 export function exportJson(tree: Tree) {
   assertValidLifeDates(tree);

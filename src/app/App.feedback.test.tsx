@@ -1159,19 +1159,19 @@ describe('local feedback integration', () => {
     render(<App />);
     await openOriginal();
     vi.spyOn(Date, 'now').mockReturnValue(original.dataUpdatedAt);
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    const added = await editorSnapshot();
+    expect(added.people).toHaveLength(3);
+    expect(added.dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
     act(() =>
       canvasEvents.onConnect({
         source: original.people[0].id,
-        target: original.people[1].id,
+        target: added.people[2].id,
         sourceHandle: 'bottom',
         targetHandle: 'top',
       }),
     );
-    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 1);
-    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
-    const added = await editorSnapshot();
-    expect(added.people).toHaveLength(3);
-    expect(added.dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
+    expect((await editorSnapshot()).dataUpdatedAt).toBe(original.dataUpdatedAt + 2);
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
     const create = await screen.findByRole('button', { name: 'New tree' });
     await act(async () => fireEvent.click(create));
@@ -1184,6 +1184,72 @@ describe('local feedback integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
     await screen.findByRole('button', { name: 'Open My family tree' });
     expect(records.get(draft.id)).toEqual(edited);
+  });
+
+  it('ignores undo and redo shortcuts on Workspace after leaving an edited tree', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    const added = await editorSnapshot();
+    expect(added.people).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to trees' }));
+    await screen.findByRole('button', { name: 'Open Family' });
+    await waitFor(() => expect(records.get(original.id)?.people).toHaveLength(3));
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+      fireEvent.keyDown(window, { key: 'y', ctrlKey: true });
+    });
+    expect(records.get(original.id)).toEqual(added);
+  });
+
+  it('labels unnamed people in the connection target list', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Add person' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    const options = Array.from(
+      screen.getByRole('combobox', { name: 'Person to connect' }).querySelectorAll('option'),
+    ).map((option) => option.textContent);
+    expect(options).toContain('Unnamed person');
+    expect(options).not.toContain('');
+  });
+
+  it('asks before leaving the page while a local save has failed', async () => {
+    const leave = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    render(<App />);
+    await openOriginal();
+    expect(leave()).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    vi.mocked(saveTree).mockRejectedValueOnce(Error('Browser storage full.'));
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Al' } });
+    await screen.findByText('Local save failed · export JSON');
+    expect(leave()).toBe(true);
+    fireEvent.change(screen.getByLabelText('Nickname'), { target: { value: 'Ally' } });
+    await screen.findByText('Saved locally');
+    expect(leave()).toBe(false);
+  });
+
+  it('does not carry a chosen connection role over to another person', async () => {
+    render(<App />);
+    await openOriginal();
+    fireEvent.click(screen.getByRole('button', { name: 'Select Alex' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Connection role' }), {
+      target: { value: 'parent-child' },
+    });
+    expect(screen.getByRole('combobox', { name: 'Person to connect' })).toHaveProperty(
+      'disabled',
+      false,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Select Taylor' }));
+    expect(screen.getByRole('combobox', { name: 'Connection role' })).toHaveProperty('value', '');
+    expect(screen.getByRole('combobox', { name: 'Person to connect' })).toHaveProperty(
+      'disabled',
+      true,
+    );
   });
 
   it('advances meaningful person details and preserves repeated values', async () => {

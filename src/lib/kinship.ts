@@ -34,7 +34,7 @@ const ordinal = (n: number) => {
       : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] || 'th';
   return `${n}${suffix}`;
 };
-function familyLabel(up: number, down: number, sex: Person['sex']): string {
+function familyLabel(up: number, down: number, sex: Person['sex'], half = false): string {
   if (down === 0) {
     const parent = terms(sex, 'father', 'mother', 'parent');
     if (up === 1) return parent;
@@ -44,7 +44,8 @@ function familyLabel(up: number, down: number, sex: Person['sex']): string {
     if (down === 1) return terms(sex, 'son', 'daughter', 'child');
     return `${greatPrefix(down - 2)}${terms(sex, 'grandson', 'granddaughter', 'grandchild')}`;
   }
-  if (up === 1 && down === 1) return terms(sex, 'brother', 'sister', 'sibling');
+  if (up === 1 && down === 1)
+    return `${half ? 'half-' : ''}${terms(sex, 'brother', 'sister', 'sibling')}`;
   if (down === 1) return `${greatPrefix(up - 2)}${terms(sex, 'uncle', 'aunt', 'aunt/uncle')}`;
   if (up === 1) return `${greatPrefix(down - 2)}${terms(sex, 'nephew', 'niece', 'niece/nephew')}`;
   const removed = Math.abs(up - down);
@@ -82,8 +83,13 @@ function routeSteps(route: Route): KinshipStep[] {
     steps.push(current.step);
   return steps.reverse();
 }
-function labelRoute(route: Route, person: Person, people: Map<string, Person>): string {
-  if (route.family) return capitalize(familyLabel(route.up, route.down, person.sex));
+function labelRoute(
+  route: Route,
+  person: Person,
+  people: Map<string, Person>,
+  halfSibling = false,
+): string {
+  if (route.family) return capitalize(familyLabel(route.up, route.down, person.sex, halfSibling));
   return capitalize(
     routeSteps(route)
       .map((step) => stepLabel(step, people.get(step.personId)!.sex))
@@ -122,6 +128,21 @@ export function calculateKinships(
         ?.push({ personId: relation.personA, direction: 'partner', relation });
     }
   }
+  const parents = new Map<string, Set<string>>();
+  for (const relation of tree.relations)
+    if (relation.type === 'parent' && relation.kind !== 'step' && relation.kind !== 'guardian')
+      parents.set(
+        relation.childId,
+        (parents.get(relation.childId) || new Set()).add(relation.parentId),
+      );
+  // Exactly one shared parent, and each has another recorded parent. If either
+  // side's other parent is unrecorded it may be the same person, so stay neutral.
+  const halfSibling = (id: string) => {
+    const own = parents.get(homeId) || new Set<string>(),
+      other = parents.get(id) || new Set<string>();
+    const shared = [...own].filter((parent) => other.has(parent)).length;
+    return shared === 1 && own.size > 1 && other.size > 1;
+  };
   const distances = new Map([[homeId, 0]]);
   const queue = [homeId];
   for (let i = 0; i < queue.length; i++) {
@@ -173,7 +194,7 @@ export function calculateKinships(
     const distinct: Route[] = [],
       duplicates: Route[] = [];
     for (const route of candidates) {
-      const label = labelRoute(route, people.get(id)!, people);
+      const label = labelRoute(route, people.get(id)!, people, halfSibling(id));
       if (labels.has(label)) duplicates.push(route);
       else {
         labels.add(label);
@@ -200,7 +221,7 @@ export function calculateKinships(
       continue;
     }
     const paths = (routes.get(person.id) || []).map((route) => ({
-      label: labelRoute(route, person, people),
+      label: labelRoute(route, person, people, halfSibling(person.id)),
       steps: routeSteps(route),
     }));
     const distinct = paths.filter(

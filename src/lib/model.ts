@@ -125,7 +125,7 @@ export const dateLabel = (date: DateValue) =>
         ? String(date.year)
         : date.value;
 export const dateYearLabel = (date: DateValue) =>
-  date.precision === 'full' ? date.value.slice(0, 4) : dateLabel(date);
+  date.precision === 'full' ? String(Number(date.value.slice(0, 4))) : dateLabel(date);
 /** Missing fields in older local trees and backups mean no home designation. */
 export function normalizeHomePerson(
   tree: Omit<Tree, 'homePersonId'> & { homePersonId?: unknown },
@@ -356,6 +356,8 @@ export function updateRelation(tree: Tree, relation: Relation): Tree {
   return addRelation(
     { ...tree, relations: tree.relations.filter((r) => r.id !== relation.id) },
     relation,
+    // Editing details of an existing link keeps older trees that pair both kinds editable.
+    { allowPartnerParent: current?.type === relation.type },
   );
 }
 export const hasAncestorPath = (
@@ -391,9 +393,25 @@ export function addChildToPartners(tree: Tree, partnerId: string, childId: strin
   return next;
 }
 
-export function addRelation(tree: Tree, relation: Relation): Tree {
+export function addRelation(
+  tree: Tree,
+  relation: Relation,
+  { allowPartnerParent = false }: { allowPartnerParent?: boolean } = {},
+): Tree {
   const [a, b] = relationEndpoints(relation);
   if (a === b) throw Error('A person cannot be linked to themselves.');
+  if (
+    !allowPartnerParent &&
+    relation.type !== 'unassigned' &&
+    tree.relations.some(
+      (r) =>
+        r.type !== 'unassigned' &&
+        r.type !== relation.type &&
+        relationEndpoints(r).includes(a) &&
+        relationEndpoints(r).includes(b),
+    )
+  )
+    throw Error('Partners cannot also be linked as parent and child.');
   if (
     tree.relations.some(
       (r) =>
@@ -498,11 +516,23 @@ export function validateTree(input: unknown): Tree {
     if (error) throw Error(`${p.name || 'Unnamed person'}: ${error}`);
   }
   const relIds = new Set<string>();
+  // Keep only known fields so unrecognized data is never stored or re-exported.
+  const source = input as unknown as Tree;
+  const people = source.people.map(pickPerson);
   let checked: Tree = normalizePersonNames(
     normalizeHomePerson({
-      ...(input as Tree),
-      version: treeDocumentVersion(input as Tree),
+      version: treeDocumentVersion({ people }),
+      id: source.id,
+      name: source.name,
+      people,
+      homePersonId: input.homePersonId,
       relations: [],
+      viewport: { x: source.viewport.x, y: source.viewport.y, zoom: source.viewport.zoom },
+      updatedAt:
+        Number.isSafeInteger(source.updatedAt) && source.updatedAt >= 0
+          ? source.updatedAt
+          : source.dataUpdatedAt,
+      dataUpdatedAt: source.dataUpdatedAt,
     }),
   );
   for (const r of input.relations) {
@@ -545,7 +575,59 @@ export function validateTree(input: unknown): Tree {
       )
         throw Error('An unassigned connection refers to a missing person or an invalid handle.');
     } else throw Error('This file contains an unknown relationship type.');
-    checked = addRelation(checked, r as Relation);
+    // Earlier versions allowed a pair to be both partners and parent/child.
+    checked = addRelation(checked, pickRelation(r as Relation), { allowPartnerParent: true });
   }
   return checked;
 }
+const pickDate = (date: DateValue): DateValue =>
+  date.precision === 'unknown'
+    ? { precision: 'unknown' }
+    : date.precision === 'full'
+      ? { precision: 'full', value: date.value }
+      : { precision: date.precision, year: date.year };
+/** The fields of a person record, dropping anything unrecognized. */
+export const pickPerson = (p: Person): Person =>
+  ({
+    id: p.id,
+    name: p.name,
+    // Legacy records without split names are completed by normalizePersonNames.
+    ...(typeof p.firstName === 'string' ? { firstName: p.firstName, lastName: p.lastName } : {}),
+    nickname: p.nickname,
+    born: pickDate(p.born),
+    died: pickDate(p.died),
+    ...(p.lifeStatus ? { lifeStatus: p.lifeStatus } : {}),
+    sex: p.sex,
+    notes: p.notes,
+    portrait: p.portrait,
+    x: p.x,
+    y: p.y,
+  }) as Person;
+/** The fields of a relationship record, dropping anything unrecognized. */
+export const pickRelation = (r: Relation): Relation =>
+  r.type === 'parent'
+    ? {
+        id: r.id,
+        type: 'parent',
+        parentId: r.parentId,
+        childId: r.childId,
+        kind: r.kind,
+        ...(r.displayRole ? { displayRole: r.displayRole } : {}),
+      }
+    : r.type === 'partner'
+      ? {
+          id: r.id,
+          type: 'partner',
+          personA: r.personA,
+          personB: r.personB,
+          status: r.status,
+          union: r.union,
+        }
+      : {
+          id: r.id,
+          type: 'unassigned',
+          personA: r.personA,
+          personB: r.personB,
+          sourceHandle: r.sourceHandle,
+          targetHandle: r.targetHandle,
+        };

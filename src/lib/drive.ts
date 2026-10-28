@@ -158,7 +158,11 @@ async function readJson(response: Response) {
   try {
     return await response.json();
   } catch (error) {
-    if (error instanceof SyntaxError) throw error;
+    if (error instanceof SyntaxError)
+      throw Error(
+        'Google Drive returned data this app could not read. The file may be damaged or edited outside the app. Your local tree is unchanged.',
+        { cause: error },
+      );
     throw new DriveRequestError(
       0,
       'The Drive response was interrupted. Your changes remain pending.',

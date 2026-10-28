@@ -1728,3 +1728,15 @@ describe('Drive picker', () => {
     );
   });
 });
+
+describe('unreadable Drive responses', () => {
+  it('explains invalid JSON instead of surfacing the parser error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('<html>not json</html>', { status: 200 })),
+    );
+    await expect(listDriveTrees()).rejects.toThrow(
+      'Google Drive returned data this app could not read.',
+    );
+  });
+});
