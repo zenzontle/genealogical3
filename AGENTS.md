@@ -1,3 +1,18 @@
+## Before opening a pull request
+
+Run these and include the results in the PR description. Don't report work as done until they pass.
+
+```sh
+pnpm exec tsc -b
+pnpm test
+pnpm exec eslint . --max-warnings 0
+pnpm exec prettier --check .
+```
+
+- For UI changes, check the change in a browser and attach a screenshot.
+- Review your own diff against `REVIEW.md` before pushing.
+- If a reviewer flags the same kind of issue repeatedly, fix the cause (a lint rule, a test, or this file), not just the instance.
+
 <!-- CODEGRAPH_START -->
 
 ## CodeGraph
