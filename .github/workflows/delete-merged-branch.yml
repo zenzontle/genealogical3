@@ -1,0 +1,40 @@
+name: Delete Merged Branches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  delete-branch:
+    # Fork branches live in another repository, so only same-repo heads are deleted.
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # GitHub skips its own head-branch delete when GITHUB_TOKEN merges a PR (see
+      # enable-auto-merge.yml). Human merges still get it, so a missing branch is fine.
+      - name: Delete head branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if ! out=$(gh api -X DELETE "repos/$REPO/git/refs/heads/$HEAD_REF" 2>&1); then
+            case "$out" in
+              *"(HTTP 404)"* | *"(HTTP 422)"*)
+                echo "Branch $HEAD_REF is already gone."
+                ;;
+              *)
+                echo "$out"
+                exit 1
+                ;;
+            esac
+          else
+            echo "Deleted branch $HEAD_REF."
+          fi
