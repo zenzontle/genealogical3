@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { exportPng, exportJson, portraitData } from './media';
+import { exportPng, exportJson, portraitData, safeName } from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
 import { makePerson, makeTree, personCardSize, validateTree, type Relation } from './model';
 import { relationshipIcons } from './relationshipIcons';
@@ -303,4 +303,14 @@ describe('print-friendly PNG exports', () => {
       expect(lastDateRow[2]).toBeLessThan(expanded[1] + expanded[3] - 8);
     },
   );
+});
+
+describe('export filenames', () => {
+  it('keeps letters from any script and removes unsafe characters', () => {
+    expect(safeName('Familia Peña')).toBe('Familia-Peña');
+    expect(safeName('王家 族谱')).toBe('王家-族谱');
+    expect(safeName('Fami\u006c\u0303ia')).toBe('Fami\u006c\u0303ia'.normalize('NFC'));
+    expect(safeName('a/b:c*?"<>|')).toBe('abc');
+    expect(safeName('  ///  ')).toBe('family-tree');
+  });
 });

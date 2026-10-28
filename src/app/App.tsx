@@ -155,7 +155,6 @@ export default function App() {
   const [pendingCenter, setPendingCenter] = useState<{ treeId: string; personId: string } | null>(
     null,
   );
-  const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarRevealedBySelection, setSidebarRevealedBySelection] = useState(false);
@@ -592,8 +591,8 @@ export default function App() {
     const relation = relationFromConnection(a, b, sh as HandleSide, th as HandleSide);
     apply((t) => addRelation(t, relation));
   };
-  const connectFromPanel = (targetId: string) => {
-    if (!selectedId || !connectMode) return;
+  const connectFromPanel = (targetId: string, connectMode: Exclude<ConnectMode, null>) => {
+    if (!selectedId) return;
     const r: Relation =
       connectMode === 'partner'
         ? {
@@ -612,7 +611,6 @@ export default function App() {
             kind: 'unspecified',
           };
     apply((t) => addRelation(t, r));
-    setConnectMode(null);
   };
   const undo = () => {
     const previous = history.current.at(-1),
@@ -642,7 +640,8 @@ export default function App() {
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (document.querySelector('.local-dialog[open]')) return;
+      // Workspace keeps the last tree in memory; its history must not be reachable there.
+      if (screen !== 'editor' || document.querySelector('.local-dialog[open]')) return;
       if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
       if (e.target instanceof Element && e.target.closest('.person-search')) return;
@@ -791,7 +790,6 @@ export default function App() {
   const jumpToPerson = (id: string) => {
     const current = treeRef.current;
     if (!current?.people.some((person) => person.id === id)) return;
-    setConnectMode(null);
     selectPerson(id);
     setPendingCenter({ treeId: current.id, personId: id });
   };
@@ -998,7 +996,6 @@ export default function App() {
       );
       setSelectedId(null);
       setSelectedRelationId(null);
-      setConnectMode(null);
       return;
     }
     const active = treeRef.current?.id === action.treeId;
@@ -1048,6 +1045,8 @@ export default function App() {
   const leaveEditor = async () => {
     ++navigation.current;
     await saveNow();
+    history.current = [];
+    future.current = [];
     setPendingCenter(null);
     setScreen('home');
     setSelectedId(null);
@@ -1156,6 +1155,18 @@ export default function App() {
     commit({ ...current, viewport }, 'navigation', { record: false });
   };
   const hasInvalidDateDraft = tree?.people.some((p) => !!lifeDatesError(dateDrafts[p.id] || p));
+  const unsavedLocal =
+    screen === 'editor' &&
+    (saveState === 'saving' || saveState === 'error' || !!hasInvalidDateDraft);
+  useEffect(() => {
+    if (!unsavedLocal) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsavedLocal]);
   const downloadJson = () => exports.run('JSON');
   const localStatus =
     hasInvalidDateDraft && saveState !== 'error'
@@ -1623,8 +1634,6 @@ export default function App() {
                   onDelete={() => deletePeople(selectedPersonIds)}
                   deleteCount={selectedPersonIds.length}
                   onAddRelative={addPerson}
-                  connectMode={connectMode}
-                  setConnectMode={setConnectMode}
                   onConnectTo={connectFromPanel}
                   onRemoveRelation={(id) =>
                     apply((t) => ({

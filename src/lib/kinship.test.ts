@@ -299,3 +299,33 @@ describe('kinship relative to home', () => {
     expect(f.results().get(f.tree.people[20].id)!.primary.label).toBe('Child');
   });
 });
+
+describe('half-siblings', () => {
+  it('labels a sibling who shares exactly one of two recorded parents', () => {
+    const f = family();
+    const mother = f.person('Mother', 'female'),
+      father = f.person('Father', 'male'),
+      stepfather = f.person('Stepfather', 'male');
+    const half = f.person('Half', 'male'),
+      full = f.person('Full', 'female');
+    f.parent(mother, f.home);
+    f.parent(father, f.home);
+    f.parent(mother, half);
+    f.parent(stepfather, half);
+    f.parent(mother, full);
+    f.parent(father, full);
+    expect(f.label(half)).toBe('Half-brother');
+    expect(f.label(full)).toBe('Sister');
+  });
+
+  it('stays neutral when either side has only one recorded parent', () => {
+    const f = family();
+    const mother = f.person('Mother', 'female'),
+      father = f.person('Father', 'male');
+    const sibling = f.person('Sibling');
+    f.parent(mother, f.home);
+    f.parent(father, f.home);
+    f.parent(mother, sibling);
+    expect(f.label(sibling)).toBe('Sibling');
+  });
+});

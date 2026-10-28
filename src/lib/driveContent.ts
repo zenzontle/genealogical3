@@ -1,4 +1,4 @@
-import { normalizeHomePerson, type Tree } from './model';
+import { normalizeHomePerson, pickPerson, pickRelation, type Tree } from './model';
 import { normalizePersonNames } from './personNames';
 import { photoDigest, portraitBytes, type PortraitReference } from './driveDocument';
 
@@ -7,7 +7,8 @@ export async function driveContent(tree: Tree, references?: PortraitReference[])
   const normalized = normalizePersonNames(normalizeHomePerson(tree));
   const people = await Promise.all(
     normalized.people.map(async (person) => ({
-      ...person,
+      // Match validateTree, which drops unrecognized fields from downloaded documents.
+      ...pickPerson(person),
       portrait: references
         ? references.find((ref) => ref.personId === person.id)?.digest || null
         : person.portrait
@@ -30,7 +31,7 @@ export async function driveContent(tree: Tree, references?: PortraitReference[])
       name: normalized.name,
       homePersonId: normalized.homePersonId,
       people: people.sort((a, b) => a.id.localeCompare(b.id)),
-      relations: [...normalized.relations].sort((a, b) => a.id.localeCompare(b.id)),
+      relations: normalized.relations.map(pickRelation).sort((a, b) => a.id.localeCompare(b.id)),
     }),
   );
 }

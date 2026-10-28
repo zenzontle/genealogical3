@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDown, Trash2, X } from 'lucide-react';
 import { DateInput } from './DateInput';
 import { HomePersonDetails } from './HomePersonDetails';
@@ -31,8 +32,6 @@ export function PersonEditor({
   onDelete,
   deleteCount = 1,
   onAddRelative,
-  connectMode,
-  setConnectMode,
   onConnectTo,
   onRemoveRelation,
   onUpdateRelation,
@@ -51,13 +50,13 @@ export function PersonEditor({
   onDelete: () => void;
   deleteCount?: number;
   onAddRelative: (type: Exclude<ConnectMode, null>) => void;
-  connectMode: ConnectMode;
-  setConnectMode: (mode: ConnectMode) => void;
-  onConnectTo: (targetId: string) => void;
+  onConnectTo: (targetId: string, mode: Exclude<ConnectMode, null>) => void;
   onRemoveRelation: (id: string) => void;
   onUpdateRelation: (relation: Relation) => void;
   onClose: () => void;
 }) {
+  // Owned here so a choice never carries over to another person or tree.
+  const [connectMode, setConnectMode] = useState<ConnectMode>(null);
   const dateError = lifeDatesError(dates);
   const dateErrorId = `date-error-${person.id}`;
   const attached = relations.filter((r) =>
@@ -290,7 +289,10 @@ export function PersonEditor({
               disabled={!connectMode}
               defaultValue=""
               onChange={(e) => {
-                if (e.target.value) onConnectTo(e.target.value);
+                if (e.target.value && connectMode) {
+                  onConnectTo(e.target.value, connectMode);
+                  setConnectMode(null);
+                }
                 e.target.value = '';
               }}
             >
@@ -299,7 +301,7 @@ export function PersonEditor({
                 .filter((p) => p.id !== person.id)
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {p.name || 'Unnamed person'}
                   </option>
                 ))}
             </select>
