@@ -1,0 +1,7 @@
+# Paths that always need a human review (see REVIEW.md). Enforced once branch
+# protection on main requires review from code owners.
+/.github/          @zenzontle
+/server/           @zenzontle
+/api/              @zenzontle
+/src/lib/drive*.ts @zenzontle
+/src/lib/storage.ts @zenzontle

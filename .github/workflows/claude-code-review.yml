@@ -55,6 +55,9 @@ jobs:
           # The skills only add review criteria; the "Fail if Claude reported issues"
           # step depends on /code-review's comment format, so it must own the output.
           prompt: |
+            Read REVIEW.md at the repository root. It defines what counts as a finding,
+            what not to flag, and which paths to ignore for this repository.
+
             Load these skills with the Skill tool and use their criteria as additional
             review guidance. Do not use their output formats.
             - agent-skills:code-review-and-quality
@@ -62,7 +65,7 @@ jobs:
 
             Then run /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
             and post findings only in the format that command specifies.
-          claude_args: '--allowedTools "Skill,mcp__github_inline_comment__create_inline_comment"'
+          claude_args: '--allowedTools "Read,Skill,mcp__github_inline_comment__create_inline_comment"'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 

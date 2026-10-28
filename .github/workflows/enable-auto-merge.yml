@@ -2,11 +2,16 @@ name: Auto-merge PRs by Default
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
 
 permissions:
   contents: write
   pull-requests: write
+
+# Only the latest push decides whether auto-merge stays on.
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   enable-automerge:
@@ -18,9 +23,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Enable Auto-Merge
+      # Changes to CI, auth, or persistence need a human to merge them (see REVIEW.md and
+      # CODEOWNERS), so auto-merge is turned off when a PR touches those paths.
+      - name: Enable or disable auto-merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr merge "$PR_URL" --auto --merge
+          sensitive=$(gh pr diff "$PR_URL" --name-only | grep -E '^(\.github/|server/|api/|src/lib/drive[^/]*\.ts$|src/lib/storage\.ts$)' || true)
+          if [ -n "$sensitive" ]; then
+            echo "Sensitive paths changed; a human must merge this PR:"
+            echo "$sensitive"
+            gh pr merge "$PR_URL" --disable-auto || true
+          else
+            gh pr merge "$PR_URL" --auto --merge
+          fi

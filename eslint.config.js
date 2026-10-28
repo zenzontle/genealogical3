@@ -43,6 +43,7 @@ export default defineConfig([
       'eslint.config.js',
       'vite.config.ts',
       'scripts/**/*.{js,mjs,cjs,ts}',
+      '.claude/hooks/**/*.{js,mjs}',
       'server/**/*.ts',
       'api/**/*.ts',
     ],
