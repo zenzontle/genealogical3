@@ -70,6 +70,7 @@ jobs:
           # or https://code.claude.com/docs/en/cli-reference for available options
 
       # Claude posts inline comments for findings, or a "No issues found" summary otherwise.
+      # No output at all means the review did not run, so the gate fails.
       - name: Fail if Claude reported issues
         uses: actions/github-script@v9
         env:
@@ -110,11 +111,22 @@ jobs:
               github.rest.issues.listComments,
               { owner, repo, issue_number: pull_number, since, per_page: 100 }
             );
-            const summaryWithFindings = issueComments.find(comment =>
+            const summaries = issueComments.filter(comment =>
               comment.user?.login === claudeLogin &&
               comment.created_at >= since &&
-              comment.body?.startsWith('## Code review') &&
-              !comment.body.includes('No issues found')
+              comment.body?.startsWith('## Code review')
+            );
+
+            // A skipped or failed review posts nothing; that must not pass as clean.
+            if (!summaries.length) {
+              core.setFailed(
+                `Claude posted no review on ${headSha}. Check the "Run Claude Code Review" step log.`
+              );
+              return;
+            }
+
+            const summaryWithFindings = summaries.find(
+              comment => !comment.body.includes('No issues found')
             );
 
             if (summaryWithFindings) {
