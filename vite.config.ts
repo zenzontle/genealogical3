@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -83,6 +84,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.PUBLIC_DEVELOPER_NAME': JSON.stringify(identity.developerName),
       'import.meta.env.PUBLIC_REPOSITORY_URL': JSON.stringify(identity.repositoryUrl),
     },
+    test: { setupFiles: ['src/test/setup.ts'] },
     build: {
       rollupOptions: {
         input: pages,
