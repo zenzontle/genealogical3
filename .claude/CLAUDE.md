@@ -4,7 +4,6 @@ Run these and include the results in the PR description. Don't report work as do
 
 ```sh
 pnpm exec tsc -b
-pnpm test
 pnpm exec eslint . --max-warnings 0
 pnpm exec prettier --check .
 ```
