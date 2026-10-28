@@ -843,7 +843,7 @@ export default function App() {
           setRestoreWarnings([]);
         }
         setNotice({
-          status: 'info',
+          status: file.cleanupWarnings.length ? 'info' : 'success',
           message: [
             `Saved to Google Drive as ${driveTreeName(file.name, file.description)}.`,
             ...file.cleanupWarnings,
@@ -851,7 +851,7 @@ export default function App() {
         });
       } else if (driveSync.snapshot()[snapshot.id]?.conflict) setConflictTreeId(snapshot.id);
       else if (driveSync.snapshot()[snapshot.id]?.status === 'synced')
-        setNotice({ status: 'info', message: 'Your Drive backup is up to date.' });
+        setNotice({ status: 'success', message: 'Your Drive backup is up to date.' });
       await refreshLibrary();
       void driveWorkspace.refresh();
     } catch (error) {
@@ -912,7 +912,7 @@ export default function App() {
       setDriveFile(file);
       setRestoreWarnings(result.restoreWarnings);
       setNotice({
-        status: 'info',
+        status: result.restoreWarnings.length ? 'info' : 'success',
         message: result.restoreWarnings.length
           ? 'Opened an incomplete local working copy. See the missing-portrait warning.'
           : 'Opened a local working copy. Future data edits sync to Drive automatically.',
@@ -931,7 +931,7 @@ export default function App() {
     try {
       await disconnectDrive();
       setNotice({
-        status: 'info',
+        status: 'success',
         message: 'Forgot Google Drive access in this browser. Your local tree is still saved.',
       });
     } catch (error) {
@@ -953,7 +953,8 @@ export default function App() {
       const copy = await duplicateSavedTree(item.id);
       // Keep the persisted copy visible even if the subsequent library read fails.
       setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
-      if (await refreshLibrary()) setNotice({ status: 'info', message: `Created ${copy.name}.` });
+      if (await refreshLibrary())
+        setNotice({ status: 'success', message: `Created ${copy.name}.` });
     } catch (error) {
       showError(error);
     } finally {
