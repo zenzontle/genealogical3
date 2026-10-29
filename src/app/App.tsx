@@ -350,9 +350,8 @@ export default function App() {
   const activeDriveLink = tree
     ? (syncViews[tree.id]?.link ?? driveLinks.find((link) => link.treeId === tree.id))
     : undefined;
-  const driveSyncOff =
-    activeDriveLink?.syncEnabled === false ||
-    (tree ? syncViews[tree.id]?.syncChange === false : false);
+  // Linked trees sync automatically; the manual save only creates the first backup.
+  const driveLinked = Boolean(activeDriveLink || driveFile);
   const commit = useCallback(
     (
       next: Tree,
@@ -811,17 +810,8 @@ export default function App() {
     }
   };
   const doDrive = async () => {
-    if (!driveReady || driveSyncOff || driveOperationBusy.current || !treeRef.current) return;
+    if (!driveReady || driveLinked || driveOperationBusy.current || !treeRef.current) return;
     const snapshot = cloneTree(treeRef.current);
-    const expectedBackupId = syncViews[snapshot.id]?.link.id ?? driveFile?.id ?? null;
-    if (restoreWarnings.length) {
-      setNotice({
-        status: 'info',
-        message:
-          'This local copy has missing portraits. Duplicate it in Workspace for safekeeping, delete the linked local copy, and reopen the remaining Drive card to download again.',
-      });
-      return;
-    }
     driveOperationBusy.current = true;
     setDriveBusy(true);
     setPhotoProgress(null);
@@ -829,12 +819,7 @@ export default function App() {
       draftTree.current = false;
       // Start authorization in the click gesture so first-time consent can open its popup.
       await Promise.all([authorizeDrive(), saveNow(true)]);
-      const file = await driveSync.manualSave(
-        snapshot.id,
-        setPhotoProgress,
-        undefined,
-        expectedBackupId,
-      );
+      const file = await driveSync.manualSave(snapshot.id, setPhotoProgress, undefined, null);
       if (file) {
         if (treeRef.current?.id === snapshot.id) {
           setDriveFile(file);
@@ -1365,20 +1350,19 @@ export default function App() {
                 <FileImage size={16} />
                 <span>PNG</span>
               </button>
-              {driveConfigured && (
+              {driveConfigured && !driveLinked && (
                 <div className="drive-menu">
                   <button
                     className="button header-button"
-                    disabled={driveBusy || !driveReady || driveSyncOff}
+                    disabled={driveBusy || !driveReady}
                     title="Save to Google Drive"
                     onClick={() => void doDrive()}
-                    aria-disabled={restoreWarnings.length > 0}
                   >
                     Save to Drive
                   </button>
                   <button
                     className="button mobile-drive-button"
-                    disabled={driveBusy || !driveReady || driveSyncOff}
+                    disabled={driveBusy || !driveReady}
                     title="Save to Google Drive"
                     onClick={() => void doDrive()}
                   >

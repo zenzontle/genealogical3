@@ -2075,6 +2075,12 @@ describe('local feedback integration', () => {
   });
 });
 
+// Linked trees sync automatically, so only unlinked trees offer a manual save.
+const expectNoManualSave = () => {
+  for (const name of ['Save to Drive', 'Drive'])
+    expect(screen.queryByRole('button', { name })).toBeNull();
+};
+
 // Drive integration exercises snapshot ownership and the persistent incomplete-copy guard.
 describe('per-tree Drive sync controls inside the editor', () => {
   it('hides desktop and mobile Drive saves when the deployment has no Drive configuration', async () => {
@@ -2089,7 +2095,7 @@ describe('per-tree Drive sync controls inside the editor', () => {
   });
 
   it.each([true, false])(
-    'persists switches while connected=%s and gates desktop/mobile saves',
+    'persists switches while connected=%s without desktop/mobile manual saves',
     async (connected) => {
       driveState.configured = true;
       vi.mocked(restoreDrive).mockImplementationOnce(async () =>
@@ -2114,27 +2120,19 @@ describe('per-tree Drive sync controls inside the editor', () => {
       const editorSwitch = screen.getByRole('switch', { name: 'Google Drive sync for Family' });
       expect(editorSwitch.getAttribute('aria-checked')).toBe('false');
       expect(editorSwitch).toHaveProperty('disabled', false);
+      expectNoManualSave();
       await act(async () => fireEvent.click(editorSwitch));
       await waitFor(() => expect(editorSwitch.getAttribute('aria-checked')).toBe('true'));
       expect(driveSync.setSyncEnabled).toHaveBeenCalledWith(original.id, true);
+      expectNoManualSave();
       await act(async () => fireEvent.click(editorSwitch));
       await screen.findByText('Drive sync off');
-      for (const name of ['Save to Drive', 'Drive']) {
-        const save = screen.getByRole('button', { name });
-        expect(save).toHaveProperty('disabled', true);
-        fireEvent.click(save);
-      }
-      expect(driveSync.manualSave).not.toHaveBeenCalled();
+      expectNoManualSave();
       expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
       await act(async () => fireEvent.click(editorSwitch));
       await waitFor(() => expect(editorSwitch.getAttribute('aria-checked')).toBe('true'));
-      if (connected) {
-        expect(screen.getByRole('button', { name: 'Save to Drive' })).toHaveProperty(
-          'disabled',
-          false,
-        );
-        expect(screen.getByRole('button', { name: 'Drive' })).toHaveProperty('disabled', false);
-      }
+      expectNoManualSave();
+      expect(driveSync.manualSave).not.toHaveBeenCalled();
       expect(links.get(original.id)?.id).toBe('backup');
       await act(async () => fireEvent.click(editorSwitch));
       await screen.findByText('Drive sync off');
@@ -2152,7 +2150,7 @@ describe('per-tree Drive sync controls inside the editor', () => {
   );
 
   it.each(['success', 'failure'])(
-    'blocks desktop/mobile saves during a pending switch off ending in %s',
+    'keeps desktop/mobile saves hidden during a pending switch off ending in %s',
     async (outcome) => {
       driveState.configured = true;
       const link: DriveLink = {
@@ -2187,30 +2185,18 @@ describe('per-tree Drive sync controls inside the editor', () => {
       );
       const { rerender } = render(<App />);
       await openOriginal();
-      await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Save to Drive' })).toHaveProperty(
-          'disabled',
-          false,
-        ),
-      );
-      fireEvent.click(screen.getByRole('switch', { name: 'Google Drive sync for Family' }));
+      const toggle = await screen.findByRole('switch', { name: 'Google Drive sync for Family' });
+      expectNoManualSave();
+      fireEvent.click(toggle);
       rerender(<App />);
       expect(screen.getByText('Turning off…')).toBeTruthy();
       expect(links.get(original.id)?.syncEnabled).toBe(true);
-      for (const name of ['Save to Drive', 'Drive']) {
-        const save = screen.getByRole('button', { name });
-        expect(save).toHaveProperty('disabled', true);
-        fireEvent.click(save);
-      }
-      expect(authorizeDrive).not.toHaveBeenCalled();
-      expect(driveSync.manualSave).not.toHaveBeenCalled();
+      expectNoManualSave();
       await act(async () => finish());
       rerender(<App />);
-      for (const name of ['Save to Drive', 'Drive'])
-        expect(screen.getByRole('button', { name })).toHaveProperty(
-          'disabled',
-          outcome === 'success',
-        );
+      expectNoManualSave();
+      expect(authorizeDrive).not.toHaveBeenCalled();
+      expect(driveSync.manualSave).not.toHaveBeenCalled();
       if (outcome === 'failure')
         expect(screen.getByText('Preference could not be saved')).toBeTruthy();
       else expect(screen.getByText('Drive sync off')).toBeTruthy();
@@ -2266,31 +2252,26 @@ describe('Drive portrait feedback and associations', () => {
       vi.useRealTimers();
       expect(links.has(original.id)).toBe(!linkFails);
       expect(screen.queryByText(/Saved to Google Drive as remote-1/)).toBeNull();
+      // A stored association hides the manual save; without one the tree remains unlinked.
+      if (linkFails) expect(screen.getByRole('button', { name: 'Save to Drive' })).toBeTruthy();
+      else expectNoManualSave();
     },
   );
-  it.each([
-    { name: 'remote-1.json', description: 'Saved family', label: 'Saved family' },
-    { name: 'Old family.genealogical3.json', description: undefined, label: 'Old family' },
-  ])(
-    'routes a manual save to its linked file $label without the obsolete overwrite prompt',
-    async ({ name, description, label }) => {
-      driveState.configured = true;
-      const backup = { id: 'remote-1', name, description, modifiedTime: '' };
-      links.set(original.id, { treeId: original.id, ...backup });
-      const confirm = vi.spyOn(window, 'confirm');
-      vi.mocked(saveDriveTree).mockResolvedValueOnce({
-        ...backup,
-        revision: 'saved-revision',
-        cleanupWarnings: [],
-      });
-      render(<App />);
-      await openOriginal();
-      fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-      await screen.findByText(`Saved to Google Drive as ${label}.`);
-      expect(saveDriveTree).toHaveBeenCalledWith(original, backup.id, expect.any(Function));
-      expect(confirm).not.toHaveBeenCalled();
-    },
-  );
+  it('hides desktop and mobile manual saves for an already linked tree', async () => {
+    driveState.configured = true;
+    links.set(original.id, {
+      treeId: original.id,
+      id: 'remote-1',
+      name: 'remote-1.json',
+      description: 'Saved family',
+      modifiedTime: '',
+    });
+    render(<App />);
+    await openOriginal();
+    await screen.findByRole('switch', { name: 'Google Drive sync for Family' });
+    expectNoManualSave();
+    expect(driveSync.manualSave).not.toHaveBeenCalled();
+  });
   it('associates a pending save with its captured tree after switching during authorization and transfer', async () => {
     driveState.configured = true;
     const other = { ...makeTree('Other family'), people: [makePerson('Morgan')] };
@@ -2309,13 +2290,6 @@ describe('Drive portrait feedback and associations', () => {
         finish = resolve;
       });
     });
-    vi.mocked(getDriveLink).mockImplementation(async (id) => ({
-      treeId: id,
-      id: id === original.id ? 'original-drive' : 'other-drive',
-      name: `${id}.json`,
-      modifiedTime: '',
-    }));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<App />);
     await openOriginal();
     fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
@@ -2325,7 +2299,7 @@ describe('Drive portrait feedback and associations', () => {
     await waitFor(() => expect(authorizeDrive).toHaveBeenCalled());
     await act(async () => authorize());
     await screen.findByText('Uploading photos: 1 of 2');
-    expect(saveDriveTree).toHaveBeenCalledWith(original, 'original-drive', expect.any(Function));
+    expect(saveDriveTree).toHaveBeenCalledWith(original, undefined, expect.any(Function));
     // Edits to the active tree do not change the already captured snapshot.
     await act(async () =>
       finish({
@@ -2375,12 +2349,9 @@ describe('Drive portrait feedback and associations', () => {
     const opens = await screen.findAllByRole('button', { name: 'Open Family' });
     fireEvent.click(opens[0]);
     await screen.findByText(/Incomplete Drive copy: portraits could not be restored for Alex/);
-    const before = vi.mocked(saveDriveTree).mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Drive' }));
-    await screen.findByText(/This local copy has missing portraits/);
-    expect(saveDriveTree).toHaveBeenCalledTimes(before);
+    expectNoManualSave();
     expect(screen.queryByRole('button', { name: /Save a copy/ })).toBeNull();
-    expect(screen.getByText(/Duplicate it in Workspace/)).toBeTruthy();
+    expect(screen.getByText(/Duplicate local edits for safekeeping/)).toBeTruthy();
     expect(links.get(copyId)?.id).toBe(file.id);
   });
 
