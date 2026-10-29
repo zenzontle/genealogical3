@@ -58,6 +58,6 @@ Forks must set all three `PUBLIC_*` identity variables; empty values fall back t
 ## After deploying
 
 - Open both legal pages and confirm they render with your identity.
-- Connect Drive over HTTPS and save a tree. Reload, then fully restart the browser, and save again without being asked to sign in.
+- Connect Drive over HTTPS and choose **Save to Drive** on a tree. Reload, edit the tree, then fully restart the browser and edit again. Each edit should sync without a sign-in prompt.
 - Disconnect Drive and confirm local trees stay and the next Drive action asks for authorization.
 - In developer tools, auth responses set HttpOnly, Secure, SameSite cookies and `Cache-Control: no-store`. Don't share token or cookie values in logs or screenshots.
