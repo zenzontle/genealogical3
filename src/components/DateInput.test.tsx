@@ -33,8 +33,8 @@ it.each(['Born', 'Died'])(
       fireEvent.change(screen.getByLabelText(label, { exact: true }), { target: { value } });
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
       'Unknown',
-      'Year only',
       'Full date',
+      'Year only',
       'Approximate',
     ]);
     select('about');
