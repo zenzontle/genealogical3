@@ -1,22 +1,16 @@
 # GENEalogical3
 
-A private, browser-first family tree editor built with React, TypeScript, Vite, and XYFlow. The interface uses a dark theme with sage and copper accents. PNG snapshots use opaque white backgrounds and cards, dark text and connectors, gray borders, and pale avatar backgrounds for readable, ink-friendly printing, including in grayscale. Portraits retain their original colors.
+A private, browser-first family tree editor built with React, TypeScript, Vite, and XYFlow. Trees are stored in your browser, with optional backup and automatic sync to Google Drive.
 
-The homepage shows **Your family trees** when this browser or a connected Google Drive has trees. Use **Connect Drive** in the introductory home view or Workspace to list app-accessible tree documents in the existing `genealogical3` folder. Discovery reads metadata only, after remembered access is restored, after connecting, on returning to Workspace, and after successful Drive saves. It never opens sign-in, downloads documents or portraits, creates folders, or uploads trees. Local cards stay usable while Drive loads or fails; a separate inline error offers **Retry**. Disconnect clears remote cards and retains local trees and saved associations.
+## Your data
 
-Workspace cards show a monitor for browser storage, a cloud for Google Drive, or both, with descriptive tooltips and accessible labels. Local cards offer Open, Rename, Duplicate, and Delete; Drive-only cards offer Open and Delete from Drive. Local cards use their local edit dates and previews; Drive-only cards use Drive modification dates and a cloud placeholder. All cards sort newest first. Associations match file IDs, so equally named backups remain distinct and multiple local working copies remain visible. Opening a linked card resumes local edits. Opening a Drive-only card downloads its document and portraits, saves a local working copy, and opens it. Linked trees sync automatically after data edits. Local saving continues independently, and conflicts pause the affected tree for review in Workspace or the editor.
-
-Workspace deletion uses a dedicated accessible confirmation dialog. Linked cards offer **Local only** (the default), **Drive only**, and **Both**. Local deletion atomically removes the selected browser tree and its association after draining queued autosaves. Drive deletion uses Google's permanent [files.delete API](https://developers.google.com/workspace/drive/api/reference/rest/v3/files/delete), validates app ownership and backup identity for the document and its exact photo-folder ID before deleting anything, deletes associated app-owned portraits individually (including superseded portraits in Trash and portraits moved outside the folder), then deletes the photos folder and finally the document. Folder ownership is rechecked immediately before deletion. Deleting the folder permanently deletes files you own inside it, including manually added files, nested contents, and trashed descendants, even when the limited `drive.file` scope cannot list them. Drive confirmation descriptions warn about this without requiring an extra checkbox; local-only wording is unchanged. Keep the `genealogical3` Drive folder for app backups. Do not add personal files to its `.photos` folders: deleting a backup permanently deletes its photos folder and files you own inside it, including files added manually. The shared library folder and sibling backups are preserved. Legacy portable backups require only document deletion, and folders left by previously deleted backups are not cleaned up. Drive deletion clears associations from all local copies of that backup; **Both** removes only the selected local copy after Drive succeeds. Local data remains if Drive fails. Retry retains completed deletion steps during the current app session, including browser cleanup after successful Drive deletion. Missing or inaccessible folders stop deletion unless a later metadata 404 confirms an earlier ambiguous folder-deletion attempt in the same authorization generation. A direct DELETE 404 stops deletion; definitive failures or finding the folder still present clear earlier uncertainty. Reconnecting also clears uncertain attempts. Disconnect disables Drive deletion choices while keeping local actions available. Renaming a linked local tree also queues its Drive backup for sync.
-
-Before deleting portraits or a photos folder, the app makes the backup document read-only using a [Drive content restriction](https://developers.google.com/workspace/drive/api/guides/content-restrictions), then rechecks its contents. This blocks document updates from other devices, including saves that already passed their revision checks. Existing read-only restrictions are preserved. The restriction stays in place after partial failure so the retained document cannot accept new revisions; retry deletion in Workspace, or duplicate your local tree to save a new backup. This uses the existing `drive.file` scope and does not change the backup document format. Legacy portable backups remain document-only deletions.
-
-Choose **Duplicate** to save an independent local `(copy)` with the same people, relationships, photos, home person, and canvas layout. The copy stays in Workspace and has no Google Drive association. An empty Workspace keeps the introductory homepage after initial discovery finishes. If browser storage cannot be read, use **Retry** to load it again.
-
-Local rename and delete actions use keyboard-accessible dialogs. Rename failures retain the entered name for retry; deleting a person and their relationships can be undone. JSON imports show reading, validation, saving, and library-refresh progress in the bottom-centered toast stack alongside general notices, then stay in the library with an **Open tree** action. Retrying a partially completed import reuses its saved copy. JSON/PNG exports show progress, success, and recovery actions in the same toast stack. Portrait processing, success, and errors also appear as bottom-centered toasts; feedback from an open dialog stays within that dialog's accessible layer. Invalid files offer a new file selection; processing and storage failures offer **Retry**. Export success means the browser download has started. Success toasts without an action, including export, portrait, and general confirmations such as a created copy or a completed Drive save, dismiss automatically after five seconds, with the countdown paused while hovered or keyboard-focused. This intentionally replaces the previous persistent portrait success confirmation. Errors, notices that carry a warning (such as Drive cleanup or missing-portrait warnings), and import success with its **Open tree** action remain until dismissed or replaced by another attempt.
-
-In person details, choose **Add photo** to select an image. An existing thumbnail opens **View photo**, showing the entire stored compressed image with its proportions preserved. The dialog offers **Change photo** and **Remove photo** with processing and retry feedback in bottom-centered toasts. Replacing a photo keeps the viewer open; removing it closes the viewer. Close with the close button or Escape, including while processing, to return focus to the thumbnail. Viewing alone makes no edits or undo entries.
+- Trees autosave to IndexedDB in the current browser. Clearing site data removes them, so download JSON backups regularly. JSON backups contain all editable data and portraits; PNG exports are only a picture.
+- The JSON format is versioned. Version 1, 2, and 3 backups all import.
+- Drive backups live in a `genealogical3` folder in My Drive, one document plus a `.photos` folder per tree. Don't put personal files in `.photos` folders: deleting a backup permanently deletes its photos folder, including files you added manually.
 
 ## Run locally
+
+Requires Node.js 22.13 or newer. pnpm is pinned in `package.json` and enabled through Corepack.
 
 ```sh
 corepack enable
@@ -24,9 +18,17 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the URL Vite prints. `pnpm build` checks TypeScript and creates a production build; `pnpm test` runs document and relationship validation tests.
+The editor works without any configuration. Google Drive needs OAuth credentials; see [deployment](docs/deployment.md).
 
-### Project structure
+| Script                              | What it does                                  |
+| ----------------------------------- | --------------------------------------------- |
+| `pnpm dev`                          | Start the Vite development server             |
+| `pnpm build`                        | Typecheck (`tsc -b`) and build for production |
+| `pnpm test`                         | Run the Vitest suite                          |
+| `pnpm lint` / `pnpm lint:fix`       | Check or fix ESLint rules                     |
+| `pnpm format` / `pnpm format:check` | Format or check formatting with Prettier      |
+
+## Project structure
 
 ```text
 src/
@@ -36,6 +38,7 @@ src/
   lib/          Tree models, layout, storage, Drive, and other shared logic
   styles/       Application stylesheets
   test/         Shared test helpers
+  toaster/      Toast notifications
   main.tsx      Browser entry point
   vite-env.d.ts Vite environment types
 server/         Server-side Drive authentication and its tests
@@ -45,189 +48,10 @@ scripts/
 public/         Static assets copied unchanged
 ```
 
-Tests stay beside the code they exercise. Public HTML pages remain at their URL paths (`index.html`, `privacy-policy/index.html`, and `terms-of-service/index.html`); root configuration files keep their standard tool locations.
+Tests sit beside the code they exercise. Public HTML pages (`index.html`, `privacy-policy/index.html`, `terms-of-service/index.html`) sit at their URL paths.
 
-### Adding public pages
+## More docs
 
-Add a standalone HTML file such as `about.html` or `about/index.html` to the project. Vite discovers HTML pages automatically at startup and builds each one, including nested pages. Restart `pnpm dev` after adding a new page. Do not create both forms for the same URL; duplicate routes stop startup/build with an error.
-
-Each page receives a canonical link generated from `PUBLIC_APP_URL` and its file path: `index.html` uses `/`, `about.html` and `about/index.html` use `/about`, and `guides/start.html` uses `/guides/start`. These clean paths work in development, preview, and on Vercel without adding individual entries or rewrites. Source HTML should omit its own canonical tag so the generated tag is the only one.
-
-Discovery skips hidden files and directories, `node_modules`, `dist`, `coverage`, `public`, `src`, `server`, `api`, and `scripts`. Keep page HTML outside those directories; files in `public` are copied unchanged rather than processed as pages.
-
-The project uses pnpm 12.6.0, pinned in `package.json`, and `pnpm-lock.yaml` for reproducible dependency versions. Use Node.js 22.13 or newer and enable Corepack as shown above, or install the pinned pnpm version directly. When adding or updating dependencies, use `pnpm add` or `pnpm update` and commit the updated lockfile.
-
-### Dependency security
-
-`pnpm-workspace.yaml` applies [pnpm's supply chain mitigations](https://pnpm.io/supply-chain-security) locally and in CI:
-
-- Package versions must be at least seven days old (`minimumReleaseAge: 10080` minutes). Resolution fails when no eligible version satisfies the requested range or publication timestamps are missing.
-- Exotic transitive dependencies, such as untrusted Git repositories and direct tarball URLs, are blocked.
-- `trustPolicy: no-downgrade` rejects releases with weaker publishing trust evidence than earlier releases. Frozen installs recheck the lockfile against the release-age and trust policies.
-- Unreviewed dependency install scripts fail installation. Only `esbuild@0.25.12` is approved to run its install script, which prepares Vite's binary. New esbuild versions require a fresh script review and an updated approval.
-
-CI runs `pnpm install --frozen-lockfile --ignore-scripts`, disabling all install scripts while retaining the release-age and trust checks. Local installs use the script approval policy above. When a dependency update is blocked, review its release metadata, provenance, source, and install scripts before changing the policy. Keep any necessary exception limited to an exact package version and document the reason; do not disable the protections globally. Commit policy and lockfile changes together. Run `pnpm audit` before releases to check known advisories; the trust policy does not replace an advisory audit.
-
-The existing lockfile needs trust exceptions for `semver@6.3.1` (published July 10, 2023) and `undici-types@6.21.0` (published November 13, 2024). These releases lack provenance even though earlier releases of those packages had it. On October 21, 2026, their npm registry signatures were verified against the registry's public keys, their signed integrity hashes matched the committed lockfile, and neither declared an install lifecycle script. The exceptions cover only these exact versions and do not bypass release-age or script checks. Review them by November 21, 2026; remove them when parent dependency updates stop requiring these releases.
-
-### Linting
-
-Run `pnpm lint` to check JavaScript and TypeScript files, including tests and Node scripts. Run `pnpm lint:fix` to apply available automatic fixes. Both commands fail on errors but allow warnings. Pull requests check formatting and lint rules in the Code Quality workflow, which still fails on warnings.
-
-`eslint.config.js` uses ESLint and TypeScript recommended rules, the core React Hooks rules (hook ordering and dependency completeness), Vite's React Refresh rules, and `react/no-multi-comp` to require one component per file. Browser globals apply to source files; Node globals apply to tooling and scripts. Generated output is ignored. React Compiler rules and linting that requires TypeScript type information are not enabled; `pnpm build` checks types. `eslint-config-prettier` keeps lint rules compatible with Prettier, which handles formatting separately.
-
-### Formatting
-
-Run `pnpm format` to format the project or `pnpm format:check` to check formatting without changing files. Prettier is pinned to an exact version, and `.prettierrc.json` defines single quotes, a 100-column print width, and CRLF line endings. Two-space indentation, semicolons, and trailing commas use Prettier's defaults. Generated output and the pnpm lockfile are excluded via `.prettierignore`.
-
-For editor formatting, enable the Prettier integration in your editor and use the project's local version and configuration.
-
-`.gitattributes` enforces CRLF checkouts for text files on every platform, independently of `core.autocrlf`. Git stores normalized LF content; the generated pnpm lockfile stays LF. After pulling this policy into an existing checkout, run `pnpm format` once to align local files.
-
-### Dependency audit
-
-The October 21, 2026 `pnpm audit` reported 2 critical, 2 high, 6 moderate, and 1 low findings in development dependencies. `pnpm audit signatures` verified all 453 locked packages with no missing or invalid signatures. Signature verification and the supply chain policies above do not resolve known vulnerabilities.
-
-- `tinypool@1.1.1`, used by Vitest, has two critical prototype-pollution gadgets affecting [worker options](https://github.com/advisories/GHSA-5gmw-xhrv-c9v3) and [task options](https://github.com/advisories/GHSA-85c8-ppgw-ccpr). Exploitation requires a separate prototype-pollution primitive and an attacker-controlled module. The app does not use the pool at runtime; tests run repository-controlled code in batch mode. A fix requires moving beyond Vitest's declared tinypool range, so a compatible test-runner upgrade is deferred for separate testing rather than forcing a transitive major upgrade.
-- `source-map-js@1.2.1`, used through Vite/PostCSS, has a high [denial-of-service advisory](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) when consuming malicious indexed source maps. It processes project and dependency build inputs rather than imported family-tree data. Version 1.2.2 contains a fix; updating the build dependency lockfile is deferred to a separate dependency-remediation change.
-- `vite@6.4.3` has a high Windows [editor command-injection advisory](https://github.com/advisories/GHSA-587h-7wmj-h5pm), plus moderate and low development-server findings. Version 6.4.4 contains fixes. Development-server exposure is relevant on this Windows project; until upgraded, keep Vite on a trusted machine and network and use `pnpm dev --host 127.0.0.1` to avoid listening on every network interface. These server paths are excluded from the production bundle. The patch upgrade is deferred to the same dependency-remediation change.
-
-Vitest and its mocker also have moderate [path traversal](https://github.com/advisories/GHSA-82fw-gwwq-j7x9) and [mock registration injection](https://github.com/advisories/GHSA-qxg6-89mg-rqv8) findings. Batch tests do not expose a Vitest server; do not expose one to untrusted networks. Review all advisory deferrals by November 1, 2026. The pnpm-policy change preserves existing dependency versions and does not mark these findings as fixed.
-
-## Vercel Web Analytics
-
-The React entry point mounts `@vercel/analytics/react` once alongside the app to track page views. Vite development uses analytics development mode; production builds use production mode. No custom events or family tree data are sent by the app's analytics integration. The standalone privacy policy and terms pages do not load the analytics component.
-
-In the Vercel project dashboard, open **Analytics** and enable Web Analytics, then deploy the updated app. No analytics API key or environment variable is required. Visit the deployed editor and confirm that page views appear in the dashboard; local development does not send production analytics. See [Vercel's setup guide](https://vercel.com/docs/analytics/quickstart).
-
-## Vercel Speed Insights
-
-The React entry point mounts `@vercel/speed-insights/react` once alongside the app to report Web Vitals and measure page performance. The SDK uses its default sampling and environment detection. The standalone privacy policy and terms pages do not load Speed Insights.
-
-In the Vercel project dashboard, open **Speed Insights** and enable it, then deploy the updated app. No API key or environment variable is required. Visit the deployed app and interact with it to generate performance measurements, then check the Speed Insights dashboard. See [Vercel's setup guide](https://vercel.com/docs/speed-insights/quickstart).
-
-## Google Drive setup
-
-The editor works without Google configuration. To enable Drive backups and automatic sync for linked trees:
-
-1. Create a Google Cloud project, enable the Google Drive API, and configure the OAuth consent screen.
-2. Create an OAuth **Web application** client. Add each served origin to Authorized JavaScript origins and `${DRIVE_APP_ORIGIN}/api/drive-auth/callback` to Authorized redirect URIs. For local development, use `http://localhost:5173` and `http://localhost:5173/api/drive-auth/callback`.
-3. Copy `.env.example` to `.env.local`. Set `VITE_GOOGLE_CLIENT_ID`, the server-only `GOOGLE_CLIENT_SECRET`, and `DRIVE_APP_ORIGIN` to the exact served origin without a trailing slash. Set `DRIVE_SESSION_KEY` to 32 random bytes encoded as 64 hexadecimal characters, generated with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Restart Vite. Never prefix server secrets with `VITE_` or commit them.
-4. Complete Google's consent publishing or test-user setup for the accounts that will use Drive.
-
-The app requests only `https://www.googleapis.com/auth/drive.file`. First authorization opens Google's consent screen in a popup and uses the authorization code flow. The authentication service exchanges codes and refreshes access; it stores the refresh token in an authenticated AES-256-GCM encrypted, host-only HttpOnly cookie. The connection lasts up to 30 days from the start of authorization, across page reloads and browser restarts. Renewal does not extend that deadline. Access tokens stay only in browser memory. No database is needed, and tree files transfer directly between the browser and Drive. Opening a Drive tree makes a separate local working copy; future data edits sync to that file automatically after revision checks.
-
-**Disconnect Drive** clears the remembered connection in this browser after the server confirms success. It does not revoke Google's permission or delete files. Clear site cookies or remove the app in Google account connections to forget/revoke access separately. Expired or revoked connections require a new explicit Drive action to reconnect; temporary network failures offer a retry without opening sign-in. Popup blockers and disabled site cookies prevent first authorization. An existing memory-only connection needs one new authorization to establish persistence.
-
-Vite development and `pnpm exec vite preview` provide the same `/api/drive-auth/*` endpoints as Vercel. Configure `DRIVE_APP_ORIGIN` to match the actual port, and configure its callback URI in Google Cloud. HTTP and non-Secure cookies are allowed only on localhost in Vite development or preview; production deployments require HTTPS. Keep the development server on that configured port (`pnpm dev --port 5173 --strictPort`).
-
-For Vercel, set all four authentication variables in the deployment environment and deploy the frontend and `api/drive-auth/[action].ts` function together. All instances must share the same `DRIVE_SESSION_KEY`; rotating it invalidates existing connections. Vercel requires a Node runtime with native fetch (Node 22 is recommended). Each preview domain needs its own matching origin and Google redirect configuration; it cannot share the production cookie. Missing or invalid server settings produce a Drive configuration error. Secrets are not included in the frontend bundle.
-
-Google can expire or revoke refresh tokens before the 30-day deadline. An OAuth project with external users and publishing status **Testing** generally issues refresh tokens that expire after seven days for Drive access; see [Google's token expiration documentation](https://developers.google.com/identity/protocols/oauth2#expiration). Publish/configure the OAuth project appropriately before expecting longer persistence.
-
-Deployment verification: authorize once on HTTPS, save twice, reload and save, then fully close/reopen the browser and save again. Confirm that subsequent actions show no Google sign-in, access renewal works after token expiry, and Disconnect Drive requires new authorization while preserving local trees. Use browser developer tools to confirm HttpOnly/Secure/SameSite cookies and `Cache-Control: no-store` on auth responses. Do not capture or share token/cookie values in logs or screenshots.
-
-Google's OAuth project and consent screen cannot be provisioned by this codebase. A live Drive round trip requires that project configuration and credentials.
-
-First-time **Save to Drive** uploads go into a folder named exactly `genealogical3` directly under My Drive. Before each new upload, the app looks for an accessible, non-trashed matching folder and reuses the oldest one; if none is accessible, it creates the folder. The limited `drive.file` permission might not expose a manually created folder, so the app may create another folder with the same name. Folder lookup or creation failures stop the upload and leave your local tree unchanged.
-
-Each new backup has a versioned `<tree-file-ID>.json` Drive document directly inside `genealogical3` and a sibling `<tree-file-ID>.photos` folder owned by that document. Both names use the same Drive-generated backup ID; overwriting an existing backup updates its document filename to this convention while preserving the tree name inside the document and storing it in the Drive description metadata. Workspace cards, action labels, and deletion confirmations use that description, retrieved in metadata-only listings and retained in local associations. Older backups without a description keep their filename-based labels until their next save. The document contains tree data without embedded portraits, the photo-folder ID, and person-to-image references with JPEG MIME type and SHA-256 digest. Documents, photo folders, and portraits have distinct app properties and backup ownership. Workspace lists only Drive tree documents, excluding photos and folders. If no accessible matching folder exists, it shows an empty list without creating a folder.
-
-Portrait selection uses the existing processing pipeline: preserve aspect ratio, resize to at most 512 pixels on the longest side, never upscale, and encode as JPEG at quality 0.82. Drive saves decode the already processed local Base64 portrait to binary JPEG bytes and hash those bytes; they never resize or recompress it. Within one backup, identical portraits share an image file. Ordinary edits upload only tree data; new or changed portraits upload first, with at most three concurrent transfers. Changed photos get new IDs, so an interrupted save leaves the previous document usable. Creates use pre-generated Drive IDs and verify uncertain responses without rapidly retrying writes. Duplicate a local tree in Workspace, then manually choose **Save to Drive** on the unlinked duplicate to create an independent document, folder, and photo files.
-
-Successful saves move replaced or removed app-owned portraits from the previous document to Drive Trash only when they belong to this backup and are absent from its current document. The app re-reads the document before cleanup and skips cleanup if another save changed it. Saves are serialized in the page and, where Web Locks are available, across tabs in the same browser and origin. Simultaneous editing across devices is unsupported. Cleanup failures are reported separately from successful saves. Comprehensive orphan cleanup is deferred; interrupted saves can leave unused files, and older Drive revisions may become incomplete after photo cleanup.
-
-Restores retrieve private photos through authenticated Drive requests, validate JPEG format and digest, and embed them into the local tree. Missing, inaccessible, or corrupt individual photos produce an incomplete local copy with a persistent warning naming affected people. Authentication, network, and invalid-document failures stop the restore. Incomplete status is stored with the Drive association, survives reload, and blocks overwriting the original backup. Duplicate in Workspace to preserve local edits before recovering missing portraits. To download again, duplicate local edits for safekeeping, delete the linked local copy using **Local only**, and reopen the remaining Drive card. If other local copies reference that backup, they must also be unlinked through local deletion before its Drive-only card appears.
-
-Local trees and editor-downloaded JSON backups remain self-contained, with embedded portraits. A Drive document downloaded directly from Drive is not a portable backup: import explains that its photos must be retrieved by opening a **Google Drive** card in Workspace. Keep the document and its photo folder together; photos are never made public. Legacy portable Drive reads remain available; automatic replacement or migration of legacy backups and simultaneous cross-device editing remain unsupported.
-
-## Automatic Drive sync and recovery
-
-Only already-linked trees sync in the background, including trees outside the editor. **Save to Drive** appears only for unlinked trees: a successful save creates the backup and links the tree, after which the button is hidden and edits sync automatically. Workspace **Duplicate** creates an independent local tree with no inherited link. Local persistence and Drive status are separate; uploads do not block editing. People, relationships, names, portraits, the home person, card positions, and undo/redo schedule sync through `dataUpdatedAt`. Opening, selecting, panning, and zooming do not.
-
-Each linked local tree has a **Google Drive sync** switch inside its editor, available even while disconnected. Workspace shows the sync status; open the tree to change its sync preference. Existing and newly linked trees default to enabled. Turning it off keeps local saving, the association, and the existing Drive backup, while blocking automatic uploads, retries, and conflict-resolution transfers. A transfer already holding the shared operation lock may finish; **Turning off…** stays visible until the preference is saved. The choice persists across reloads and tabs in this browser for that local tree copy; other copies and devices remain independent. Turning sync back on resumes normal scheduling of pending edits with the existing revision checks, conflicts, and safety warnings, without forcing an overwrite. Disabled trees do not cause Drive leave-page warnings. Separate, confirmed deletion actions remain available.
-
-IndexedDB stores pending changes with local edits, the acknowledged data timestamp, remote revision, upload identity, and retry state. The app waits three seconds after the latest data edit and at least ten seconds between tree-save attempts across the queue. Manual saves, background saves, downloads, and deletion use the existing Drive operation lock, including Web Locks across tabs. Pending records are re-read after acquiring the lock. Existing backups update by stored file ID without looking up the containing library folder. Edits made during an upload remain pending for the next snapshot. Lost responses are reconciled against the persisted upload revision and meaningful content before another upload.
-
-Offline or explicitly disconnected changes remain pending and resume on network recovery or Drive reconnection. Automatic sync never opens authorization popups. Network failures, transient server errors, `429`, and Google quota-related `403` reasons retry after ten seconds, doubling up to a 64-second cap with jitter and honoring longer `Retry-After` values. There are at most six automatic retries after the initial failure; **Retry**, network recovery, or reconnection restarts attempts. Permission errors, inaccessible or missing files, missing portraits, and unsupported legacy backups require attention. See [Google's backoff guidance](https://developers.google.com/workspace/drive/api/guides/limits#resolve_time-based_quota_errors).
-
-Remote revisions are compared with the acknowledged baseline before upload and again immediately before replacing the document. A difference pauses that tree. The conflict dialog shows **Local last edited** and **Drive last edited** from their respective `dataUpdatedAt` values, including date, time, and timezone. Its three choices are **Replace Drive with local** (confirm replacing the reviewed remote version), **Use Drive version** (confirm discarding local edits, then fully download and validate before atomically replacing local contents with the same local identity), and **Leave paused** (preserve both versions and pending changes). Duplicate local edits in Workspace before resolving if you want to keep an independent copy. Both reviewed versions are revalidated; changes refresh the review. Older links without a baseline undergo a one-time full download and meaningful-content comparison that ignores viewport, tree identity, and bookkeeping timestamps. Matching content establishes a baseline; differences require review. There is no automatic merge.
-
-A native leave-page warning is registered only while linked trees have unacknowledged data changes, including conflicts and disconnection. Page hiding or closing attempts local persistence and eligible sync without debounce, while still respecting throttling, backoff, and conflicts. The browser controls the warning wording and may suppress it without user interaction, and uploads may not finish during closure. Persisted pending changes recover after reopening. See [browser lifecycle guidance](https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event).
-
-### Public terms of service
-
-The Terms of Service are a standalone HTML page at `/terms-of-service`, available without sign-in or JavaScript. Vite discovers `terms-of-service/index.html` as a separate entry, and Vercel serves it at the public path using clean URLs. The page is also available through local development and production preview. Links appear in the homepage footer, Drive options dialog, and privacy policy; the terms link back to the privacy policy.
-
-After deploying, open `https://genealogical3.vercel.app/terms-of-service` and confirm it displays the terms, then use that URL in **Google Auth Platform → Branding → App domain → Application terms of service link**. For a fork, use `${PUBLIC_APP_URL}/terms-of-service`. Google also requires your homepage and privacy policy links and authorized/verified domains; see [Google's OAuth branding guidance](https://support.google.com/cloud/answer/15549049?hl=en). Adding this page does not deploy it or submit the app to Google.
-
-The terms use the same configured developer, app URL, and contact method as the privacy policy below. `PRIVACY_CONTACT_EMAIL`, when set, is the public contact email on both pages; otherwise both use your repository's public issue tracker. Review the terms for your service and applicable laws before publishing, and update their date when revising them. Material changes require the website notice described in the terms.
-
-### Public privacy policy
-
-The public policy is a standalone HTML page at `/privacy-policy`, served without sign-in or JavaScript. Vite discovers `privacy-policy/index.html` as a separate HTML entry, and Vercel serves it at the public path using clean URLs. The same path works in local development and production preview. Links appear in the homepage footer and Drive options dialog.
-
-After deploying, use `https://genealogical3.vercel.app/privacy-policy` as the Privacy Policy URL in Google Auth Platform's Branding settings. Use the same URL as the homepage link, and complete Google's domain ownership requirements for the deployment. Verify that the deployed URL displays the policy before submitting it to Google.
-
-Set your public deployment identity in `.env` or `.env.local`. For an independently published fork, replace the original developer, website, and GitHub repository:
-
-```dotenv
-PUBLIC_APP_URL=https://your-app.example
-PUBLIC_DEVELOPER_NAME=Your Name
-PUBLIC_REPOSITORY_URL=https://github.com/your-account/your-repo
-PRIVACY_CONTACT_EMAIL=you@example.com
-```
-
-The homepage footer uses the developer name and repository link. The policy uses the same developer name, your app URL, and either your contact email or your repository's issue tracker. `PUBLIC_APP_URL` must be an HTTPS site origin without a path, query, or fragment. `PUBLIC_REPOSITORY_URL` must identify a GitHub repository; trailing slashes and `.git` suffixes are normalized. Empty identity settings retain the original project's defaults, so configure all three before publishing a fork. Invalid URLs or email addresses stop startup/build with a configuration error.
-
-Restart the development server after changing these settings. The build inserts the public identity and contact link into the policy, so the published page works without JavaScript. An empty email keeps the configured repository's issue tracker as the contact method. Only the three identity settings are explicitly exposed to browser code; the contact email is inserted into the public policy. Opening the source HTML directly from disk shows the original defaults; preview it through Vite to see your settings.
-
-For Vercel, set these values in the project's environment variables for the deployment environment, then redeploy. Use `${PUBLIC_APP_URL}/privacy-policy` in your own Google OAuth configuration and use your own `VITE_GOOGLE_CLIENT_ID`. All configuration changes require a new build and deployment. These identity settings do not rebrand GENEalogical3 or alter the policy's hosting/data-practice disclosures; update those disclosures if your fork changes hosting, tracking, or storage.
-
-## Data and backups
-
-If a tree's `dataUpdatedAt` reaches the safe-integer limit, further meaningful edits are rejected without changing its data or history. Navigation and backups remain available; duplicate the tree to continue editing with a fresh timestamp.
-
-Trees carry two timestamps in milliseconds since the Unix epoch. `updatedAt` retains the local save and library-ordering behavior, including saved navigation. `dataUpdatedAt` tracks meaningful edits to names, people, portraits, relationships, home designation, and saved card positions. A completed drag counts once; undo and redo each count as a new edit, advancing from the current timestamp even if the clock stays the same or moves backward. Pan, zoom, fit, centering, selection, panels, opening, saving, and exporting preserve `dataUpdatedAt`.
-
-New trees, independent duplicates, and JSON-imported copies capture fresh, equal timestamps. Opening a Drive document preserves its source `dataUpdatedAt` when assigning a local working-copy ID. IndexedDB, portable JSON, and manual Drive backups preserve the field. Incoming JSON and Drive trees require a nonnegative safe integer; missing values have no fallback, backfill, or migration. Document versions remain unchanged. The sync coordinator uses this timestamp for pending changes and acknowledged baselines; viewport changes do not schedule or postpone uploads.
-
-New trees remain temporary until their first edit, such as adding a person or changing the tree name. Panning, zooming, or returning to the library leaves an untouched draft unsaved. After the first edit, trees autosave to IndexedDB on the current browser and origin. Clearing browser data can remove them. Download JSON backups regularly, especially before changing browsers or devices. JSON carries all editable data and processed portraits. PNG is a visual snapshot and does not include notes or editability.
-
-The portable JSON format is versioned: trees with approximate years use `version: 3`; trees with only unknown, year-only, or full dates use `version: 2`. Version 1 and 2 backups remain importable without changing their recorded dates. Older app versions reject version 3 backups instead of misinterpreting uncertainty. Its document has a tree ID and name, people with stable IDs, optional fields and positions, an optional home designation (`homePersonId`, stored as a person ID or `null`), directed parent relationships, symmetric partner relationships, unassigned connections with their original handles, and viewport coordinates. Older backups and local trees without a home field open with no designation. Drive metadata and authorization stay outside the portable document.
-
-Person details store separate first and last names; cards and exports show the combined name. Older full names open with the first word in First name and the remaining words in Last name, which you can adjust for compound names. Existing display names are preserved until edited. Relationships in the sidebar start collapsed for each person. Expand them to edit links; married partners show Wife, Husband, or Spouse based on recorded sex, with ex qualifiers for former marriages. Choose **Married** under **Union type** to establish a spouse relationship.
-
-**Add person** places the new card in the center of the current canvas view, preserving pan and zoom. Relative buttons place new cards next to the selected relative. Hold Shift, Control, or Command and click cards to select a group; Shift-drag on empty canvas also box-selects cards. Drag any selected card to move the group. Group moves save together and use one undo/redo step. Connector dots fade in within 80 screen pixels of a card and become fully visible on hover or keyboard focus; touch devices keep them visible.
-
-Selecting a card reveals one trash icon beside the active selected card. With multiple people selected, it shows a count badge, and both its tooltip and the sidebar button say **Delete N selected people**. Relationship connectors do not count as people. Deselecting the active card moves the icon and active details to the first remaining selected person; other sidebar fields still edit only the active person. Either delete control asks once to **Delete N people?**, including their relationships and clearing home if selected. Cancel keeps your selection and data. Confirm removes the group together and clears selection, details, connection mode, and those people's date drafts. One **Undo** restores everyone, their relationships, and home designation without restoring selection; **Redo** removes the group together. Single-person deletion keeps its existing wording and appearance.
-
-Drag person cards near another card's center or a partner heart to snap their horizontal or vertical centers into alignment. Moving both partners together also allows alignment by their heart. Hearts attached to just one moving partner are excluded from snapping. Dashed guides show the alignment while dragging. Snapping stays consistent across zoom levels, preserves spacing within a dragged selection, and saves the whole move as one undoable edit.
-
-Cards stay at 180 × 136 pixels, with a compact portrait, up to two lines for the name, and rows for nickname, life dates, and kinship when available. Longer names end with an ellipsis; hover to read the full name or open person details. Sex appears in the top-right corner, and age is omitted from cards. The home person uses a house icon in the top-left corner, with its label available on hover and to screen readers. PNG snapshots use the same fixed dimensions and truncate long names to two lines. Moving cards automatically connects partners from the facing left/right sides and parents/children from the facing top/bottom sides. Shared sibling bars follow the measured card sizes and support children above or below their parents; children on both sides use separate bars. Unassigned connections retain their chosen handles.
-
-Use the sidebar toggle at the top right of the editor to collapse or expand the details panel and give the canvas more room. Collapsing preserves the current selection and edits. If you leave the sidebar expanded, selecting and unselecting cards keeps it expanded. If you collapse it, selecting a card temporarily expands it, and unselecting restores the collapsed state. Relationship selection follows the same behavior. On mobile, the details menu button opens and closes the panel with the same selection behavior.
-
-## Home person and kinship
-
-Use the **Find** search bar in the editor's top menu to search the open tree by full, first, or last name, nickname, birth or death year/ISO date (`YYYY-MM-DD`), or notes. Results expand below the search bar over the canvas after you type; the panel stays hidden for an empty query. Search ignores case and accents; every query word must match somewhere in the person's recorded information. Results include dates and matching note excerpts to distinguish people with the same name. Choose **Jump to person** to center and select their card and open details. **Show more** reveals additional results in batches of 50. Escape, the close button in the search field, or clicking outside dismisses search and clears the query. On mobile, a magnifying-glass button expands the search field and results below the menu, and closing details reveals the centered card.
-
-Choose the house button beside **Fit tree** to **Center on home person** at a readable zoom while keeping the current selection and details panel. Set a home person in person details to enable it. Both navigation actions save the viewport through the usual local-save behavior without adding an undo step; they do not save an untouched temporary tree.
-
-Select a person and choose **Set as home person** to mark whom the tree is about. Each tree can have one home person or none. Setting someone else replaces the designation; **Clear home person** removes it. These actions support undo/redo. Deleting home clears the designation along with their relationships, and undo restores both. Setting home leaves the canvas position and selection unchanged; opening a tree keeps the existing viewport behavior.
-
-Cards, person details, and PNG snapshots show each person's relationship to home, including ancestors, descendants, siblings, aunts/uncles, nieces/nephews, and cousins with removals. Terms use recorded sex when known and neutral terms otherwise. Labels are calculated from current links rather than stored, so editing connections, sex, or home refreshes them automatically.
-
-Biological, adoptive, and unspecified parent links establish family kinship. Recorded paths in details disclose every parent type; family labels do not assert biological ancestry or full versus half siblings. Step, guardian, and mixed partner paths remain explicit. Direct partners use spouse terms only when recorded as married, with former/ex qualifiers when recorded. Unassigned links do not establish kinship. People without a typed path show **Relationship not established** only in person details; their cards and PNG snapshots omit the label.
-
-The closest relationship uses the fewest recorded links. Equally short paths can show alternative labels in details; longer ties are not calculated. Up to five representative paths are retained per person, prioritizing distinct labels, and details disclose when additional shortest paths are omitted. This bounds calculation in highly interconnected trees. Home markers and labels are carried through JSON backups, local saves, and Drive copies; PNG exports include the marker, primary labels, and home name.
-
-Choose **Living** or **Deceased** under **Status** in person details. Only Deceased shows the **Died** date options, including Unknown. New people and older records without a death date prompt for status; older records with a death date show Deceased. Deceased people without a known death date show Deceased on cards and PNG snapshots, without a current-age estimate. Choosing Living clears the death date; undo restores the previous status and date. Explicit status is saved in local trees, JSON backups, and Drive copies.
-
-Birth and death each offer **Unknown**, **Full date**, **Year only**, and **Approximate**. Approximate accepts a year and displays **About 1920**, for example. Switching between Year only and Approximate keeps the entered year. Labels, search, cards, and PNG snapshots retain “About.” Local saves, undo/redo, JSON backups, and Drive copies preserve the estimate.
-
-Birth, death, and status edits stay in a temporary draft while dates are incomplete or invalid. Years must be whole numbers from 1 to 9999, and full dates must be valid calendar dates. A known death cannot precede a known birth; approximate years have no assumed numerical tolerance, so they cannot establish an impossible ordering. Age displays are omitted when either life date is approximate. Valid changes are committed together, while autosave and exports use the last valid values. Drafts survive selecting another person in the current editor session but are not saved or exported.
-
-Top/bottom connector drags infer a Parent / Child relationship, with the bottom-handled person as the parent. Side-to-side drags infer Partner. Drag a partner heart to a person's handle (or their handle to the heart) to connect that person as a child of both partners. This creates two ordinary parent links together in one undoable action, preserving any existing parent link and its details. Other handle combinations create an unassigned link. Selecting a person or a link lets users assign or change its relationship; the combined Parent / Child option has a separate parent selector to set ancestry direction. Ancestry cycles, self-links, and duplicates are still rejected. Canvas and PNG links use a plain line for Parent / Child, a heart for Partner (red in the editor, dark gray in PNG exports), or Not set for unassigned links, while relationship details remain editable in the panel.
-
-When a child has two recorded parents and those parents have a Partner link, the canvas and PNG snapshot show one connection from the partner connector to the child. Multiple children of the same couple share a sibling bar. Biological, adoptive, and unspecified parent links qualify; step, guardian, and additional-parent relationships retain individual paths. Cards stay where you place them, and the connector follows dragging. Click a child branch, or focus it and press Enter or Space, to edit that child's individual parent relationships. Removing a qualifying link updates the grouping, including through undo/redo. Partner links and adding a child never imply an unrecorded second parent.
+- [Deployment](docs/deployment.md): environment variables, Google Drive OAuth, Vercel, and the public privacy and terms pages.
+- [Development](docs/development.md): dev server safety, adding public pages, linting and formatting, and dependency policy.
+- [Review guide](REVIEW.md): what reviewers flag on pull requests.

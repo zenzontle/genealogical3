@@ -10,7 +10,7 @@ Flag a change only when it can cause one of these:
 - **Wrong Drive behavior.** Deleting, overwriting, or uploading the wrong file; skipping ownership, revision, or backup-identity checks; touching files outside the app's `genealogical3` folder; widening the `drive.file` scope; leaking tokens or client secrets.
 - **Broken sync or conflict handling.** Lost local edits when a Drive save fails, conflicts that are not paused for review, autosaves that are not drained before deletion, or retries that repeat completed destructive steps.
 - **Incorrect tree logic.** Wrong kinship, relationship edges, layout, or validation that accepts invalid documents or rejects valid ones.
-- **Regressions in existing behavior** described in `README.md`, including accessibility (keyboard access, focus return, accessible labels) and toast behavior.
+- **Regressions in existing behavior**, including accessibility (keyboard access, focus return, accessible labels) and toast behavior.
 - **Security issues** in `server/` and `api/` (OAuth handling, redirects, input validation) or in how the browser handles imported JSON and images.
 - **Missing tests** for a behavior change in `src/lib`, `server/`, or Drive deletion and sync flows.
 
