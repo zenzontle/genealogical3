@@ -52,8 +52,8 @@ export function DateInput({
           }}
         >
           <option value="unknown">Unknown</option>
-          <option value="year">Year only</option>
           <option value="full">Full date</option>
+          <option value="year">Year only</option>
           <option value="about">Approximate</option>
         </select>
       </label>
