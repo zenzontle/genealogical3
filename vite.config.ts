@@ -86,12 +86,17 @@ export default defineConfig(({ mode }) => {
     },
     test: { setupFiles: ['src/test/setup.ts'] },
     build: {
-      rollupOptions: {
+      rolldownOptions: {
         input: pages,
         output: {
-          manualChunks: {
-            'react-vendor': ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'],
-            'flow-vendor': ['@xyflow/react'],
+          codeSplitting: {
+            groups: [
+              {
+                name: 'react-vendor',
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+              },
+              { name: 'flow-vendor', test: /[\\/]node_modules[\\/]@xyflow[\\/]/ },
+            ],
           },
         },
       },

@@ -5,7 +5,6 @@ import {
   Cloud,
   Download,
   FileDown,
-  Github,
   Globe,
   Heart,
   Link2,
@@ -17,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { GitHubIcon } from './GitHubIcon';
 import { HeroBranches } from './HeroBranches';
 import { SexIcon } from './SexIcon';
 import { WorkspaceCard } from './WorkspaceCard';
@@ -420,7 +420,7 @@ export function HomeScreen({
           href={import.meta.env.PUBLIC_REPOSITORY_URL}
           aria-label="GitHub repository"
         >
-          <Github size={17} aria-hidden="true" /> GitHub
+          <GitHubIcon size={17} /> GitHub
         </a>
         <a className="back-to-top" href="#top">
           Back to top <ArrowUp size={14} aria-hidden="true" />
