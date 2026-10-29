@@ -22,7 +22,6 @@ import {
   CircleHelp,
   Download,
   FileImage,
-  Github,
   Heart,
   Home,
   Menu,
@@ -38,6 +37,7 @@ import { PersonCard, type PersonNode } from '../components/PersonCard';
 import { AlignmentGuides } from '../components/AlignmentGuides';
 import { cardAlignment, type AlignmentGuide } from '../lib/cardAlignment';
 import { BrandMark } from '../components/BrandMark';
+import { GitHubIcon } from '../components/GitHubIcon';
 import { PersonEditor, type ConnectMode } from '../components/PersonEditor';
 import { RelationshipEditor } from '../components/RelationshipEditor';
 import { HomeScreen } from '../components/HomeScreen';
@@ -1681,7 +1681,7 @@ export default function App() {
               rel="noreferrer"
               aria-label="GitHub repository"
             >
-              <Github size={13} aria-hidden="true" /> GitHub
+              <GitHubIcon size={13} /> GitHub
             </a>
             <span>
               {tree?.people.length || 0} people · {tree?.relations.length || 0} connections
