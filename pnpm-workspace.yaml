@@ -8,8 +8,10 @@ minimumReleaseAgeIgnoreMissingTime: false
 
 blockExoticSubdeps: true
 trustPolicy: no-downgrade
-# Legacy releases without provenance; registry signatures and lockfile integrity
-# verified on 2026-10-21. Review these exact-version exceptions by 2026-11-21.
+# Legacy releases without provenance, still required by @babel/core 7 and
+# eslint-plugin-react (semver) and @types/node 22 (undici-types). Registry
+# signatures and lockfile integrity verified on 2026-10-30. Review these
+# exact-version exceptions by 2026-11-30.
 trustPolicyExclude:
   - semver@6.3.1
   - undici-types@6.21.0
@@ -17,5 +19,3 @@ trustPolicyExclude:
 trustLockfile: false
 
 strictDepBuilds: true
-allowBuilds:
-  esbuild@0.25.12: true

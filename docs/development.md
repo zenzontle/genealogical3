@@ -2,7 +2,7 @@
 
 ## Dev server
 
-`pnpm dev` listens on every network interface. On an untrusted network, especially on Windows, where Vite 6.4.3 has an unpatched editor command-injection advisory, bind to localhost instead:
+`pnpm dev` listens on every network interface. On an untrusted network, bind to localhost instead:
 
 ```sh
 pnpm exec vite --host 127.0.0.1
@@ -27,9 +27,8 @@ Add a standalone HTML file, such as `about.html` or `about/index.html`. Vite dis
 
 Use `pnpm add` or `pnpm update`, and commit the updated `pnpm-lock.yaml`.
 
-`pnpm-workspace.yaml` enforces [pnpm's supply chain protections](https://pnpm.io/supply-chain-security): a seven-day minimum release age, no exotic transitive dependencies, no trust downgrades, and install scripts only for approved packages. CI installs with `--ignore-scripts`.
+`pnpm-workspace.yaml` enforces [pnpm's supply chain protections](https://pnpm.io/supply-chain-security): a seven-day minimum release age, no exotic transitive dependencies, no trust downgrades, and no install scripts except for packages approved in `allowBuilds`. CI installs with `--ignore-scripts`.
 
-- `allowBuilds` approves only `esbuild@0.25.12`, whose install script prepares Vite's binary. A new esbuild version needs a fresh script review and an updated approval.
 - `trustPolicyExclude` lists exact versions without provenance; its comment records when they were verified and when to review them.
 
 If a dependency is blocked, review its release metadata, provenance, and install scripts before adding an exception. Limit exceptions to exact versions with a comment giving the reason, never disable a protection globally, and commit policy and lockfile changes together.
