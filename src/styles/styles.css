@@ -2205,12 +2205,7 @@ h2 {
     font-size: 0.95rem;
   }
   .hero-art {
-    height: 420px;
-    max-width: 480px;
-    margin: 2.5rem auto 0;
-  }
-  .hero-tree {
-    transform: scale(0.72);
+    display: none;
   }
   .library-section {
     padding: 2rem var(--page-gutter) 3rem;
@@ -2317,9 +2312,6 @@ h2 {
     content: 'Drive';
     font-size: 0.7rem;
   }
-  .tree-title {
-    max-width: 135px;
-  }
   .canvas-tip {
     display: none;
   }
@@ -2366,6 +2358,9 @@ h2 {
     border: 0;
     box-shadow: none;
   }
+  /* iOS Safari zooms the page when focusing a field under 16px. */
+  .editor-content :is(input, select, textarea),
+  .local-dialog input,
   .person-search-field input {
     font-size: 1rem;
   }
@@ -2394,12 +2389,6 @@ h2 {
   .hero h1 {
     font-size: clamp(2.25rem, 11vw, 3.5rem);
   }
-  .hero-art {
-    height: 380px;
-  }
-  .hero-tree {
-    transform: scale(0.6);
-  }
   .hero-buttons,
   .hero-buttons .button {
     width: 100%;
@@ -2419,9 +2408,6 @@ h2 {
   }
   .editor-header .brand-mark {
     display: none;
-  }
-  .tree-title {
-    max-width: 110px;
   }
   .drive-menu {
     padding-left: 0.2rem;
