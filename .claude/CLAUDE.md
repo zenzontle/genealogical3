@@ -8,7 +8,7 @@ pnpm exec eslint . --max-warnings 0
 pnpm exec prettier --check .
 ```
 
-- For UI changes, check the change in the browser preview and attach a screenshot.
+- For UI changes, check the change in the browser preview and attach a screenshot with `gh pr edit <n> --attach ./shot.jpg` (reference it in the body as `![alt](./shot.jpg)`; gh rewrites the links).
 - Review your own diff against `REVIEW.md` before pushing, preferably with a subagent that has fresh context.
 - If a reviewer flags the same kind of issue repeatedly, fix the cause (a lint rule, a test, or this file), not just the instance.
 - Keep README.md and docs/ to setup, deployment, and development. Don't document UI or feature behavior there; code and tests define it.
