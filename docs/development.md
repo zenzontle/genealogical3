@@ -16,6 +16,20 @@ Add a standalone HTML file, such as `about.html` or `about/index.html`. Vite dis
 - Each page gets a canonical link generated from `PUBLIC_APP_URL`. Don't add your own.
 - Discovery skips hidden paths, `node_modules`, `dist`, `coverage`, `public`, `src`, `server`, `api`, and `scripts`. Files in `public` are copied unchanged instead.
 
+## Browser tests
+
+`pnpm test` runs Vitest with jsdom. Workflows that depend on IndexedDB, downloads, canvas or layout run in a real browser with [Playwright](https://playwright.dev) under `e2e/`:
+
+```sh
+pnpm exec playwright install chromium
+pnpm e2e
+```
+
+- Install the browser once per Playwright version. Install scripts are disabled, so `pnpm install` doesn't download it. On Linux, add `--with-deps` to install system libraries.
+- `pnpm e2e` builds the app and serves it with `vite preview` on port 4173. It never reuses a server already running there, so stop any other preview on that port first. The build it starts leaves Drive unconfigured, even if `.env` sets a client ID.
+- Specs run on desktop Chromium and a mobile Chromium project (`mobile.spec.ts` only).
+- Debug with `pnpm e2e --ui` or `pnpm e2e --headed`. CI uploads `playwright-report/` and `test-results/` when the job fails, with a trace for each failed test; open a trace with `pnpm exec playwright show-trace <trace.zip>`.
+
 ## Linting and formatting
 
 - `pnpm lint` allows warnings locally, but CI runs `eslint . --max-warnings 0`, so warnings fail pull requests.

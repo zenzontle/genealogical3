@@ -6,3 +6,5 @@ dist
 .pnpm-store
 *.tsbuildinfo
 .codegraph/
+playwright-report/
+test-results/

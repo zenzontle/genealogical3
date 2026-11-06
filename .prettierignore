@@ -6,3 +6,5 @@ coverage/
 *.tsbuildinfo
 pnpm-lock.yaml
 .codegraph/
+playwright-report/
+test-results/
