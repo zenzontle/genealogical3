@@ -2,6 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 const port = 4173;
 const baseURL = `http://127.0.0.1:${port}`;
+// Call Vite's binary directly: on Linux, Playwright cannot stop a server started through
+// `pnpm exec`, so the run hangs after the last test until the CI job times out.
+const vite = 'node node_modules/vite/bin/vite.js';
 
 export default defineConfig({
   testDir: 'e2e',
@@ -9,7 +12,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   // No retries: a flaky spec should fail CI, not pass on a second try.
   retries: 0,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  // Fail with a report well before the CI job's own timeout cancels the run.
+  globalTimeout: 10 * 60_000,
+  reporter: process.env.CI ? [['list'], ['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL,
     trace: 'retain-on-failure',
@@ -28,7 +33,7 @@ export default defineConfig({
   ],
   webServer: {
     // Test the production bundle, as deployed.
-    command: `pnpm exec vite build && pnpm exec vite preview --host 127.0.0.1 --port ${port} --strictPort`,
+    command: `${vite} build && ${vite} preview --host 127.0.0.1 --port ${port} --strictPort`,
     url: baseURL,
     // Never reuse a running server: it could be serving a stale build or one with Drive configured.
     reuseExistingServer: false,
