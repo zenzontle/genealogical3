@@ -1,7 +1,7 @@
-/// <reference types="vitest/config" />
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
+import { configDefaults } from 'vitest/config';
 import { driveAuthDev } from './server/driveAuthDev';
 import {
   canonicalPagePath,
@@ -84,7 +84,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.PUBLIC_DEVELOPER_NAME': JSON.stringify(identity.developerName),
       'import.meta.env.PUBLIC_REPOSITORY_URL': JSON.stringify(identity.repositoryUrl),
     },
-    test: { setupFiles: ['src/test/setup.ts'] },
+    // Playwright owns e2e/; Vitest would otherwise collect its *.spec.ts files.
+    test: { setupFiles: ['src/test/setup.ts'], exclude: [...configDefaults.exclude, 'e2e/**'] },
     build: {
       rolldownOptions: {
         input: pages,

@@ -42,6 +42,8 @@ export default defineConfig([
     files: [
       'eslint.config.js',
       'vite.config.ts',
+      'playwright.config.ts',
+      'e2e/**/*.ts',
       'scripts/**/*.{js,mjs,cjs,ts}',
       '.claude/hooks/**/*.{js,mjs}',
       'server/**/*.ts',
