@@ -35,6 +35,7 @@ For bug fixes, check that the change addresses the root cause, and that other in
 These changes always need a human reviewer, even if AI review passes:
 
 - `.github/workflows/` (CI and merge gates)
+- `.claude/commands/pr-review.md` (the CI review command the merge gate depends on)
 - `server/`, `api/` (OAuth and Drive auth)
 - `src/lib/drive*.ts`, `src/lib/storage.ts` (persistence and Drive deletion)
 
