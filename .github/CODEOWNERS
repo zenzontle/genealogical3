@@ -2,6 +2,8 @@
 # protection on main requires review from code owners.
 /.github/          @zenzontle
 /.claude/commands/pr-review.* @zenzontle
+/.claude/settings.json @zenzontle
+/.claude/hooks/ @zenzontle
 /server/           @zenzontle
 /api/              @zenzontle
 /src/lib/drive*.ts @zenzontle
