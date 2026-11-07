@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { exportPng, exportJson, portraitData, safeName } from './media';
+import { exportPdf, exportPng, exportJson, maxPdfPages, portraitData, safeName } from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
 import { makePerson, makeTree, personCardSize, validateTree, type Relation } from './model';
 import { relationshipIcons } from './relationshipIcons';
@@ -303,6 +303,114 @@ describe('print-friendly PNG exports', () => {
       expect(lastDateRow[2]).toBeLessThan(expanded[1] + expanded[3] - 8);
     },
   );
+});
+
+describe('PDF exports', () => {
+  /** Stubs a canvas whose context records every call; JPEG pages are 4 fake bytes each. */
+  function stubCanvas() {
+    const calls: { method: string; args: unknown[] }[] = [];
+    const ctx = new Proxy({} as Record<string, unknown>, {
+      get(target, prop: string) {
+        if (prop in target) return target[prop];
+        if (prop === 'measureText') return (text: string) => ({ width: text.length * 6 });
+        return (...args: unknown[]) => calls.push({ method: prop, args });
+      },
+      set(target, prop: string, value) {
+        target[prop] = value;
+        return true;
+      },
+    });
+    const toBlob = vi.fn<(callback: (blob: Blob) => void, type: string, quality?: number) => void>(
+      (callback) => callback(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])])),
+    );
+    const canvas = { width: 0, height: 0, getContext: () => ctx, toBlob };
+    const anchor = { href: '', download: '', click: vi.fn() };
+    let output: Blob | undefined;
+    vi.useFakeTimers();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => (tag === 'canvas' ? canvas : anchor),
+    });
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn((blob: Blob) => {
+        output = blob;
+        return 'blob:pdf';
+      }),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.stubGlobal(
+      'Path2D',
+      class {
+        constructor(public path: string) {}
+      },
+    );
+    const texts = () =>
+      calls.filter(({ method }) => method === 'fillText').map(({ args }) => args[0]);
+    const pdf = async () =>
+      Array.from(new Uint8Array(await output!.arrayBuffer()), (b) => String.fromCharCode(b)).join(
+        '',
+      );
+    return { calls, canvas, toBlob, anchor, texts, pdf, output: () => output };
+  }
+  const row = (count: number) =>
+    Array.from({ length: count }, (_, i) => makePerson(`P${i}`, i * 220, 0));
+
+  it('downloads a small tree as one 200 dpi Letter page without page labels', async () => {
+    const stub = stubCanvas();
+    await exportPdf({ ...makeTree('Curie family'), people: row(1) });
+    expect([stub.canvas.width, stub.canvas.height]).toEqual([1700, 2200]);
+    expect(stub.toBlob).toHaveBeenCalledOnce();
+    expect(stub.toBlob.mock.calls[0].slice(1)).toEqual(['image/jpeg', 0.92]);
+    expect(stub.anchor.download).toBe('Curie-family.pdf');
+    expect(stub.output()!.type).toBe('application/pdf');
+    const text = await stub.pdf();
+    expect(text.startsWith('%PDF-1.4')).toBe(true);
+    expect(text).toContain('/Count 1 ');
+    expect(text).toContain('/MediaBox [0 0 612 792]');
+    expect(stub.texts()).toContain('P0');
+    expect(stub.texts().some((t) => String(t).startsWith('Page '))).toBe(false);
+    // The tree is drawn at its on-screen size, centered: 1 pt per tree pixel at 200/72 px per pt.
+    const k = 200 / 72;
+    const width = 180 + 180,
+      height = 136 + 180;
+    expect(stub.calls).toContainEqual({
+      method: 'setTransform',
+      args: [k, 0, 0, k, (36 + (540 - width) / 2) * k, (36 + (720 - height) / 2) * k],
+    });
+  });
+
+  it('tiles a wide tree after an overview page, labelling each tile', async () => {
+    const stub = stubCanvas();
+    await exportPdf({ ...makeTree('Wide'), people: row(30) });
+    // 6,740 tree px wide: seven landscape tiles at 0.65 pt/px, plus the overview.
+    expect([stub.canvas.width, stub.canvas.height]).toEqual([2200, 1700]);
+    expect(stub.toBlob).toHaveBeenCalledTimes(8);
+    const labels = stub.texts().filter((t) => String(t).startsWith('Page '));
+    expect(labels).toEqual([
+      'Page 1 of 8 · overview: 1 row × 7 columns',
+      ...Array.from({ length: 7 }, (_, i) => `Page ${i + 2} of 8 · row 1, column ${i + 1}`),
+    ]);
+    expect(stub.calls.filter(({ method }) => method === 'clip')).toHaveLength(7);
+    expect(stub.calls.filter(({ method }) => method === 'strokeRect')).toHaveLength(7);
+    // Every person is drawn on the overview and on each tile (clipped to its region).
+    expect(stub.texts().filter((t) => t === 'P0')).toHaveLength(8);
+    const text = await stub.pdf();
+    expect(text).toContain('/Count 8 ');
+    expect(text.match(/\/MediaBox \[0 0 792 612\]/g)).toHaveLength(8);
+  });
+
+  it(`refuses trees needing more than ${maxPdfPages} pages before rendering any`, async () => {
+    const stub = stubCanvas();
+    await expect(exportPdf({ ...makeTree(), people: row(300) })).rejects.toThrow(
+      /needs \d+ PDF pages, more than the limit of 50\. Use Arrange/,
+    );
+    expect(stub.toBlob).not.toHaveBeenCalled();
+    expect(stub.anchor.click).not.toHaveBeenCalled();
+  });
+
+  it('requires at least one person', async () => {
+    stubCanvas();
+    await expect(exportPdf(makeTree())).rejects.toThrow('Add a person before exporting a PDF.');
+  });
 });
 
 describe('export filenames', () => {

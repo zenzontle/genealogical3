@@ -22,6 +22,7 @@ import {
   CircleHelp,
   Download,
   FileImage,
+  FileText,
   Heart,
   Home,
   Menu,
@@ -1349,6 +1350,16 @@ export default function App() {
               >
                 <FileImage size={16} />
                 <span>PNG</span>
+              </button>
+              <button
+                className="button header-button"
+                disabled={exports.feedback.status === 'pending'}
+                aria-label="Export PDF"
+                onClick={() => exports.run('PDF')}
+                title="Download printable PDF"
+              >
+                <FileText size={16} />
+                <span>PDF</span>
               </button>
               {driveConfigured && !driveLinked && (
                 <div className="drive-menu">

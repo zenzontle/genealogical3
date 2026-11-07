@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Tree } from '../lib/model';
-import { exportJson, exportPng } from '../lib/media';
+import { exportJson, exportPdf, exportPng } from '../lib/media';
 import { afterPaint, errorMessage, type FeedbackState } from '../lib/feedback';
+
+export type ExportFormat = 'JSON' | 'PNG' | 'PDF';
 
 export function useTreeExport(treeId: string | undefined, getTree: () => Tree | null) {
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
-  const [kind, setKind] = useState<'JSON' | 'PNG'>('JSON');
+  const [kind, setKind] = useState<ExportFormat>('JSON');
   const request = useRef(0),
     busy = useRef(false);
   useEffect(() => {
@@ -17,7 +19,7 @@ export function useTreeExport(treeId: string | undefined, getTree: () => Tree | 
       counter.current++;
     };
   }, [treeId]);
-  const run = async (format: 'JSON' | 'PNG') => {
+  const run = async (format: ExportFormat) => {
     const tree = getTree();
     if (busy.current || !tree) return;
     busy.current = true;
@@ -28,7 +30,8 @@ export function useTreeExport(treeId: string | undefined, getTree: () => Tree | 
       await afterPaint();
       if (token !== request.current) return;
       if (format === 'JSON') exportJson(tree);
-      else await exportPng(tree);
+      else if (format === 'PNG') await exportPng(tree);
+      else await exportPdf(tree);
       if (token === request.current)
         setFeedback({ status: 'success', message: `${format} export completed.` });
     } catch (error) {
