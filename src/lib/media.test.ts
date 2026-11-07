@@ -321,7 +321,10 @@ describe('PDF exports', () => {
       },
     });
     const toBlob = vi.fn<(callback: (blob: Blob) => void, type: string, quality?: number) => void>(
-      (callback) => callback(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])])),
+      (callback) => {
+        calls.push({ method: 'toBlob', args: [] });
+        callback(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])]));
+      },
     );
     const canvas = { width: 0, height: 0, getContext: () => ctx, toBlob };
     const anchor = { href: '', download: '', click: vi.fn() };
@@ -380,7 +383,20 @@ describe('PDF exports', () => {
 
   it('tiles a wide tree after an overview page, labelling each tile', async () => {
     const stub = stubCanvas();
-    await exportPdf({ ...makeTree('Wide'), people: row(30) });
+    const images: { source: string }[] = [];
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload = () => {};
+        set src(src: string) {
+          images.push(Object.assign(this, { source: src }));
+          queueMicrotask(() => this.onload());
+        }
+      },
+    );
+    const people = row(30);
+    people[3].portrait = 'data:image/jpeg;base64,photo';
+    await exportPdf({ ...makeTree('Wide'), people });
     // 6,740 tree px wide: seven landscape tiles at 0.65 pt/px, plus the overview.
     expect([stub.canvas.width, stub.canvas.height]).toEqual([2200, 1700]);
     expect(stub.toBlob).toHaveBeenCalledTimes(8);
@@ -389,13 +405,29 @@ describe('PDF exports', () => {
       'Page 1 of 8 · overview: 1 row × 7 columns',
       ...Array.from({ length: 7 }, (_, i) => `Page ${i + 2} of 8 · row 1, column ${i + 1}`),
     ]);
-    expect(stub.calls.filter(({ method }) => method === 'clip')).toHaveLength(7);
+    // Each tile clips to its region (portraits add their own circular clips).
+    expect(stub.calls.filter(({ method }) => method === 'rect')).toHaveLength(7);
     expect(stub.calls.filter(({ method }) => method === 'strokeRect')).toHaveLength(7);
     // Every person is drawn on the overview and on each tile (clipped to its region).
     expect(stub.texts().filter((t) => t === 'P0')).toHaveLength(8);
     const text = await stub.pdf();
     expect(text).toContain('/Count 8 ');
     expect(text.match(/\/MediaBox \[0 0 792 612\]/g)).toHaveLength(8);
+    // The portrait loads once and is drawn on every page, in place of the initial.
+    expect(images.map(({ source }) => source)).toEqual(['data:image/jpeg;base64,photo']);
+    const drawn = stub.calls.filter(({ method }) => method === 'drawImage');
+    expect(drawn).toHaveLength(8);
+    expect(drawn.every(({ args }) => args[0] === images[0])).toBe(true);
+    expect(stub.texts().filter((t) => t === 'P')).toHaveLength(29 * 8);
+    // Clips, dashes and transforms stay inside each page's save/restore, so none leak forward.
+    let depth = 0;
+    for (const { method } of stub.calls) {
+      if (method === 'save') depth++;
+      if (method === 'restore') depth--;
+      if (['clip', 'setLineDash', 'setTransform'].includes(method))
+        expect(depth).toBeGreaterThan(0);
+      if (method === 'toBlob') expect(depth).toBe(0);
+    }
   });
 
   it(`refuses trees needing more than ${maxPdfPages} pages before rendering any`, async () => {

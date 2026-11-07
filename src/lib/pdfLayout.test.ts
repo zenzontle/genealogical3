@@ -112,6 +112,18 @@ describe('PDF page layout', () => {
     expect(cards.some((card) => !plain.regions.some((r) => inside(card, r)))).toBe(true);
   });
 
+  it('keeps moving a tile edge left until it clears overlapping cards', () => {
+    // The landscape tile edge (1,107.7 px) falls in the right card; clearing it lands in the left.
+    const cards = [
+      { x: 850, y: 100, width: 180, height: 136 },
+      { x: 1000, y: 100, width: 180, height: 136 },
+    ];
+    const layout = layoutPdfPages(3000, 400, cards);
+    expect(layout.orientation).toBe('landscape');
+    expect(layout.regions[0].sx + layout.regions[0].sw).toBeLessThanOrEqual(850);
+    expectTilesCover(layout, 3000, 400);
+  });
+
   it('cuts through a card rather than leave a tile less than half full', () => {
     const banner = { x: 100, y: 100, width: 2800, height: 100 };
     const layout = layoutPdfPages(3000, 400, [banner]);
