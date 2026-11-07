@@ -70,3 +70,18 @@ test('PNG export downloads a rendered image', async ({ page }) => {
   expect(bytes.readUInt32BE(16)).toBeGreaterThan(100);
   expect(bytes.readUInt32BE(20)).toBeGreaterThan(100);
 });
+
+test('PDF export downloads a print-ready document', async ({ page }) => {
+  await buildTree(page);
+  const download = await downloadFrom(page, 'Export PDF');
+  await expect(page.getByText('PDF export completed.')).toBeVisible();
+  expect(download.suggestedFilename()).toBe('Curie-family.pdf');
+  const text = (await downloadedBytes(download)).toString('latin1');
+  expect(text.startsWith('%PDF-1.4\n')).toBe(true);
+  // Three cards fit on one page; the page is a JPEG drawn by the browser's canvas.
+  expect(text).toContain('/Type /Pages /Count 1 ');
+  expect(text).toContain('/Filter /DCTDecode');
+  expect(text).toContain('stream\n\xff\xd8\xff');
+  expect(text).toContain('/Title <FEFF');
+  expect(text.endsWith('%%EOF\n')).toBe(true);
+});

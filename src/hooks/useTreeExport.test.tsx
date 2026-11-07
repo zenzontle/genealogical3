@@ -2,11 +2,11 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTreeExport } from './useTreeExport';
-import { exportJson, exportPng } from '../lib/media';
+import { exportJson, exportPdf, exportPng } from '../lib/media';
 import { afterPaint } from '../lib/feedback';
 import { makeTree } from '../lib/model';
 
-vi.mock('../lib/media', () => ({ exportJson: vi.fn(), exportPng: vi.fn() }));
+vi.mock('../lib/media', () => ({ exportJson: vi.fn(), exportPdf: vi.fn(), exportPng: vi.fn() }));
 vi.mock('../lib/feedback', async (original) => ({
   ...(await original<typeof import('../lib/feedback')>()),
   afterPaint: vi.fn(),
@@ -15,6 +15,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(afterPaint).mockResolvedValue(undefined);
   vi.mocked(exportPng).mockResolvedValue(undefined);
+  vi.mocked(exportPdf).mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 
@@ -90,6 +91,42 @@ describe('export feedback', () => {
       status: 'success',
       message: 'PNG export completed.',
     });
+  });
+
+  it('exports PDF, reports page-limit failures, and retries as PDF', async () => {
+    let finish!: () => void;
+    vi.mocked(exportPdf).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const tree = makeTree();
+    const { result } = renderHook(() => useTreeExport(tree.id, () => tree));
+    let exporting!: Promise<void>;
+    await act(async () => {
+      exporting = result.current.run('PDF');
+    });
+    expect(result.current.feedback).toEqual({ status: 'pending', message: 'Preparing PDF…' });
+    expect(exportPdf).toHaveBeenCalledWith(tree);
+    expect(exportPng).not.toHaveBeenCalled();
+    await act(async () => {
+      finish();
+      await exporting;
+    });
+    expect(result.current.feedback).toEqual({
+      status: 'success',
+      message: 'PDF export completed.',
+    });
+    vi.mocked(exportPdf).mockRejectedValueOnce(Error('This tree needs 61 PDF pages.'));
+    await act(() => result.current.run('PDF'));
+    expect(result.current.feedback).toEqual({
+      status: 'error',
+      message: 'This tree needs 61 PDF pages.',
+    });
+    await act(() => result.current.retry());
+    expect(exportPdf).toHaveBeenCalledTimes(3);
+    expect(result.current.feedback.status).toBe('success');
   });
 
   it('keeps JSON validation failures visible until dismissed', async () => {

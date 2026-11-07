@@ -19,7 +19,7 @@ import {
   saveDriveLink,
   type DriveLink,
 } from '../lib/storage';
-import { exportJson, exportPng, portraitData } from '../lib/media';
+import { exportJson, exportPdf, exportPng, portraitData } from '../lib/media';
 import type { PersonNode } from '../components/PersonCard';
 import { partnerNodeId } from '../lib/partnerConnectors';
 import { afterPaint } from '../lib/feedback';
@@ -157,7 +157,12 @@ vi.mock('../lib/drive', () => ({
   deleteDriveBackup: vi.fn(),
   queueDriveOperation: async (_generation: number, run: () => Promise<unknown>) => run(),
 }));
-vi.mock('../lib/media', () => ({ exportJson: vi.fn(), exportPng: vi.fn(), portraitData: vi.fn() }));
+vi.mock('../lib/media', () => ({
+  exportJson: vi.fn(),
+  exportPdf: vi.fn(),
+  exportPng: vi.fn(),
+  portraitData: vi.fn(),
+}));
 vi.mock('../lib/feedback', async (original) => ({
   ...(await original<typeof import('../lib/feedback')>()),
   afterPaint: vi.fn(() => Promise.resolve()),
@@ -658,7 +663,7 @@ describe('operation toast integration', () => {
     expect(screen.queryByText('Created Family (copy).')).toBeNull();
   });
 
-  it.each(['JSON', 'PNG'] as const)(
+  it.each(['JSON', 'PNG', 'PDF'] as const)(
     'withholds %s progress toasts and shows failure, retry and timed completion',
     async (format) => {
       render(<App />);
@@ -674,14 +679,14 @@ describe('operation toast integration', () => {
           throw Error('Export failed.');
         });
       } else {
-        vi.mocked(exportPng)
+        vi.mocked(format === 'PNG' ? exportPng : exportPdf)
           .mockRejectedValueOnce(Error('Export failed.'))
           .mockResolvedValue(undefined);
       }
       fireEvent.click(screen.getByRole('button', { name: `Export ${format}` }));
       expect(screen.queryByText(`Preparing ${format}…`)).toBeNull();
       expect(screen.queryByText(`${format} export completed.`)).toBeNull();
-      for (const name of ['Export JSON', 'Export PNG', 'Download a backup']) {
+      for (const name of ['Export JSON', 'Export PNG', 'Export PDF', 'Download a backup']) {
         expect(screen.getByRole('button', { name })).toHaveProperty('disabled', true);
       }
       await act(async () => finishPaint());
@@ -696,7 +701,7 @@ describe('operation toast integration', () => {
       const success = await screen.findByText(`${format} export completed.`);
       expect(success.closest('.toast-stack')).toBeTruthy();
       expect(success.closest('[role="status"]')).toBeTruthy();
-      const exporter = format === 'JSON' ? exportJson : exportPng;
+      const exporter = { JSON: exportJson, PNG: exportPng, PDF: exportPdf }[format];
       expect(vi.mocked(exporter).mock.calls.at(-1)![0].people[0].nickname).toBe(
         'Edited after failure',
       );
@@ -2091,6 +2096,7 @@ describe('per-tree Drive sync controls inside the editor', () => {
     expect(screen.queryByRole('button', { name: 'Drive' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Export JSON' })).toHaveProperty('disabled', false);
     expect(screen.getByRole('button', { name: 'Export PNG' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Export PDF' })).toHaveProperty('disabled', false);
     expect(restoreDrive).not.toHaveBeenCalled();
   });
 
