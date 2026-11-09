@@ -393,58 +393,68 @@ export function addChildToPartners(tree: Tree, partnerId: string, childId: strin
   return next;
 }
 
+const ancestryCycleError = 'That connection would create an ancestry cycle.';
+/** Rejects a link that conflicts with the links already between the same two people. */
+function assertLinkAllowed(
+  relation: Relation,
+  samePair: Relation[],
+  allowPartnerParent: boolean,
+): void {
+  const [a, b] = relationEndpoints(relation);
+  if (a === b) throw Error('A person cannot be linked to themselves.');
+  if (
+    !allowPartnerParent &&
+    relation.type !== 'unassigned' &&
+    samePair.some((r) => r.type !== 'unassigned' && r.type !== relation.type)
+  )
+    throw Error('Partners cannot also be linked as parent and child.');
+  if (samePair.some((r) => r.type === 'unassigned' || relation.type === 'unassigned'))
+    throw Error('A connection between these people already exists.');
+  if (
+    relation.type === 'parent' &&
+    samePair.some((r) => r.type === 'parent' && r.parentId === relation.parentId)
+  )
+    throw Error('That parent connection already exists.');
+  if (relation.type === 'partner' && samePair.some((r) => r.type === 'partner'))
+    throw Error('That partner connection already exists.');
+}
 export function addRelation(
   tree: Tree,
   relation: Relation,
   { allowPartnerParent = false }: { allowPartnerParent?: boolean } = {},
 ): Tree {
   const [a, b] = relationEndpoints(relation);
-  if (a === b) throw Error('A person cannot be linked to themselves.');
+  const samePair = tree.relations.filter(
+    (r) => relationEndpoints(r).includes(a) && relationEndpoints(r).includes(b),
+  );
+  assertLinkAllowed(relation, samePair, allowPartnerParent);
   if (
-    !allowPartnerParent &&
-    relation.type !== 'unassigned' &&
-    tree.relations.some(
-      (r) =>
-        r.type !== 'unassigned' &&
-        r.type !== relation.type &&
-        relationEndpoints(r).includes(a) &&
-        relationEndpoints(r).includes(b),
-    )
+    relation.type === 'parent' &&
+    hasAncestorPath(tree.relations, relation.childId, relation.parentId)
   )
-    throw Error('Partners cannot also be linked as parent and child.');
-  if (
-    tree.relations.some(
-      (r) =>
-        (r.type === 'unassigned' || relation.type === 'unassigned') &&
-        relationEndpoints(r).includes(a) &&
-        relationEndpoints(r).includes(b),
-    )
-  )
-    throw Error('A connection between these people already exists.');
-  if (relation.type === 'parent') {
-    if (relation.parentId === relation.childId) throw Error('A person cannot be their own parent.');
-    if (
-      tree.relations.some(
-        (r) =>
-          r.type === 'parent' && r.parentId === relation.parentId && r.childId === relation.childId,
-      )
-    )
-      throw Error('That parent connection already exists.');
-    if (hasAncestorPath(tree.relations, relation.childId, relation.parentId))
-      throw Error('That connection would create an ancestry cycle.');
-  } else if (relation.type === 'partner') {
-    if (relation.personA === relation.personB) throw Error('A person cannot be their own partner.');
-    if (
-      tree.relations.some(
-        (r) =>
-          r.type === 'partner' &&
-          [r.personA, r.personB].includes(relation.personA) &&
-          [r.personA, r.personB].includes(relation.personB),
-      )
-    )
-      throw Error('That partner connection already exists.');
-  }
+    throw Error(ancestryCycleError);
   return { ...tree, relations: [...tree.relations, relation] };
+}
+/** Topological sort over every parent link at once, linear in people and relations. */
+function hasAncestryCycle(relations: Relation[]): boolean {
+  const children = new Map<string, string[]>();
+  const unresolvedParents = new Map<string, number>();
+  for (const r of relations) {
+    if (r.type !== 'parent') continue;
+    const siblings = children.get(r.parentId);
+    if (siblings) siblings.push(r.childId);
+    else children.set(r.parentId, [r.childId]);
+    unresolvedParents.set(r.parentId, unresolvedParents.get(r.parentId) ?? 0);
+    unresolvedParents.set(r.childId, (unresolvedParents.get(r.childId) ?? 0) + 1);
+  }
+  const resolved = [...unresolvedParents.keys()].filter((id) => !unresolvedParents.get(id));
+  for (const id of resolved)
+    for (const child of children.get(id) ?? []) {
+      const remaining = unresolvedParents.get(child)! - 1;
+      unresolvedParents.set(child, remaining);
+      if (!remaining) resolved.push(child);
+    }
+  return resolved.length < unresolvedParents.size;
 }
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
@@ -486,6 +496,7 @@ export function validateTree(input: unknown): Tree {
   )
     throw Error('This tree file is missing required fields.');
   if (input.people.length > 2000) throw Error('This file contains too many people.');
+  if (input.relations.length > 20_000) throw Error('This file contains too many relationships.');
   const ids = new Set<string>();
   for (const p of input.people) {
     if (
@@ -519,7 +530,7 @@ export function validateTree(input: unknown): Tree {
   // Keep only known fields so unrecognized data is never stored or re-exported.
   const source = input as unknown as Tree;
   const people = source.people.map(pickPerson);
-  let checked: Tree = normalizePersonNames(
+  const checked: Tree = normalizePersonNames(
     normalizeHomePerson({
       version: treeDocumentVersion({ people }),
       id: source.id,
@@ -535,50 +546,66 @@ export function validateTree(input: unknown): Tree {
       dataUpdatedAt: source.dataUpdatedAt,
     }),
   );
-  for (const r of input.relations) {
-    if (!isObj(r) || typeof r.id !== 'string' || relIds.has(r.id))
-      throw Error('This file contains an invalid relationship.');
-    relIds.add(r.id);
-    if (
-      r.type === 'parent' &&
-      r.displayRole !== undefined &&
-      !['parent', 'child'].includes(String(r.displayRole))
-    )
-      throw Error('A relationship has an invalid display role.');
-    if (r.type === 'parent') {
+  const relations: Relation[] = [];
+  const linksByPair = new Map<string, Relation[]>();
+  let firstError: unknown;
+  try {
+    for (const r of input.relations) {
+      if (!isObj(r) || typeof r.id !== 'string' || relIds.has(r.id))
+        throw Error('This file contains an invalid relationship.');
+      relIds.add(r.id);
       if (
-        typeof r.parentId !== 'string' ||
-        typeof r.childId !== 'string' ||
-        !ids.has(r.parentId) ||
-        !ids.has(r.childId) ||
-        !['biological', 'adoptive', 'step', 'guardian', 'unspecified'].includes(String(r.kind))
+        r.type === 'parent' &&
+        r.displayRole !== undefined &&
+        !['parent', 'child'].includes(String(r.displayRole))
       )
-        throw Error('A parent relationship refers to a missing person or has an invalid type.');
-    } else if (r.type === 'partner') {
-      if (
-        typeof r.personA !== 'string' ||
-        typeof r.personB !== 'string' ||
-        !ids.has(r.personA) ||
-        !ids.has(r.personB) ||
-        !['current', 'former', 'unspecified'].includes(String(r.status)) ||
-        !['married', 'unmarried', 'unspecified'].includes(String(r.union))
-      )
-        throw Error('A partner relationship refers to a missing person or has an invalid type.');
-    } else if (r.type === 'unassigned' && input.version !== 1) {
-      if (
-        typeof r.personA !== 'string' ||
-        typeof r.personB !== 'string' ||
-        !ids.has(r.personA) ||
-        !ids.has(r.personB) ||
-        !['top', 'bottom', 'left', 'right'].includes(String(r.sourceHandle)) ||
-        !['top', 'bottom', 'left', 'right'].includes(String(r.targetHandle))
-      )
-        throw Error('An unassigned connection refers to a missing person or an invalid handle.');
-    } else throw Error('This file contains an unknown relationship type.');
-    // Earlier versions allowed a pair to be both partners and parent/child.
-    checked = addRelation(checked, pickRelation(r as Relation), { allowPartnerParent: true });
+        throw Error('A relationship has an invalid display role.');
+      if (r.type === 'parent') {
+        if (
+          typeof r.parentId !== 'string' ||
+          typeof r.childId !== 'string' ||
+          !ids.has(r.parentId) ||
+          !ids.has(r.childId) ||
+          !['biological', 'adoptive', 'step', 'guardian', 'unspecified'].includes(String(r.kind))
+        )
+          throw Error('A parent relationship refers to a missing person or has an invalid type.');
+      } else if (r.type === 'partner') {
+        if (
+          typeof r.personA !== 'string' ||
+          typeof r.personB !== 'string' ||
+          !ids.has(r.personA) ||
+          !ids.has(r.personB) ||
+          !['current', 'former', 'unspecified'].includes(String(r.status)) ||
+          !['married', 'unmarried', 'unspecified'].includes(String(r.union))
+        )
+          throw Error('A partner relationship refers to a missing person or has an invalid type.');
+      } else if (r.type === 'unassigned' && input.version !== 1) {
+        if (
+          typeof r.personA !== 'string' ||
+          typeof r.personB !== 'string' ||
+          !ids.has(r.personA) ||
+          !ids.has(r.personB) ||
+          !['top', 'bottom', 'left', 'right'].includes(String(r.sourceHandle)) ||
+          !['top', 'bottom', 'left', 'right'].includes(String(r.targetHandle))
+        )
+          throw Error('An unassigned connection refers to a missing person or an invalid handle.');
+      } else throw Error('This file contains an unknown relationship type.');
+      // Earlier versions allowed a pair to be both partners and parent/child.
+      const relation = pickRelation(r as Relation);
+      const pair = JSON.stringify(relationEndpoints(relation).sort());
+      const samePair = linksByPair.get(pair) ?? [];
+      assertLinkAllowed(relation, samePair, true);
+      samePair.push(relation);
+      linksByPair.set(pair, samePair);
+      relations.push(relation);
+    }
+  } catch (error) {
+    firstError = error;
   }
-  return checked;
+  // Any cycle among the links before a bad record was reached first, as when adding one by one.
+  if (hasAncestryCycle(relations)) throw Error(ancestryCycleError);
+  if (firstError) throw firstError;
+  return { ...checked, relations };
 }
 const pickDate = (date: DateValue): DateValue =>
   date.precision === 'unknown'
