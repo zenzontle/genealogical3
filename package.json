@@ -6,7 +6,7 @@
   "packageManager": "pnpm@12.6.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "e2e": "playwright test",
