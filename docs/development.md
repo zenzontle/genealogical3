@@ -2,10 +2,10 @@
 
 ## Dev server
 
-`pnpm dev` listens on every network interface. On an untrusted network, bind to localhost instead:
+`pnpm dev` listens on `127.0.0.1` only. To reach it from another device on a trusted network, opt in explicitly. This also exposes the `/api/drive-auth/*` routes to that network:
 
 ```sh
-pnpm exec vite --host 127.0.0.1
+pnpm exec vite --host 0.0.0.0
 ```
 
 ## Adding public pages
