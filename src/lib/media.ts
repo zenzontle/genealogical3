@@ -68,23 +68,72 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     img.onerror = () => reject(Error('A portrait could not be loaded.'));
     img.src = src;
   });
-export async function exportPng(tree: Tree) {
+/** Image pixels per tree pixel for trees small enough to have room to spare. */
+const targetPngScale = 2;
+/** Below this, the cards' 11 px detail text comes out under 11 image pixels. */
+export const MIN_PNG_SCALE = 1;
+export type CanvasLimits = { maxSide: number; maxArea: number };
+/** Canvas sizes to try, largest first; the last fits Safari's 16.7 MP limit on iOS. */
+export const pngCanvasLimits: readonly CanvasLimits[] = [
+  { maxSide: 16_384, maxArea: 64_000_000 },
+  { maxSide: 12_288, maxArea: 36_000_000 },
+  { maxSide: 8192, maxArea: 28_000_000 },
+  { maxSide: 8192, maxArea: 16_777_216 },
+];
+export const largePngWarning =
+  'This tree is too large for a legible single image. Use PDF to print it across pages.';
+/** The largest scale, up to the target, at which a drawing fits within `limits`. */
+export const chooseExportScale = (width: number, height: number, limits: CanvasLimits) =>
+  Math.min(
+    targetPngScale,
+    limits.maxSide / width,
+    limits.maxSide / height,
+    Math.sqrt(limits.maxArea / (width * height)),
+  );
+/** Renders `drawing` at `scale`, or resolves null if the browser can't hold a canvas that big. */
+async function renderPng(drawing: TreeDrawing, scale: number): Promise<Blob | null> {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(drawing.width * scale));
+  canvas.height = Math.max(1, Math.floor(drawing.height * scale));
+  let blob: Blob | null = null;
+  try {
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(scale, scale);
+      drawing.draw(ctx);
+      // An oversized canvas can drop drawing silently; the opaque background reaches every pixel.
+      const painted = ctx.getImageData(canvas.width - 1, canvas.height - 1, 1, 1).data[3] > 0;
+      // Older Safari has no isContextLost, despite its type.
+      if (painted && !ctx.isContextLost?.())
+        blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    }
+  } catch {
+    blob = null;
+  }
+  // Free the failed canvas's memory before a smaller attempt allocates its own.
+  if (!blob) canvas.width = canvas.height = 0;
+  return blob;
+}
+/** Downloads the tree as one image. Resolves with a warning if the text ends up too small. */
+export async function exportPng(tree: Tree): Promise<string | undefined> {
   assertValidLifeDates(tree);
   tree = normalizeHomePerson(tree);
   if (!tree.people.length) throw Error('Add a person before exporting an image.');
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = document.createElement('canvas').getContext('2d');
   if (!ctx) throw Error('PNG export is unavailable in this browser.');
   const drawing = await prepareTreeDrawing(tree, ctx);
-  const { width, height } = drawing;
-  const scale = Math.min(2, 8192 / width, 8192 / height, Math.sqrt(28_000_000 / (width * height)));
-  canvas.width = Math.max(1, Math.floor(width * scale));
-  canvas.height = Math.max(1, Math.floor(height * scale));
-  ctx.scale(scale, scale);
-  drawing.draw(ctx);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-  if (!blob) throw Error('Could not render the PNG.');
-  downloadBlob(blob, `${safeName(tree.name)}.png`);
+  let lastScale = Infinity;
+  for (const limits of pngCanvasLimits) {
+    const scale = chooseExportScale(drawing.width, drawing.height, limits);
+    // A smaller limit may not constrain this tree, and that scale has already failed.
+    if (scale >= lastScale) continue;
+    lastScale = scale;
+    const blob = await renderPng(drawing, scale);
+    if (!blob) continue;
+    downloadBlob(blob, `${safeName(tree.name)}.png`);
+    return scale < MIN_PNG_SCALE ? largePngWarning : undefined;
+  }
+  throw Error('Could not render the PNG.');
 }
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 /** PDF pages are rasterized at 200 dpi. */

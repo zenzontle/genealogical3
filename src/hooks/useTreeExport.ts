@@ -29,11 +29,17 @@ export function useTreeExport(treeId: string | undefined, getTree: () => Tree | 
     try {
       await afterPaint();
       if (token !== request.current) return;
+      let warning: string | undefined;
       if (format === 'JSON') exportJson(tree);
-      else if (format === 'PNG') await exportPng(tree);
+      else if (format === 'PNG') warning = await exportPng(tree);
       else await exportPdf(tree);
       if (token === request.current)
-        setFeedback({ status: 'success', message: `${format} export completed.` });
+        setFeedback(
+          // Info toasts stay until dismissed, so the warning can't vanish unread.
+          warning
+            ? { status: 'info', message: `${format} export completed. ${warning}` }
+            : { status: 'success', message: `${format} export completed.` },
+        );
     } catch (error) {
       if (token === request.current) setFeedback({ status: 'error', message: errorMessage(error) });
     } finally {

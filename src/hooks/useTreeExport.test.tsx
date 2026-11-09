@@ -53,8 +53,8 @@ describe('export feedback', () => {
     let finish!: () => void;
     vi.mocked(exportPng).mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
+        new Promise<undefined>((resolve) => {
+          finish = () => resolve(undefined);
         }),
     );
     const tree = makeTree();
@@ -72,6 +72,17 @@ describe('export feedback', () => {
     expect(result.current.feedback).toEqual({
       status: 'success',
       message: 'PNG export completed.',
+    });
+  });
+
+  it('surfaces a PNG legibility warning as a lasting info toast', async () => {
+    vi.mocked(exportPng).mockResolvedValueOnce('Too large for a legible image.');
+    const tree = makeTree();
+    const { result } = renderHook(() => useTreeExport(tree.id, () => tree));
+    await act(() => result.current.run('PNG'));
+    expect(result.current.feedback).toEqual({
+      status: 'info',
+      message: 'PNG export completed. Too large for a legible image.',
     });
   });
 

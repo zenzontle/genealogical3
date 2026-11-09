@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { exportPdf, exportPng, exportJson, maxPdfPages, portraitData, safeName } from './media';
+import {
+  chooseExportScale,
+  exportPdf,
+  exportPng,
+  exportJson,
+  largePngWarning,
+  maxPdfPages,
+  pngCanvasLimits,
+  portraitData,
+  safeName,
+} from './media';
 import { connectorPath, familyConnectors } from './familyConnectors';
 import { makePerson, makeTree, personCardSize, validateTree, type Relation } from './model';
 import { relationshipIcons } from './relationshipIcons';
@@ -148,6 +158,7 @@ describe('print-friendly PNG exports', () => {
         closePath: vi.fn(),
         measureText: (text: string) => ({ width: text.length * 6 }),
         scale: vi.fn(),
+        getImageData: () => ({ data: [255, 255, 255, 255] }),
       };
       // Record the active color at draw time, before subsequent operations change it.
       ctx.fillRect.mockImplementation(() => ctx.fillStyle);
@@ -303,6 +314,167 @@ describe('print-friendly PNG exports', () => {
       expect(lastDateRow[2]).toBeLessThan(expanded[1] + expanded[3] - 8);
     },
   );
+});
+
+describe('large PNG exports', () => {
+  /** Two people in a row whose drawing is `width` tree pixels wide, padding included. */
+  const wideTree = (width: number) => ({
+    ...makeTree('Wide'),
+    people: [makePerson('First', 0, 0), makePerson('Last', width - 360, 0)],
+  });
+  type Attempt = { width: number; height: number; released: boolean };
+  type Failure = 'none' | 'null-blob' | 'context-lost' | 'no-context' | 'blank' | 'throws';
+  /** Each render attempt gets a canvas; `failures[n]` decides how the nth attempt goes. */
+  function stubCanvases(...failures: Failure[]) {
+    const attempts: Attempt[] = [];
+    let created = 0;
+    const makeContext = (failure: Failure) =>
+      new Proxy(
+        {
+          isContextLost: () => failure === 'context-lost',
+          getImageData: () => {
+            if (failure === 'throws') throw Error('Out of memory');
+            return { data: [0, 0, 0, failure === 'blank' ? 0 : 255] };
+          },
+          measureText: (text: string) => ({ width: text.length * 6 }),
+        } as Record<string, unknown>,
+        {
+          get: (target, prop: string) => (prop in target ? target[prop] : () => undefined),
+          set: (target, prop: string, value) => {
+            target[prop] = value;
+            return true;
+          },
+        },
+      );
+    const makeCanvas = () => {
+      // The first canvas only measures text; render attempts follow it.
+      const index = created++ - 1;
+      const failure = failures[index] ?? 'none';
+      const ctx = makeContext(failure);
+      const attempt: Attempt = { width: 0, height: 0, released: false };
+      if (index >= 0) attempts.push(attempt);
+      return {
+        get width() {
+          return attempt.width;
+        },
+        set width(value: number) {
+          if (value === 0) attempt.released = true;
+          else attempt.width = value;
+        },
+        get height() {
+          return attempt.height;
+        },
+        set height(value: number) {
+          if (value !== 0) attempt.height = value;
+        },
+        getContext: () => (failure === 'no-context' ? null : ctx),
+        toBlob: (callback: (blob: Blob | null) => void) =>
+          callback(failure === 'null-blob' ? null : new Blob(['png'])),
+      };
+    };
+    const anchor = { href: '', download: '', click: vi.fn() };
+    vi.useFakeTimers();
+    vi.stubGlobal('document', {
+      createElement: (tag: string) => (tag === 'canvas' ? makeCanvas() : anchor),
+    });
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:png', revokeObjectURL: vi.fn() });
+    vi.stubGlobal(
+      'Path2D',
+      class {
+        constructor(public path: string) {}
+      },
+    );
+    return { attempts, anchor };
+  }
+
+  it.each([
+    ['small trees get the 2× target', 1000, 800, 0, 2],
+    ['the side limit caps very wide trees', 40_000, 316, 0, 16_384 / 40_000],
+    ['the area limit caps squarish trees', 10_000, 10_000, 0, 0.8],
+    ['smaller limits shrink the scale', 10_000, 10_000, 3, Math.sqrt(16_777_216 / 100_000_000)],
+  ])('chooses the export scale: %s', (_, width, height, tier, expected) => {
+    expect(chooseExportScale(width, height, pngCanvasLimits[tier])).toBeCloseTo(expected, 10);
+  });
+
+  it('never exceeds the limits it was given', () => {
+    for (const limits of pngCanvasLimits)
+      for (const [width, height] of [
+        [100_000, 300],
+        [300, 100_000],
+        [50_000, 50_000],
+      ]) {
+        const scale = chooseExportScale(width, height, limits);
+        expect(Math.max(width, height) * scale).toBeLessThanOrEqual(limits.maxSide + 1e-6);
+        expect(width * height * scale * scale).toBeLessThanOrEqual(limits.maxArea * (1 + 1e-9));
+      }
+  });
+
+  it('keeps a tree legible on a larger canvas, with no warning', async () => {
+    const { attempts, anchor } = stubCanvases();
+    // Today's 8192 px cap would draw this at 0.66; the largest canvas holds it at 1.33.
+    await expect(exportPng(wideTree(12_360))).resolves.toBeUndefined();
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].width).toBeGreaterThanOrEqual(16_383);
+    expect(attempts[0].width).toBeLessThanOrEqual(16_384);
+    expect(anchor.click).toHaveBeenCalledOnce();
+  });
+
+  it.each(['null-blob', 'context-lost', 'no-context', 'blank', 'throws'] as const)(
+    'falls back to the next canvas size after a %s failure',
+    async (failure) => {
+      const { attempts, anchor } = stubCanvases(failure);
+      // 11,000 px fits the first two sizes at or above 1×, so the fallback stays legible.
+      await expect(exportPng(wideTree(11_000))).resolves.toBeUndefined();
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0].width).toBeCloseTo(16_384, -1);
+      expect(attempts[1].width).toBeCloseTo(12_288, -1);
+      expect(attempts[0].released).toBe(true);
+      expect(attempts[1].released).toBe(false);
+      expect(anchor.click).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('warns when the working canvas puts the text below the legibility floor', async () => {
+    const { attempts } = stubCanvases('null-blob');
+    // Legible on the largest canvas, which fails; the next one only reaches 0.99×.
+    await expect(exportPng(wideTree(12_360))).resolves.toBe(largePngWarning);
+    expect(attempts).toHaveLength(2);
+  });
+
+  it('still exports a tree too large for any canvas to keep legible, with a warning', async () => {
+    const { attempts, anchor } = stubCanvases();
+    await expect(exportPng(wideTree(40_000))).resolves.toBe(largePngWarning);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].width).toBeLessThanOrEqual(16_384);
+    expect(anchor.click).toHaveBeenCalledOnce();
+  });
+
+  it('accepts exactly the legibility floor without a warning', async () => {
+    stubCanvases();
+    await expect(exportPng(wideTree(16_384))).resolves.toBeUndefined();
+  });
+
+  it('skips sizes that give the same scale and reports when every size fails', async () => {
+    const { attempts, anchor } = stubCanvases('null-blob', 'null-blob', 'null-blob', 'null-blob');
+    // Very wide: the two 8192 px sizes both give the same side-limited scale.
+    await expect(exportPng(wideTree(12_360))).rejects.toThrow('Could not render the PNG.');
+    expect(attempts).toHaveLength(3);
+    expect(anchor.click).not.toHaveBeenCalled();
+  });
+
+  it('tries a small tree once when it fails, since every size gives the same scale', async () => {
+    const { attempts } = stubCanvases('null-blob');
+    await expect(exportPng(wideTree(1000))).rejects.toThrow('Could not render the PNG.');
+    expect(attempts).toHaveLength(1);
+  });
+
+  it('falls all the way to the size iOS Safari supports for a large, squarish tree', async () => {
+    const { attempts } = stubCanvases('null-blob', 'null-blob', 'null-blob');
+    const people = [makePerson('First', 0, 0), makePerson('Last', 9000, 9000)];
+    await expect(exportPng({ ...makeTree(), people })).resolves.toBe(largePngWarning);
+    expect(attempts).toHaveLength(4);
+    expect(attempts[3].width * attempts[3].height).toBeLessThanOrEqual(16_777_216);
+  });
 });
 
 describe('PDF exports', () => {
