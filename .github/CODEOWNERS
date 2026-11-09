@@ -4,7 +4,14 @@
 /.claude/commands/pr-review.* @zenzontle
 /.claude/settings.json @zenzontle
 /.claude/hooks/ @zenzontle
+/.claude/pinned-plugins/ @zenzontle
 /server/           @zenzontle
 /api/              @zenzontle
 /src/lib/drive*.ts @zenzontle
 /src/lib/storage.ts @zenzontle
+/package.json      @zenzontle
+/pnpm-lock.yaml    @zenzontle
+/pnpm-workspace.yaml @zenzontle
+/vercel.json       @zenzontle
+/vite.config.ts    @zenzontle
+/index.html        @zenzontle

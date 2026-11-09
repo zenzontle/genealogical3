@@ -3,6 +3,7 @@ import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer }
 import react from '@vitejs/plugin-react';
 import { configDefaults } from 'vitest/config';
 import { driveAuthDev } from './server/driveAuthDev';
+import vercel from './vercel.json';
 import {
   canonicalPagePath,
   discoverHtmlPages,
@@ -83,6 +84,10 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.PUBLIC_APP_URL': JSON.stringify(identity.appUrl),
       'import.meta.env.PUBLIC_DEVELOPER_NAME': JSON.stringify(identity.developerName),
       'import.meta.env.PUBLIC_REPOSITORY_URL': JSON.stringify(identity.repositoryUrl),
+    },
+    // Browser tests run against preview, so they exercise the deployed security headers.
+    preview: {
+      headers: Object.fromEntries(vercel.headers[0].headers.map((h) => [h.key, h.value])),
     },
     // Playwright owns e2e/; Vitest would otherwise collect its *.spec.ts files.
     test: { setupFiles: ['src/test/setup.ts'], exclude: [...configDefaults.exclude, 'e2e/**'] },

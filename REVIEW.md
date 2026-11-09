@@ -37,8 +37,11 @@ These changes always need a human reviewer, even if AI review passes:
 - `.github/workflows/` (CI and merge gates)
 - `.claude/commands/pr-review.md` (the CI review command the merge gate depends on)
 - `.claude/settings.json`, `.claude/hooks/` (hooks also run inside the CI review job)
+- `.claude/pinned-plugins/` (the upstream commit the CI review plugin is pinned to)
 - `server/`, `api/` (OAuth and Drive auth)
 - `src/lib/drive*.ts`, `src/lib/storage.ts` (persistence and Drive deletion)
+- `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` (dependencies and supply-chain policy)
+- `vercel.json`, `vite.config.ts`, `index.html` (security headers, build, and the app's entry point)
 
 ## Every finding
 
