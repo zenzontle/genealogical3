@@ -23,14 +23,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Changes to CI, auth, or persistence need a human to merge them (see REVIEW.md and
-      # CODEOWNERS), so auto-merge is turned off when a PR touches those paths.
+      # Changes to CI, auth, persistence, dependencies, or deploy config need a human to merge
+      # them (see REVIEW.md and CODEOWNERS), so auto-merge is turned off for those paths.
       - name: Enable or disable auto-merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          sensitive=$(gh pr diff "$PR_URL" --name-only | grep -E '^(\.github/|server/|api/|src/lib/drive[^/]*\.ts$|src/lib/storage\.ts$)' || true)
+          sensitive=$(gh pr diff "$PR_URL" --name-only | grep -E '^(\.github/|\.claude/pinned-plugins/|server/|api/|src/lib/drive[^/]*\.ts$|src/lib/storage\.ts$|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|vercel\.json$|vite\.config\.ts$|index\.html$)' || true)
           if [ -n "$sensitive" ]; then
             echo "Sensitive paths changed; a human must merge this PR:"
             echo "$sensitive"
