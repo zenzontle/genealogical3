@@ -19,3 +19,8 @@ trustPolicyExclude:
 trustLockfile: false
 
 strictDepBuilds: true
+
+# GHSA-g3hv-75wg-m249: no typescript-eslint release allows a patched minimatch yet.
+# Dev-only. Remove once typescript-eslint accepts minimatch >=11.0.1; review by 2026-12-09.
+overrides:
+  '@typescript-eslint/typescript-estree>minimatch': ^11.0.1
