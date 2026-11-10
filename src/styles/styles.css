@@ -473,6 +473,9 @@ h2 {
 .library-actions .workspace-drive-controls {
   margin-bottom: 0;
 }
+.home-pending {
+  min-height: 70vh;
+}
 .library-status {
   padding: 2rem;
   border: 1px solid var(--border);

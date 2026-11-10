@@ -87,8 +87,11 @@ export function HomeScreen({
 }) {
   const entries = workspaceEntries(library, driveLinks, driveFiles);
   const showHero = libraryState === 'ready' && entries.length === 0 && !driveLoading && !driveError;
+  // Until storage and Drive settle, an empty home could still become either view; show neither.
+  const pending =
+    entries.length === 0 && !driveError && (libraryState === 'loading' || driveLoading);
   return (
-    <div className={`home${showHero ? '' : ' home-workspace'}`}>
+    <div className={`home${showHero || pending ? '' : ' home-workspace'}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -174,7 +177,12 @@ export function HomeScreen({
             </div>
           </div>
         )}
-        {!showHero && (
+        {pending && (
+          <div className="home-pending" role="status" aria-busy="true">
+            <span className="sr-only">Loading your family trees…</span>
+          </div>
+        )}
+        {!showHero && !pending && (
           <section className="library-section" aria-labelledby="library-heading">
             <div className="section-intro">
               <div>

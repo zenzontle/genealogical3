@@ -34,7 +34,11 @@ describe('homepage library hierarchy', () => {
     expect(html).toContain('href="/terms-of-service"');
   });
   it('withholds the empty hero while Drive discovery is pending, and renders local cards', () => {
-    expect(render('ready', [], null, { driveLoading: true })).not.toContain('class="hero"');
+    const pending = render('ready', [], null, { driveLoading: true });
+    expect(pending).not.toContain('class="hero"');
+    expect(pending).not.toContain('library-section');
+    expect(pending).not.toContain('Your family trees</h1>');
+    expect(pending).toContain('aria-busy="true"');
     const html = render('ready', [makeTree('Local')], null, { driveLoading: true });
     expect(html).toContain('Open Local');
     expect(html).not.toContain('Loading Google Drive trees');
@@ -54,6 +58,7 @@ describe('homepage library hierarchy', () => {
     expect(html).toContain('Loading your family trees');
     expect(html).toContain('aria-busy="true"');
     expect(html).not.toContain('class="hero"');
+    expect(html).not.toContain('library-section');
     expect(html).not.toContain('Your first story starts here');
   });
 
