@@ -2,19 +2,19 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv, normalizePath, type Plugin, type PreviewServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { configDefaults } from 'vitest/config';
-import { driveAuthDev } from './server/driveAuthDev';
-import vercel from './vercel.json';
+import { driveAuthDev } from './server/driveAuthDev.ts';
+import vercel from './vercel.json' with { type: 'json' };
 import {
   canonicalPagePath,
   discoverHtmlPages,
   htmlPagePath,
-} from './scripts/public-pages/publicPages';
+} from './scripts/public-pages/publicPages.ts';
 import {
   renderPrivacyPolicy,
   renderTermsOfService,
   resolvePublicIdentity,
   type PublicIdentity,
-} from './scripts/public-pages/publicIdentity';
+} from './scripts/public-pages/publicIdentity.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const policyPath = fileURLToPath(new URL('./privacy-policy/index.html', import.meta.url));
