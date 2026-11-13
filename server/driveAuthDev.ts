@@ -1,5 +1,5 @@
 import type { Plugin, PreviewServer } from 'vite';
-import { handleDriveAuth } from './driveAuth';
+import { handleDriveAuth } from './driveAuth.ts';
 
 export function driveAuthDev(env: NodeJS.ProcessEnv): Plugin {
   const configure = (server: Pick<PreviewServer, 'middlewares'>) => {
