@@ -45,6 +45,8 @@ Use `pnpm add` or `pnpm update`, and commit the updated `pnpm-lock.yaml`.
 
 - `trustPolicyExclude` lists exact versions without provenance; its comment records when they were verified and when to review them.
 
+TypeScript 7 has no compiler API yet, so `package.json` installs two compilers. `@typescript/native` is TypeScript 7 and provides `tsc`. The `typescript` package is an alias for `@typescript/typescript6`, the TypeScript 6 API that typescript-eslint and Vercel's function builder load; its CLI is `tsc6`. Update the alias to the plain `typescript` package once typescript-eslint supports TypeScript 7.
+
 If a dependency is blocked, review its release metadata, provenance, and install scripts before adding an exception. Limit exceptions to exact versions with a comment giving the reason, never disable a protection globally, and commit policy and lockfile changes together.
 
 Run `pnpm audit` before releases; the supply chain policy doesn't check for known vulnerabilities.

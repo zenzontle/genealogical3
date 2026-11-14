@@ -20,7 +20,18 @@ trustLockfile: false
 
 strictDepBuilds: true
 
+# eslint-plugin-react 7.37.5 declares eslint <=9 but no newer release exists. Only
+# react/no-multi-comp is used, and it works on ESLint 10 once settings.react.version is
+# explicit (see eslint.config.js). Remove when eslint-plugin-react supports ESLint 10.
+peerDependencyRules:
+  allowedVersions:
+    eslint-plugin-react>eslint: '10'
+
 # GHSA-g3hv-75wg-m249: no typescript-eslint release allows a patched minimatch yet.
 # Dev-only. Remove once typescript-eslint accepts minimatch >=11.0.1; review by 2026-12-09.
+# ESLint 10.15.0 and @eslint/config-array 0.23.6 move to minimatch ^11.0.5 but are still inside
+# the release-age window. Remove the eslint and config-array entries once those are installed.
 overrides:
   '@typescript-eslint/typescript-estree>minimatch': ^11.0.1
+  'eslint>minimatch': ^11.0.1
+  '@eslint/config-array>minimatch': ^11.0.1
