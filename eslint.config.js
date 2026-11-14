@@ -5,6 +5,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import { reactRefresh } from 'eslint-plugin-react-refresh';
 import globals from 'globals';
+import reactPackage from 'react/package.json' with { type: 'json' };
 import tseslint from 'typescript-eslint';
 
 export default defineConfig([
@@ -35,7 +36,8 @@ export default defineConfig([
     files: ['src/**/*.{jsx,tsx}'],
     extends: [reactRefresh.configs.vite()],
     plugins: { react },
-    settings: { react: { version: 'detect' } },
+    // eslint-plugin-react's 'detect' calls context.getFilename(), which ESLint 10 removed.
+    settings: { react: { version: reactPackage.version } },
     rules: { 'react/no-multi-comp': 'error' },
   },
   {
