@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, Trash2, X } from 'lucide-react';
 import { DateInput } from './DateInput';
-import { HomePersonDetails } from './HomePersonDetails';
+import { HomePersonToggle } from './HomePersonToggle';
+import { KinshipSummary } from './KinshipSummary';
 import { RelationshipFields } from './RelationshipFields';
 import { SexIcon } from './SexIcon';
 import { partnerKinshipLabel, type KinshipResult } from '../lib/kinship';
@@ -83,18 +84,15 @@ export function PersonEditor({
         <div>
           <p className="eyebrow">PERSON DETAILS</p>
           <h2>{displayName(person)}</h2>
+          <KinshipSummary person={person} home={home} people={people} kinship={kinship} />
         </div>
-        <button className="icon-button" aria-label="Close details" onClick={onClose}>
-          <X size={19} />
-        </button>
+        <div className="panel-title-actions">
+          <HomePersonToggle person={person} home={home} onSetHome={onSetHome} />
+          <button className="icon-button" aria-label="Close details" onClick={onClose}>
+            <X size={19} />
+          </button>
+        </div>
       </div>
-      <HomePersonDetails
-        person={person}
-        home={home}
-        people={people}
-        kinship={kinship}
-        onSetHome={onSetHome}
-      />
       <PortraitUpload person={person} onChange={onPortraitChange} />
       <div className="field-grid">
         <label>
