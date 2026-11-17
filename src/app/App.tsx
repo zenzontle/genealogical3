@@ -608,12 +608,41 @@ export default function App() {
     const key = (e: KeyboardEvent) => {
       // Workspace keeps the last tree in memory; its history must not be reachable there.
       if (screen !== 'editor' || document.querySelector('.local-dialog[open]')) return;
-      if (!(e.ctrlKey || e.metaKey) || !['z', 'y'].includes(e.key.toLowerCase())) return;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) return;
-      if (e.target instanceof Element && e.target.closest('.person-search')) return;
-      e.preventDefault();
-      if (e.key.toLowerCase() === 'z' && !e.shiftKey) undo();
-      else redo();
+      if (e.defaultPrevented || e.altKey) return;
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)
+        return;
+      if (target instanceof Element && target.closest('.person-search')) return;
+      const mod = e.ctrlKey || e.metaKey;
+      const letter = e.key.toLowerCase();
+      if (mod && (letter === 'z' || letter === 'y')) {
+        e.preventDefault();
+        if (letter === 'z' && !e.shiftKey) undo();
+        else redo();
+      } else if (mod && letter === 'a' && !e.shiftKey) {
+        if (!treeRef.current?.people.length) return;
+        e.preventDefault();
+        setNodes((current) =>
+          current.map((node) => ({ ...node, selected: node.type === 'person' })),
+        );
+      } else if (mod || e.shiftKey) {
+        return;
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedPersonIds.length) {
+          e.preventDefault();
+          deletePeople(selectedPersonIds);
+        } else if (selectedRelationId) {
+          e.preventDefault();
+          apply((t) => removeRelation(t, selectedRelationId));
+          setSelectedRelationId(null);
+        }
+      } else if (e.key === 'Escape') {
+        if (!selectedPersonIds.length && !selectedRelationId && !selectedId) return;
+        e.preventDefault();
+        setNodes((current) => current.map((node) => ({ ...node, selected: false })));
+        setSelectedId(null);
+        setSelectedRelationId(null);
+      }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);

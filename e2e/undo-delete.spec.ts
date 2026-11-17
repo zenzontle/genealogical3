@@ -66,6 +66,46 @@ test('undo restores a deleted group selection', async ({ page }) => {
   await expectRestoredAfterReload(page, 'My family tree');
 });
 
+test('Delete key asks before deleting the selected people', async ({ page }) => {
+  await buildFamily(page);
+  await selectPerson(page, 'Joseph Kennedy');
+  await personCard(page, 'Eunice Kennedy').click({ modifiers: ['Shift'] });
+
+  await page.keyboard.press('Delete');
+  const dialog = page.getByRole('dialog', { name: 'Delete 2 people?' });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  await expectCounts(page, 3, 2);
+
+  await page.keyboard.press('Backspace');
+  await confirmDelete(page, 'Delete 2 people?');
+  await expectCounts(page, 1, 0);
+  await expect(personCard(page, 'Rose Fitzgerald')).toBeVisible();
+});
+
+test('keyboard selects all people and clears the selection', async ({ page }) => {
+  await buildFamily(page);
+  await selectPerson(page, 'Rose Fitzgerald');
+  await page.keyboard.press('ControlOrMeta+a');
+  await expect(
+    detailsPanel(page).getByRole('button', { name: 'Delete 3 selected people' }),
+  ).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(detailsPanel(page).getByRole('heading', { name: 'Rose Fitzgerald' })).toBeHidden();
+  await page.keyboard.press('Delete');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expectCounts(page, 3, 2);
+});
+
+test('typing in a field does not delete the selected person', async ({ page }) => {
+  await buildFamily(page);
+  await selectPerson(page, 'Eunice Kennedy');
+  await detailsPanel(page).getByLabel('First name').press('Backspace');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expectCounts(page, 3, 2);
+});
+
 // Workspace deletion has no undo: the dialog asks for confirmation instead.
 test('deleting a tree from Workspace needs confirmation and sticks', async ({ page }) => {
   await buildFamily(page);
