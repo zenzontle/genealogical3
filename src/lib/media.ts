@@ -8,6 +8,7 @@ import {
   type Tree,
 } from './model';
 import { relationshipIcons } from './relationshipIcons';
+import { displayName } from './personNames';
 import { calculateKinships } from './kinship';
 import { connectionHandles } from './connectionHandles';
 import {
@@ -344,7 +345,7 @@ export async function prepareTreeDrawing(
       ctx.fillText(
         fitCanvasText(
           ctx,
-          `Relationships to home: ${at(tree.homePersonId).name || 'Unnamed person'}`,
+          `Relationships to home: ${displayName(at(tree.homePersonId))}`,
           width - pad * 2,
         ),
         pad,

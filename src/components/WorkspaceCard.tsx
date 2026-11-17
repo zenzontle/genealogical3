@@ -1,6 +1,7 @@
 import { ArrowRight, Cloud, Home, Monitor } from 'lucide-react';
 import type { DriveFile } from '../lib/drive';
 import type { Tree } from '../lib/model';
+import { displayName } from '../lib/personNames';
 import { TreePreview } from './TreePreview';
 import { driveTreeName, type WorkspaceEntry } from '../lib/workspaceEntries';
 import { DriveSyncStatus } from './DriveSyncStatus';
@@ -74,10 +75,7 @@ export function WorkspaceCard({
         {local && local.homePersonId !== null && (
           <span className="library-home">
             <Home size={13} aria-hidden="true" />
-            <span>
-              Home:{' '}
-              {local.people.find((p) => p.id === local.homePersonId)?.name || 'Unnamed person'}
-            </span>
+            <span>Home: {displayName(local.people.find((p) => p.id === local.homePersonId))}</span>
           </span>
         )}
         <span>

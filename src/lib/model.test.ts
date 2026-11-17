@@ -11,6 +11,8 @@ import {
   personLifeStatus,
   relationFromConnection,
   relationLabel,
+  relationToRelative,
+  removeRelation,
   setRelationParent,
   updateRelation,
   uid,
@@ -257,6 +259,36 @@ describe('living and deceased status', () => {
   });
 });
 
+describe('relations created from the details panel', () => {
+  it('builds an unspecified relation in the direction the role implies', () => {
+    expect(relationToRelative('a', 'b', 'parent')).toMatchObject({
+      type: 'parent',
+      parentId: 'b',
+      childId: 'a',
+      kind: 'unspecified',
+    });
+    expect(relationToRelative('a', 'b', 'child')).toMatchObject({
+      type: 'parent',
+      parentId: 'a',
+      childId: 'b',
+      kind: 'unspecified',
+    });
+    expect(relationToRelative('a', 'b', 'partner')).toMatchObject({
+      type: 'partner',
+      personA: 'a',
+      personB: 'b',
+      status: 'unspecified',
+      union: 'unspecified',
+    });
+  });
+  it('removes only the named relation', () => {
+    const keep = relationToRelative('a', 'b', 'partner');
+    const drop = relationToRelative('a', 'c', 'child');
+    const tree = { ...makeTree('Family'), relations: [keep, drop] };
+    expect(removeRelation(tree, drop.id).relations).toEqual([keep]);
+    expect(removeRelation(tree, 'missing').relations).toEqual([keep, drop]);
+  });
+});
 describe('tree document and relationship rules', () => {
   const setup = () => {
     const people = [makePerson('A'), makePerson('B'), makePerson('C')];

@@ -39,7 +39,7 @@ import { AlignmentGuides } from '../components/AlignmentGuides';
 import { cardAlignment, type AlignmentGuide } from '../lib/cardAlignment';
 import { BrandMark } from '../components/BrandMark';
 import { GitHubIcon } from '../components/GitHubIcon';
-import { PersonEditor, type ConnectMode } from '../components/PersonEditor';
+import { PersonEditor } from '../components/PersonEditor';
 import { RelationshipEditor } from '../components/RelationshipEditor';
 import { HomeScreen } from '../components/HomeScreen';
 import { useDriveWorkspace } from '../hooks/useDriveWorkspace';
@@ -48,9 +48,11 @@ import { TreeActionDialog, type TreeAction } from '../components/TreeActionDialo
 import { WorkspaceDeletionDialog } from '../components/WorkspaceDeletionDialog';
 import { useWorkspaceDeletion } from '../hooks/useWorkspaceDeletion';
 import { driveTreeName, type WorkspaceEntry } from '../lib/workspaceEntries';
+import { displayName } from '../lib/personNames';
 import { Toaster, useToast, type ToastState } from '../toaster';
 import { useTreeImport } from '../hooks/useTreeImport';
-import { useTreeExport } from '../hooks/useTreeExport';
+import { useTreeExport, type ExportFormat } from '../hooks/useTreeExport';
+import { DriveConnectionControls } from '../components/DriveConnectionControls';
 import { RelationshipEdge } from '../components/RelationshipEdge';
 import { FamilyEdge } from '../components/FamilyEdge';
 import { PartnerConnector, type PartnerNode } from '../components/PartnerConnector';
@@ -70,6 +72,8 @@ import {
   removePeople,
   setHomePerson,
   relationFromConnection,
+  relationToRelative,
+  removeRelation,
   updateRelation,
   updatePerson,
   timestampDataChange,
@@ -77,7 +81,7 @@ import {
   uid,
   type HandleSide,
   type LifeDates,
-  type Relation,
+  type RelativeRole,
   type Tree,
 } from '../lib/model';
 import {
@@ -111,6 +115,22 @@ const nodeTypes = { person: PersonCard, partnerConnector: PartnerConnector };
 const edgeTypes = { relationship: RelationshipEdge, family: FamilyEdge };
 const cloneTree = (tree: Tree): Tree => structuredClone(tree);
 const IDLE: ToastState = { status: 'idle' };
+const byRecent = (a: Tree, b: Tree) => b.updatedAt - a.updatedAt;
+const withTree = (trees: Tree[], tree: Tree) =>
+  [tree, ...trees.filter((item) => item.id !== tree.id)].sort(byRecent);
+const measuredSizes = (nodes: CanvasNode[]) =>
+  new Map(
+    nodes.flatMap((node) =>
+      node.measured?.width && node.measured.height
+        ? [[node.id, { width: node.measured.width, height: node.measured.height }] as const]
+        : [],
+    ),
+  );
+const exportButtons: { format: ExportFormat; Icon: typeof Download; title: string }[] = [
+  { format: 'JSON', Icon: Download, title: 'Download editable backup' },
+  { format: 'PNG', Icon: FileImage, title: 'Download image' },
+  { format: 'PDF', Icon: FileText, title: 'Download printable PDF' },
+];
 type SaveState = 'draft' | 'saved' | 'saving' | 'error';
 type TreeChange = 'data' | 'navigation';
 type CommitOptions = {
@@ -142,7 +162,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('saved');
-  const [notice, setNotice] = useState<ToastState>({ status: 'idle' });
+  const [notice, setNotice] = useState<ToastState>(IDLE);
   const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
   const [driveFile, setDriveFile] = useState<DriveFile | null>(null);
   const [restoreWarnings, setRestoreWarnings] = useState<RestoreWarning[]>([]);
@@ -178,6 +198,15 @@ export default function App() {
     canvasRef = useRef<HTMLDivElement>(null),
     fitViewOnOpen = useRef(false),
     movingRef = useRef(false);
+  const cancelSaveTimer = useCallback(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+  }, []);
+  /** Drops the pending autosave and makes in-flight saves ignore their result. */
+  const supersedeSaves = useCallback(() => {
+    cancelSaveTimer();
+    return ++saveCounter.current;
+  }, [cancelSaveTimer]);
   const removingLocal = useRef(new Set<string>());
   const removedLocal = useRef(new Set<string>());
   const deletion = useWorkspaceDeletion({
@@ -186,11 +215,7 @@ export default function App() {
     onDriveDeleted: driveWorkspace.removeFile,
     beforeLocalRemoval: async (id) => {
       removingLocal.current.add(id);
-      if (treeRef.current?.id === id) {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-        ++saveCounter.current;
-      }
+      if (treeRef.current?.id === id) supersedeSaves();
       await saveQueue.current.catch(() => undefined);
       return async () => {
         removingLocal.current.delete(id);
@@ -217,23 +242,12 @@ export default function App() {
     },
   });
   useConnectorProximity(canvasRef, screen === 'editor');
-  useEffect(
-    () => () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      ++saveCounter.current;
-    },
-    [],
-  );
+  useEffect(() => () => void supersedeSaves(), [supersedeSaves]);
   const exports = useTreeExport(screen === 'editor' ? tree?.id : undefined, () => treeRef.current);
   const imports = useTreeImport(
-    (copy) =>
-      setLibrary((previous) =>
-        [copy, ...previous.filter((item) => item.id !== copy.id)].sort(
-          (a, b) => b.updatedAt - a.updatedAt,
-        ),
-      ),
+    (copy) => setLibrary((previous) => withTree(previous, copy)),
     async () => {
-      setLibrary((await listTrees()).sort((a, b) => b.updatedAt - a.updatedAt));
+      setLibrary((await listTrees()).sort(byRecent));
       setLibraryState('ready');
     },
   );
@@ -249,7 +263,7 @@ export default function App() {
       const trees = await listTrees();
       if (request !== libraryRefresh.current) return false;
       // Keep local trees usable even if reading their associations fails.
-      setLibrary(trees.sort((a, b) => b.updatedAt - a.updatedAt));
+      setLibrary(trees.sort(byRecent));
       setLibraryState('ready');
       const links = await listDriveLinks();
       if (request !== libraryRefresh.current) return false;
@@ -279,9 +293,7 @@ export default function App() {
         if ((saveEpochs.current.get(active.id) || 0) !== epoch) return;
         saveEpochs.current.set(active.id, epoch + 1);
         if (treeRef.current?.id !== active.id) return;
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-        ++saveCounter.current;
+        supersedeSaves();
         if (request === navigation.current) ++navigation.current;
         treeRef.current = null;
         void driveSync.discardEdits(active.id).catch(showError);
@@ -320,7 +332,7 @@ export default function App() {
       window.removeEventListener('tree-storage-changed', refreshLibrary);
       window.removeEventListener('tree-storage-refreshed', refreshFromAnotherTab);
     };
-  }, [refreshLibrary, showError]);
+  }, [refreshLibrary, showError, supersedeSaves]);
   const queueSave = useCallback((value: Tree, expected?: Tree) => {
     const epoch = saveEpochs.current.get(value.id) || 0;
     const queued = saveQueue.current
@@ -343,10 +355,9 @@ export default function App() {
   }, []);
   const persistOnClose = useCallback(async () => {
     if (!treeRef.current || draftTree.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = null;
+    cancelSaveTimer();
     await queueSave(treeRef.current);
-  }, [queueSave]);
+  }, [cancelSaveTimer, queueSave]);
   const syncViews = useDriveSync(persistOnClose, showError);
   const activeDriveLink = tree
     ? (syncViews[tree.id]?.link ?? driveLinks.find((link) => link.treeId === tree.id))
@@ -417,8 +428,7 @@ export default function App() {
     const request = ++navigation.current;
     try {
       if (saveTimer.current && treeRef.current) {
-        clearTimeout(saveTimer.current);
-        saveTimer.current = null;
+        cancelSaveTimer();
         await queueSave(treeRef.current);
       }
       await saveQueue.current.catch((error: unknown) => {
@@ -455,7 +465,7 @@ export default function App() {
       setRestoreWarnings(link?.restoreWarnings || []);
       setScreen('editor');
       setSaveState(draft ? 'draft' : 'saved');
-      setNotice({ status: 'idle' });
+      setNotice(IDLE);
       return true;
     } catch (error) {
       if (request === navigation.current) showError(error);
@@ -471,7 +481,7 @@ export default function App() {
       if (!treeRef.current) return false;
       try {
         commit(update(treeRef.current), 'data', { record });
-        setNotice({ status: 'idle' });
+        setNotice(IDLE);
         return true;
       } catch (error) {
         showError(error);
@@ -499,7 +509,7 @@ export default function App() {
     });
     if (!lifeDatesError(dates)) apply((t) => updatePerson(t, { ...current, ...dates }));
   };
-  const addPerson = (relative?: Exclude<ConnectMode, null>) => {
+  const addPerson = (relative?: RelativeRole) => {
     const current = treeRef.current;
     if (!current) return;
     const selected = relative ? current.people.find((p) => p.id === selectedId) : undefined;
@@ -514,25 +524,7 @@ export default function App() {
     const person = makePerson('', x, y);
     let next = { ...current, people: [...current.people, person] };
     if (selected && relative)
-      next = addRelation(
-        next,
-        relative === 'partner'
-          ? {
-              id: uid(),
-              type: 'partner',
-              personA: selected.id,
-              personB: person.id,
-              status: 'unspecified',
-              union: 'unspecified',
-            }
-          : {
-              id: uid(),
-              type: 'parent',
-              parentId: relative === 'parent' ? person.id : selected.id,
-              childId: relative === 'child' ? person.id : selected.id,
-              kind: 'unspecified',
-            },
-      );
+      next = addRelation(next, relationToRelative(selected.id, person.id, relative));
     try {
       commit(next, 'data');
     } catch (error) {
@@ -591,53 +583,27 @@ export default function App() {
     const relation = relationFromConnection(a, b, sh as HandleSide, th as HandleSide);
     apply((t) => addRelation(t, relation));
   };
-  const connectFromPanel = (targetId: string, connectMode: Exclude<ConnectMode, null>) => {
+  const connectFromPanel = (targetId: string, role: RelativeRole) => {
     if (!selectedId) return;
-    const r: Relation =
-      connectMode === 'partner'
-        ? {
-            id: uid(),
-            type: 'partner',
-            personA: selectedId,
-            personB: targetId,
-            status: 'unspecified',
-            union: 'unspecified',
-          }
-        : {
-            id: uid(),
-            type: 'parent',
-            parentId: connectMode === 'parent' ? targetId : selectedId,
-            childId: connectMode === 'child' ? targetId : selectedId,
-            kind: 'unspecified',
-          };
-    apply((t) => addRelation(t, r));
+    const relation = relationToRelative(selectedId, targetId, role);
+    apply((t) => addRelation(t, relation));
   };
-  const undo = () => {
-    const previous = history.current.at(-1),
+  /** Restores the newest snapshot in `from` and files the current tree under `to`. */
+  const stepHistory = (from: Tree[], to: Tree[]) => {
+    const target = from.at(-1),
       current = treeRef.current;
-    if (!previous || !current) return;
+    if (!target || !current) return;
     try {
-      commit(previous, 'data', { record: false });
-      history.current.pop();
-      future.current.push(cloneTree(current));
+      commit(target, 'data', { record: false });
+      from.pop();
+      to.push(cloneTree(current));
       setDateDrafts({});
     } catch (error) {
       showError(error);
     }
   };
-  const redo = () => {
-    const next = future.current.at(-1),
-      current = treeRef.current;
-    if (!next || !current) return;
-    try {
-      commit(next, 'data', { record: false });
-      future.current.pop();
-      history.current.push(cloneTree(current));
-      setDateDrafts({});
-    } catch (error) {
-      showError(error);
-    }
-  };
+  const undo = () => stepHistory(history.current, future.current);
+  const redo = () => stepHistory(future.current, history.current);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       // Workspace keeps the last tree in memory; its history must not be reachable there.
@@ -652,6 +618,11 @@ export default function App() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   });
+  const showPerson = useCallback((id: string) => {
+    setSelectedId(id);
+    setSelectedRelationId(null);
+    setSidebarRevealedBySelection(true);
+  }, []);
   useEffect(() => {
     if (!tree) return;
     setNodes((currentNodes) => {
@@ -666,21 +637,17 @@ export default function App() {
           : { x: p.x, y: p.y },
         data: {
           person: p,
-          homeName: home ? home.name || 'Unnamed person' : null,
+          homeName: home ? displayName(home) : null,
           isHome: tree.homePersonId === p.id,
           kinship: kinships.get(p.id),
           selected: selectedId === p.id,
           onDelete: (id: string) => deletePeople([id]),
-          onSelect: (id: string) => {
-            setSelectedId(id);
-            setSelectedRelationId(null);
-            setSidebarRevealedBySelection(true);
-          },
+          onSelect: showPerson,
         },
         draggable: true,
       }));
     });
-  }, [tree, kinships, home, selectedId, setNodes, deletePeople]);
+  }, [tree, kinships, home, selectedId, setNodes, deletePeople, showPerson]);
   const selectPerson = useCallback(
     (id: string) => {
       setNodes((current) =>
@@ -689,11 +656,9 @@ export default function App() {
           selected: node.id === id,
         })),
       );
-      setSelectedId(id);
-      setSelectedRelationId(null);
-      setSidebarRevealedBySelection(true);
+      showPerson(id);
     },
-    [setNodes],
+    [setNodes, showPerson],
   );
   const selectPartner = useCallback((id: string) => {
     setSelectedRelationId(id);
@@ -719,13 +684,7 @@ export default function App() {
   const canvas = useMemo(() => {
     if (!tree) return { edges: [] as Edge[], nodes };
     const positions = new Map(nodes.map((node) => [node.id, node.position]));
-    const sizes = new Map(
-      nodes.flatMap((node) =>
-        node.measured?.width && node.measured.height
-          ? [[node.id, { width: node.measured.width, height: node.measured.height }] as const]
-          : [],
-      ),
-    );
+    const sizes = measuredSizes(nodes);
     return {
       edges: relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes),
       nodes: [
@@ -795,9 +754,7 @@ export default function App() {
   };
   const saveNow = async (requirePersistence = false) => {
     if (!treeRef.current || draftTree.current) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = null;
-    const count = ++saveCounter.current;
+    const count = supersedeSaves();
     try {
       await queueSave(treeRef.current);
       if (count === saveCounter.current) {
@@ -936,7 +893,7 @@ export default function App() {
     try {
       const copy = await duplicateSavedTree(item.id);
       // Keep the persisted copy visible even if the subsequent library read fails.
-      setLibrary((previous) => [copy, ...previous].sort((a, b) => b.updatedAt - a.updatedAt));
+      setLibrary((previous) => withTree(previous, copy));
       if (await refreshLibrary())
         setNotice({ status: 'success', message: `Created ${copy.name}.` });
     } catch (error) {
@@ -985,11 +942,7 @@ export default function App() {
       return;
     }
     const active = treeRef.current?.id === action.treeId;
-    if (active) {
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-      ++saveCounter.current;
-    }
+    if (active) supersedeSaves();
     // A queued autosave must finish before a rename or deletion can replace its result.
     await saveQueue.current.catch(() => undefined);
     if (action.kind === 'rename') {
@@ -1011,11 +964,7 @@ export default function App() {
           if (changedWhileSaving) updated = timestampDataChange({ ...latest, name }, latest);
           commit(updated, 'data', { persist: changedWhileSaving, timestamps: updated });
         }
-        setLibrary((previous) =>
-          [updated, ...previous.filter((item) => item.id !== updated.id)].sort(
-            (a, b) => b.updatedAt - a.updatedAt,
-          ),
-        );
+        setLibrary((previous) => withTree(previous, updated));
       } else if (treeRef.current?.id === action.treeId && !draftTree.current) {
         try {
           await queueSave(current);
@@ -1025,7 +974,6 @@ export default function App() {
         }
         setSaveState('saved');
       }
-      return;
     }
   };
   const leaveEditor = async () => {
@@ -1079,16 +1027,9 @@ export default function App() {
       duration: 500,
     });
   const arrangeCanvas = () => {
-    const sizes = new Map(
-      nodes.flatMap((node) =>
-        node.measured?.width && node.measured.height
-          ? [[node.id, { width: node.measured.width, height: node.measured.height }] as const]
-          : [],
-      ),
-    );
     const current = treeRef.current;
     if (!current) return;
-    const next = arrangeTree(current, sizes);
+    const next = arrangeTree(current, measuredSizes(nodes));
     if (next !== current && !apply(() => next)) return;
     // Fit after React Flow has rendered the new positions.
     requestAnimationFrame(() => requestAnimationFrame(fitTree));
@@ -1166,7 +1107,7 @@ export default function App() {
             : 'Local save failed · export JSON';
   useToast(notice, {
     dismissLabel: 'Dismiss message',
-    onDismiss: () => setNotice({ status: 'idle' }),
+    onDismiss: () => setNotice(IDLE),
   });
   // Export buttons show their own progress, so only results reach the toaster.
   useToast(exports.feedback.status === 'pending' ? IDLE : exports.feedback, {
@@ -1234,59 +1175,20 @@ export default function App() {
           onRetryDrive={() => void driveWorkspace.retry()}
           onRestoreDrive={loadDrive}
           driveControls={
-            <div className="workspace-drive-controls">
-              {driveConfigured &&
-                driveWorkspace.connection !== 'disconnected' &&
-                driveWorkspace.connection !== 'error' && (
-                  <span role="status" className="sr-only">
-                    {driveWorkspace.connection === 'connected'
-                      ? 'Google Drive connected'
-                      : driveWorkspace.connection === 'restoring'
-                        ? 'Restoring Google Drive connection…'
-                        : driveWorkspace.connection === 'connecting'
-                          ? 'Connecting Google Drive…'
-                          : 'Disconnecting Google Drive…'}
-                  </span>
-                )}
-              {driveWorkspace.connection === 'connected' ||
-              driveWorkspace.connection === 'error' ||
-              driveWorkspace.connection === 'disconnecting' ? (
-                <button
-                  className="button outline"
-                  disabled={driveBusy || !driveReady}
-                  aria-busy={driveWorkspace.connection === 'disconnecting'}
-                  onClick={forgetDrive}
-                >
-                  {driveWorkspace.connection === 'disconnecting'
-                    ? 'Disconnecting…'
-                    : 'Disconnect Drive'}
-                </button>
-              ) : (
-                <button
-                  className="button outline"
-                  disabled={driveBusy || !driveReady || !driveConfigured}
-                  aria-busy={!driveReady}
-                  title={
-                    driveConfigured
-                      ? undefined
-                      : 'Google Drive is not configured for this deployment'
-                  }
-                  onClick={() => void driveWorkspace.connect()}
-                >
-                  {driveWorkspace.connection === 'restoring'
-                    ? 'Restoring Drive…'
-                    : driveWorkspace.connection === 'connecting'
-                      ? 'Connecting…'
-                      : 'Connect Drive'}
-                </button>
-              )}
-            </div>
+            <DriveConnectionControls
+              connection={driveWorkspace.connection}
+              configured={driveConfigured}
+              ready={driveReady}
+              busy={driveBusy}
+              onConnect={() => void driveWorkspace.connect()}
+              onDisconnect={forgetDrive}
+            />
           }
           importBusy={imports.feedback.status === 'pending'}
           driveBusy={driveBusy}
           onRetryLibrary={() => {
             setLibraryState('loading');
-            setNotice({ status: 'idle' });
+            setNotice(IDLE);
             void refreshLibrary();
           }}
           duplicatingTreeId={duplicatingTreeId}
@@ -1331,36 +1233,19 @@ export default function App() {
               {tree && (
                 <HeaderPersonSearch key={tree.id} people={tree.people} onJump={jumpToPerson} />
               )}
-              <button
-                className="button header-button"
-                disabled={exports.feedback.status === 'pending'}
-                aria-label="Export JSON"
-                onClick={downloadJson}
-                title="Download editable backup"
-              >
-                <Download size={16} />
-                <span>JSON</span>
-              </button>
-              <button
-                className="button header-button"
-                disabled={exports.feedback.status === 'pending'}
-                aria-label="Export PNG"
-                onClick={() => exports.run('PNG')}
-                title="Download image"
-              >
-                <FileImage size={16} />
-                <span>PNG</span>
-              </button>
-              <button
-                className="button header-button"
-                disabled={exports.feedback.status === 'pending'}
-                aria-label="Export PDF"
-                onClick={() => exports.run('PDF')}
-                title="Download printable PDF"
-              >
-                <FileText size={16} />
-                <span>PDF</span>
-              </button>
+              {exportButtons.map(({ format, Icon, title }) => (
+                <button
+                  key={format}
+                  className="button header-button"
+                  disabled={exports.feedback.status === 'pending'}
+                  aria-label={`Export ${format}`}
+                  onClick={() => exports.run(format)}
+                  title={title}
+                >
+                  <Icon size={16} />
+                  <span>{format}</span>
+                </button>
+              ))}
               {driveConfigured && !driveLinked && (
                 <div className="drive-menu">
                   <button
@@ -1462,9 +1347,9 @@ export default function App() {
                 <div className="canvas-label">
                   <span className="canvas-label-dot" /> FAMILY CANVAS
                   {home && (
-                    <span className="canvas-home" title={`Home: ${home.name || 'Unnamed person'}`}>
+                    <span className="canvas-home" title={`Home: ${displayName(home)}`}>
                       <Home size={13} aria-hidden="true" />
-                      <span>Home: {home.name || 'Unnamed person'}</span>
+                      <span>Home: {displayName(home)}</span>
                     </span>
                   )}
                 </div>
@@ -1556,9 +1441,7 @@ export default function App() {
                       selectPerson(String(edge.data.childId));
                       return;
                     }
-                    setSelectedRelationId(edge.id);
-                    setSelectedId(null);
-                    setSidebarRevealedBySelection(true);
+                    selectPartner(edge.id);
                   }}
                   onPaneClick={() => {
                     setSelectedId(null);
@@ -1630,12 +1513,7 @@ export default function App() {
                   deleteCount={selectedPersonIds.length}
                   onAddRelative={addPerson}
                   onConnectTo={connectFromPanel}
-                  onRemoveRelation={(id) =>
-                    apply((t) => ({
-                      ...t,
-                      relations: t.relations.filter((r) => r.id !== id),
-                    }))
-                  }
+                  onRemoveRelation={(id) => apply((t) => removeRelation(t, id))}
                   onUpdateRelation={(relation) => apply((t) => updateRelation(t, relation))}
                   onClose={() => {
                     setSelectedId(null);
@@ -1647,10 +1525,7 @@ export default function App() {
                   people={tree!.people}
                   onChange={(relation) => apply((t) => updateRelation(t, relation))}
                   onDelete={() => {
-                    apply((t) => ({
-                      ...t,
-                      relations: t.relations.filter((r) => r.id !== selectedRelation.id),
-                    }));
+                    apply((t) => removeRelation(t, selectedRelation.id));
                     setSelectedRelationId(null);
                   }}
                   onClose={() => setSelectedRelationId(null)}

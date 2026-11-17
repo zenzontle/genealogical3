@@ -29,3 +29,7 @@ export function normalizePersonNames(tree: Tree): Tree {
     ),
   };
 }
+
+/** The label shown wherever a person has no name yet. */
+export const displayName = (person: Pick<Person, 'name'> | null | undefined) =>
+  person?.name || 'Unnamed person';
