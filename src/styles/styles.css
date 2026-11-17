@@ -1669,20 +1669,70 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.home-person-details {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
+.panel-title > div:first-child {
+  min-width: 0;
+}
+.panel-title-actions {
+  display: flex;
+  flex: none;
+  gap: 0.15rem;
+}
+.home-toggle.is-home {
+  color: var(--copper);
+}
+.home-toggle.is-home svg {
+  fill: currentColor;
+  fill-opacity: 0.25;
+}
+.kinship-summary {
+  margin: 0.35rem 0 0;
   font-size: 0.75rem;
+  color: var(--copper);
+  overflow-wrap: anywhere;
 }
-.home-person-details p {
-  margin: 0.75rem 0 0;
+.kinship-summary.is-empty {
+  color: var(--text-muted);
 }
-.home-person-details .button {
+p.kinship-summary,
+.kinship-summary summary {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.kinship-summary summary {
+  cursor: pointer;
+  list-style: none;
+  width: fit-content;
+  max-width: 100%;
+}
+.kinship-summary summary::-webkit-details-marker {
+  display: none;
+}
+.kinship-summary svg {
+  flex: none;
+}
+.kinship-summary summary > svg:last-child {
+  transition: transform 0.15s;
+}
+.kinship-summary[open] summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.kinship-paths {
   margin-top: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 2px solid var(--border);
+  color: var(--text);
 }
-.home-person-heading,
+.kinship-paths p {
+  margin: 0 0 0.35rem;
+}
+.kinship-paths ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+.kinship-paths li + li {
+  margin-top: 0.35rem;
+}
 .library-home,
 .canvas-home {
   display: flex;
@@ -1700,27 +1750,6 @@ h2 {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-.kinship-details {
-  margin-top: 0.75rem;
-}
-.kinship-details h3 {
-  font-size: 1rem;
-  margin-bottom: 0.5rem;
-  overflow-wrap: anywhere;
-}
-.kinship-details details {
-  margin-top: 0.75rem;
-  overflow-wrap: anywhere;
-}
-.kinship-details summary {
-  cursor: pointer;
-}
-.kinship-details ul {
-  padding-left: 1rem;
-}
-.kinship-details li + li {
-  margin-top: 0.5rem;
 }
 .canvas-label {
   flex-wrap: wrap;
