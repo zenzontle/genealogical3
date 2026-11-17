@@ -1,6 +1,7 @@
 import { Home } from 'lucide-react';
 import { describeKinshipPath, type KinshipResult } from '../lib/kinship';
 import type { Person } from '../lib/model';
+import { displayName } from '../lib/personNames';
 
 export function HomePersonDetails({
   person,
@@ -44,7 +45,7 @@ export function HomePersonDetails({
       )}
       {home && !isHome && kinship && (
         <div className="kinship-details">
-          <h3>Relationship to {home.name || 'Unnamed person'}</h3>
+          <h3>Relationship to {displayName(home)}</h3>
           <strong>{kinship.primary.label}</strong>
           {kinship.paths.length ? (
             <>

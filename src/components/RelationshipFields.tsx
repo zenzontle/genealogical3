@@ -9,6 +9,7 @@ import {
   type RelationshipRole,
   type UnionKind,
 } from '../lib/model';
+import { displayName } from '../lib/personNames';
 
 export function RelationshipFields({
   relation,
@@ -25,7 +26,7 @@ export function RelationshipFields({
   const subjectId =
     referenceId || (relation.type === 'parent' && relation.displayRole === 'parent' ? b : a);
   const otherId = subjectId === a ? b : a;
-  const name = (id: string) => people.find((p) => p.id === id)?.name || 'Unnamed person';
+  const name = (id: string) => displayName(people.find((p) => p.id === id));
   const role = relation.type === 'parent' ? 'parent-child' : relation.type;
   return (
     <div className="relationship-fields">

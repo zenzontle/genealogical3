@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowRight, Search, X } from 'lucide-react';
 import { dateLabel, type Person } from '../lib/model';
 import { matchedNotePreview, searchPeople } from '../lib/personSearch';
+import { displayName } from '../lib/personNames';
 
 export function HeaderPersonSearch({
   people,
@@ -162,7 +163,7 @@ export function HeaderPersonSearch({
                       }}
                     >
                       <span className="person-search-result-text">
-                        <strong>{person.name || 'Unnamed person'}</strong>
+                        <strong>{displayName(person)}</strong>
                         {person.nickname && <small>"{person.nickname}"</small>}
                         {(born || died) && (
                           <small>

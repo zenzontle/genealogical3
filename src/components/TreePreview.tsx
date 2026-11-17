@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react';
 import { Home, Users } from 'lucide-react';
 import { personCardSize, type Tree } from '../lib/model';
+import { displayName } from '../lib/personNames';
 import { relationshipIcons } from '../lib/relationshipIcons';
 import { treePreview } from '../lib/treePreviewLayout';
 
@@ -57,7 +58,7 @@ export function TreePreview({ tree }: { tree: Tree }) {
         </g>
       ))}
       {tree.people.map((person) => {
-        const name = person.name || 'Unnamed person';
+        const name = displayName(person);
         return (
           <g key={person.id} transform={`translate(${person.x}, ${person.y})`}>
             <rect

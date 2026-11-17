@@ -1,4 +1,4 @@
-import { normalizePersonNames, splitPersonName } from './personNames';
+import { displayName, normalizePersonNames, splitPersonName } from './personNames';
 
 export type DateValue =
   | { precision: 'unknown' }
@@ -211,8 +211,7 @@ export function lifeDatesError({ born, died, lifeStatus }: LifeDates): string {
 export function assertValidLifeDates(tree: Tree) {
   for (const p of tree.people) {
     const error = lifeDatesError(p);
-    if (error)
-      throw Error(`${p.name || 'Unnamed person'}: ${error} Correct the dates before saving.`);
+    if (error) throw Error(`${displayName(p)}: ${error} Correct the dates before saving.`);
   }
 }
 export function personAgeLabel(person: LifeDates, today = new Date()): string {
@@ -251,6 +250,33 @@ export const relationLabel = (r: Relation) =>
   r.type === 'parent' ? 'Parent / Child' : r.type === 'partner' ? 'Partner' : 'Not set';
 export const relationEndpoints = (r: Relation): [string, string] =>
   r.type === 'parent' ? [r.parentId, r.childId] : [r.personA, r.personB];
+export type RelativeRole = 'parent' | 'child' | 'partner';
+/** A new relation that makes `relativeId` the given relative of `personId`. */
+export const relationToRelative = (
+  personId: string,
+  relativeId: string,
+  role: RelativeRole,
+): Relation =>
+  role === 'partner'
+    ? {
+        id: uid(),
+        type: 'partner',
+        personA: personId,
+        personB: relativeId,
+        status: 'unspecified',
+        union: 'unspecified',
+      }
+    : {
+        id: uid(),
+        type: 'parent',
+        parentId: role === 'parent' ? relativeId : personId,
+        childId: role === 'child' ? relativeId : personId,
+        kind: 'unspecified',
+      };
+export const removeRelation = (tree: Tree, relationId: string): Tree => ({
+  ...tree,
+  relations: tree.relations.filter((r) => r.id !== relationId),
+});
 export function relationFromConnection(
   source: string,
   target: string,

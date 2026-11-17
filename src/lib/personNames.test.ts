@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { makePerson, makeTree, validateTree } from './model';
-import { normalizePersonNames, setPersonName, splitPersonName } from './personNames';
+import { displayName, normalizePersonNames, setPersonName, splitPersonName } from './personNames';
 
+describe('display names', () => {
+  it('falls back to a placeholder for unnamed or missing people', () => {
+    expect(displayName(makePerson('Ada Lovelace'))).toBe('Ada Lovelace');
+    expect(displayName(makePerson(''))).toBe('Unnamed person');
+    expect(displayName(undefined)).toBe('Unnamed person');
+    expect(displayName(null)).toBe('Unnamed person');
+  });
+});
 describe('first and last names', () => {
   it.each([
     ['Ada Lovelace', 'Ada', 'Lovelace'],

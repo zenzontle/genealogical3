@@ -14,7 +14,7 @@ import {
   type Person,
   type Relation,
 } from '../lib/model';
-import { setPersonName } from '../lib/personNames';
+import { displayName, setPersonName } from '../lib/personNames';
 
 export type ConnectMode = 'parent' | 'child' | 'partner' | null;
 
@@ -76,13 +76,13 @@ export function PersonEditor({
             ? r.personB
             : r.personA),
     );
-  const other = (r: Relation) => otherPerson(r)?.name || 'Unnamed person';
+  const other = (r: Relation) => displayName(otherPerson(r));
   return (
     <div className="editor-content">
       <div className="panel-title">
         <div>
           <p className="eyebrow">PERSON DETAILS</p>
-          <h2>{person.name || 'Unnamed person'}</h2>
+          <h2>{displayName(person)}</h2>
         </div>
         <button className="icon-button" aria-label="Close details" onClick={onClose}>
           <X size={19} />
@@ -301,7 +301,7 @@ export function PersonEditor({
                 .filter((p) => p.id !== person.id)
                 .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name || 'Unnamed person'}
+                    {displayName(p)}
                   </option>
                 ))}
             </select>

@@ -1,4 +1,5 @@
 import type { Person, Relation, Tree } from './model';
+import { displayName } from './personNames';
 
 type FamilyLink = Exclude<Relation, { type: 'unassigned' }>;
 export type KinshipStep = {
@@ -244,12 +245,12 @@ export function calculateKinships(
 export function describeKinshipPath(home: Person, match: KinshipMatch, people: Person[]): string {
   const names = new Map(people.map((p) => [p.id, p]));
   return [
-    home.name || 'Unnamed person',
+    displayName(home),
     ...match.steps.map((step) => {
       const person = names.get(step.personId)!;
       const r = step.relation;
       const detail = r.type === 'parent' ? r.kind : `${r.status}, ${r.union}`;
-      return `${stepLabel(step, person.sex)} (${detail}): ${person.name || 'Unnamed person'}`;
+      return `${stepLabel(step, person.sex)} (${detail}): ${displayName(person)}`;
     }),
   ].join(' → ');
 }

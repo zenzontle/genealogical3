@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Eye, ImagePlus } from 'lucide-react';
 import type { Person } from '../lib/model';
+import { displayName } from '../lib/personNames';
 import { portraitData } from '../lib/media';
 import { LocalDialog } from './LocalDialog';
 import { afterPaint, errorMessage, type FeedbackState } from '../lib/feedback';
@@ -115,14 +116,14 @@ export function PortraitUpload({
       {viewerOpen && person.portrait && (
         <LocalDialog
           className="portrait-viewer"
-          title={`Photo of ${person.name || 'Unnamed person'}`}
+          title={`Photo of ${displayName(person)}`}
           busy={false}
           onClose={() => setViewerOpen(false)}
         >
           <img
             className="portrait-viewer-image"
             src={person.portrait}
-            alt={`Photo of ${person.name || 'Unnamed person'}`}
+            alt={`Photo of ${displayName(person)}`}
           />
           {picker}
           <div className="dialog-actions">
