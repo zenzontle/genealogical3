@@ -628,15 +628,22 @@ export default function App() {
       } else if (mod || e.shiftKey) {
         return;
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedPersonIds.length) {
+        // A partner connector opens its relationship without clearing card selection, so the
+        // relationship shown in the panel wins. Undo can remove it, so check it still exists.
+        const relationId = treeRef.current?.relations.some((r) => r.id === selectedRelationId)
+          ? selectedRelationId
+          : null;
+        if (relationId) {
+          e.preventDefault();
+          apply((t) => removeRelation(t, relationId));
+          setSelectedRelationId(null);
+        } else if (selectedPersonIds.length) {
           e.preventDefault();
           deletePeople(selectedPersonIds);
-        } else if (selectedRelationId) {
-          e.preventDefault();
-          apply((t) => removeRelation(t, selectedRelationId));
-          setSelectedRelationId(null);
         }
       } else if (e.key === 'Escape') {
+        // Closing the panel from inside it would drop keyboard focus to the page.
+        if (target.closest('#details-panel')) return;
         if (!selectedPersonIds.length && !selectedRelationId && !selectedId) return;
         e.preventDefault();
         setNodes((current) => current.map((node) => ({ ...node, selected: false })));
