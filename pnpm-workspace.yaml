@@ -1,3 +1,6 @@
+# Shared supply-chain policy, kept identical across repositories. Add repository-specific
+# exceptions below this block, each with a reason and a review date.
+
 # Corepack uses the package.json pin; keep pnpm's own version out of the lockfile.
 pmOnFail: ignore
 
@@ -8,6 +11,12 @@ minimumReleaseAgeIgnoreMissingTime: false
 
 blockExoticSubdeps: true
 trustPolicy: no-downgrade
+# Recheck locked packages against the policy, including frozen installs in CI.
+trustLockfile: false
+
+# New install scripts require review; approvals apply only to reviewed versions.
+strictDepBuilds: true
+
 # Legacy releases without provenance, still required by @babel/core 7 and
 # eslint-plugin-react (semver) and @types/node 22 (undici-types). Registry
 # signatures and lockfile integrity verified on 2026-10-30. Review these
@@ -15,10 +24,6 @@ trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
   - undici-types@6.21.0
-# Recheck locked packages against the policy, including frozen installs in CI.
-trustLockfile: false
-
-strictDepBuilds: true
 
 # eslint-plugin-react 7.37.5 declares eslint <=9 but no newer release exists. Only
 # react/no-multi-comp is used, and it works on ESLint 10 once settings.react.version is
