@@ -8,3 +8,4 @@ pnpm-lock.yaml
 .codegraph/
 playwright-report/
 test-results/
+.claude/settings.local.json

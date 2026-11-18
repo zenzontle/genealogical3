@@ -25,6 +25,8 @@ The editor works without any configuration. Google Drive needs OAuth credentials
 | `pnpm dev`                          | Start the Vite development server             |
 | `pnpm build`                        | Typecheck (`tsc -b`) and build for production |
 | `pnpm test`                         | Run the Vitest suite                          |
+| `pnpm typecheck`                    | Typecheck (`tsc -b`)                          |
+| `pnpm check`                        | Check formatting, lint rules and types, as CI |
 | `pnpm lint` / `pnpm lint:fix`       | Check or fix ESLint rules                     |
 | `pnpm format` / `pnpm format:check` | Format or check formatting with Prettier      |
 
