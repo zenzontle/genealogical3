@@ -34,7 +34,7 @@ For bug fixes, check that the change addresses the root cause, and that other in
 
 These changes always need a human reviewer, even if AI review passes:
 
-- `.github/workflows/` (CI and merge gates)
+- `.github/` (CI and merge gates) and `REVIEW.md` (this review guidance)
 - `.claude/commands/pr-review.md` (the CI review command the merge gate depends on)
 - `.claude/settings.json`, `.claude/hooks/` (hooks also run inside the CI review job)
 - `.claude/pinned-plugins/` (the upstream commit the CI review plugin is pinned to)

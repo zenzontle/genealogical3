@@ -17,6 +17,10 @@ concurrency:
 
 jobs:
   claude-review:
+    # /pr-review skips drafts without posting, which the gate below would read as a failure.
+    # The ready_for_review event runs the review once the PR leaves draft.
+    if: github.event.pull_request.draft == false
+
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
