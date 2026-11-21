@@ -100,7 +100,10 @@ export function resolveTreeView(tree: Graph, view: TreeView): ResolvedTreeView |
   const collapsedCounts = new Map<string, number>();
   for (const id of view.collapsed) {
     if (!focused.has(id)) continue;
-    const branch = [...collapsedBranchIds(tree, id)].filter((other) => focused.has(other));
+    // People added after the view was chosen stay visible, so they are not counted.
+    const branch = [...collapsedBranchIds(tree, id)].filter(
+      (other) => focused.has(other) && view.baseline.has(other),
+    );
     branch.forEach((other) => hidden.add(other));
     collapsedCounts.set(id, branch.length);
   }

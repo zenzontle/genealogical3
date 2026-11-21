@@ -56,6 +56,8 @@ export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
           title="Expand branch"
           onClick={(event) => {
             event.stopPropagation();
+            // This button disappears, so keep keyboard focus on the card.
+            event.currentTarget.parentElement?.querySelector<HTMLElement>('.person-card')?.focus();
             data.onExpand?.(p.id);
           }}
         >

@@ -8,11 +8,14 @@ export function KinshipSummary({
   home,
   people,
   kinship,
+  highlighted = false,
 }: {
   person: Person;
   home: Person | null;
   people: Person[];
   kinship?: KinshipResult;
+  /** Whether the first path is highlighted on the canvas. */
+  highlighted?: boolean;
 }) {
   if (!home) return null;
   if (home.id === person.id) {
@@ -45,7 +48,7 @@ export function KinshipSummary({
       <div className="kinship-paths">
         <p className="tiny">
           Closest recorded {kinship.paths.length === 1 ? 'path' : 'paths'}. Parent types and partner
-          status are shown in each path. The first is highlighted on the canvas.
+          status are shown in each path.{highlighted && ' The first is highlighted on the canvas.'}
         </p>
         <ul>
           {kinship.paths.map((match, index) => (

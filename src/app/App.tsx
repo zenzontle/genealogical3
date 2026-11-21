@@ -147,6 +147,7 @@ export default function App() {
   const [libraryState, setLibraryState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [duplicatingTreeId, setDuplicatingTreeId] = useState<string | null>(null);
   const duplicateBusy = useRef(false);
+  const fitButtonRef = useRef<HTMLButtonElement>(null);
   const [tree, setTree] = useState<Tree | null>(null);
   const people = tree?.people;
   const relations = tree?.relations;
@@ -753,12 +754,14 @@ export default function App() {
   const deletionAnchorId =
     selectedId && selectedPersonIds.includes(selectedId) ? selectedId : selectedPersonIds[0];
   const canvas = useMemo(() => {
-    if (!tree) return { edges: [] as Edge[], nodes };
+    if (!tree) return { shown: null, shownNodes: nodes, edges: [] as Edge[], nodes };
     const shown = canvasView ? visibleTree(tree, canvasView.visible) : tree;
     const shownNodes = canvasView ? nodes.filter((node) => canvasView.visible.has(node.id)) : nodes;
     const positions = new Map(shownNodes.map((node) => [node.id, node.position]));
     const sizes = measuredSizes(shownNodes);
     return {
+      shown,
+      shownNodes,
       edges: relationshipEdges(
         shown,
         positions,
@@ -800,15 +803,14 @@ export default function App() {
     selectedPersonIds,
     deletePeople,
   ]);
-  /** People already in the tree keep the filter; anyone added while it is on stays visible. */
+  /** Each filter change applies to everyone in the tree now; people added later stay visible. */
   const changeView = (change: (view: TreeView) => TreeView, refit = false) => {
     const current = treeRef.current;
     if (!current) return;
+    const baseline = new Set(current.people.map((p) => p.id));
     const previous: TreeView =
-      canvasView && treeView
-        ? treeView
-        : { focus: null, collapsed: [], baseline: new Set(current.people.map((p) => p.id)) };
-    const next = { ...change(previous), baseline: previous.baseline, treeId: current.id };
+      canvasView && treeView ? treeView : { focus: null, collapsed: [], baseline };
+    const next = { ...change(previous), baseline, treeId: current.id };
     const visible = resolveTreeView(current, next)?.visible;
     setTreeView(visible ? next : null);
     if (visible) {
@@ -821,9 +823,16 @@ export default function App() {
     }
     if (refit) requestAnimationFrame(() => requestAnimationFrame(() => void fitTree()));
   };
-  const clearView = () =>
+  const clearView = () => {
     changeView(() => ({ focus: null, collapsed: [], baseline: new Set() }), true);
-  const selected = tree?.people.find((p) => p.id === selectedId) || null;
+    // The banner's button disappears, so keep keyboard focus on the canvas tools.
+    fitButtonRef.current?.focus();
+  };
+  // A tree edit can hide the selected person, so the editor closes with their card.
+  const selected =
+    tree?.people.find(
+      (p) => p.id === selectedId && (!canvasView || canvasView.visible.has(p.id)),
+    ) || null;
   const selectedRelation = tree?.relations.find((r) => r.id === selectedRelationId) || null;
   // Selection temporarily reveals details without changing the toggle preference.
   const revealSidebar = sidebarRevealedBySelection && !!(selected || selectedRelation);
@@ -1099,11 +1108,12 @@ export default function App() {
   };
   const saveMovedNodes = (movedNodes: CanvasNode[]) => {
     const moving = movedNodes.map((node) => ({ ...nodes.find((n) => n.id === node.id), ...node }));
+    // Snap only to the cards the current view shows.
     const { offset } = cardAlignment(
       moving,
-      nodes,
+      canvas.shownNodes,
       flowRef.current?.getZoom() ?? 1,
-      tree?.relations,
+      canvas.shown?.relations,
     );
     const aligned = moving.map((node) => ({
       ...node,
@@ -1161,9 +1171,9 @@ export default function App() {
       }
       const { offset, guides } = cardAlignment(
         moving,
-        nodes,
+        canvas.shownNodes,
         flowRef.current?.getZoom() ?? 1,
-        tree?.relations,
+        canvas.shown?.relations,
       );
       setAlignmentGuides(guides);
       onNodesChange(
@@ -1177,7 +1187,7 @@ export default function App() {
         ),
       );
     },
-    [nodes, onNodesChange, tree?.relations],
+    [nodes, onNodesChange, canvas.shownNodes, canvas.shown?.relations],
   );
   const onViewportEnd = (_: unknown, viewport: { x: number; y: number; zoom: number }) => {
     if (movingRef.current) return;
@@ -1534,7 +1544,7 @@ export default function App() {
                     <Network size={16} aria-hidden="true" />
                     Arrange
                   </button>
-                  <button className="button subtle" onClick={fitTree}>
+                  <button className="button subtle" onClick={fitTree} ref={fitButtonRef}>
                     Fit tree
                   </button>
                 </div>
@@ -1648,6 +1658,7 @@ export default function App() {
                     focus:
                       canvasView?.focus?.personId === selected.id ? canvasView.focus.mode : null,
                     collapsed: !!canvasView && !!treeView?.collapsed.includes(selected.id),
+                    pathShown: !!kinshipPath,
                   }}
                   onFocus={(mode) =>
                     changeView(

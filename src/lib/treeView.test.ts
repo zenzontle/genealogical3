@@ -116,6 +116,23 @@ describe('tree view filters', () => {
     expect(resolveTreeView(tree, chosen)!.visible.has('Loner')).toBe(false);
   });
 
+  it('does not count people added to a collapsed branch as hidden', () => {
+    const tree = family();
+    const chosen = view(tree, { collapsed: ['Mum'] });
+    tree.people.push({ ...makePerson('Baby'), id: 'Baby' });
+    tree.relations.push({
+      id: 'Mum>Baby',
+      type: 'parent',
+      parentId: 'Mum',
+      childId: 'Baby',
+      kind: 'biological',
+    });
+    const resolved = resolveTreeView(tree, chosen)!;
+    expect(resolved.visible.has('Baby')).toBe(true);
+    expect(resolved.collapsedCounts.get('Mum')).toBe(2);
+    expect(resolved.hiddenCount).toBe(2);
+  });
+
   it('drops relations that lead to hidden people', () => {
     const tree = family();
     const shown = visibleTree(tree, new Set(['Mum', 'Dad', 'Kid']));

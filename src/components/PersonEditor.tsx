@@ -65,7 +65,7 @@ export function PersonEditor({
   onConnectTo: (targetId: string, mode: Exclude<ConnectMode, null>) => void;
   onRemoveRelation: (id: string) => void;
   onUpdateRelation: (relation: Relation) => void;
-  view: { focus: FocusMode | null; collapsed: boolean };
+  view: { focus: FocusMode | null; collapsed: boolean; pathShown: boolean };
   onFocus: (mode: FocusMode | null) => void;
   onToggleCollapse: () => void;
   onClose: () => void;
@@ -100,7 +100,13 @@ export function PersonEditor({
         <div>
           <p className="eyebrow">PERSON DETAILS</p>
           <h2>{displayName(person)}</h2>
-          <KinshipSummary person={person} home={home} people={people} kinship={kinship} />
+          <KinshipSummary
+            person={person}
+            home={home}
+            people={people}
+            kinship={kinship}
+            highlighted={view.pathShown}
+          />
         </div>
         <div className="panel-title-actions">
           <HomePersonToggle person={person} home={home} onSetHome={onSetHome} />
