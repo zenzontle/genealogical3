@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { Home, Trash2 } from 'lucide-react';
+import { ChevronsDown, Home, Trash2 } from 'lucide-react';
 import { SexIcon } from './SexIcon';
 import { personLifeLabel, type Person } from '../lib/model';
 import type { KinshipResult } from '../lib/kinship';
@@ -11,6 +11,10 @@ export type PersonNode = Node<
     homeName: string | null;
     isHome: boolean;
     kinship?: KinshipResult;
+    onKinshipPath?: boolean;
+    /** People hidden because this person's branch is collapsed. */
+    hiddenCount?: number;
+    onExpand?: (id: string) => void;
     onSelect: (id: string) => void;
     onDelete: (id: string) => void;
   },
@@ -44,8 +48,25 @@ export function PersonCard({ data, selected }: NodeProps<PersonNode>) {
           )}
         </button>
       )}
+      {!!data.hiddenCount && data.onExpand && (
+        <button
+          className="person-expand nodrag nopan"
+          type="button"
+          aria-label={`Show ${data.hiddenCount} hidden ${data.hiddenCount === 1 ? 'person' : 'people'} in ${p.name || 'this person'}'s branch`}
+          title="Expand branch"
+          onClick={(event) => {
+            event.stopPropagation();
+            // This button disappears, so keep keyboard focus on the card.
+            event.currentTarget.parentElement?.querySelector<HTMLElement>('.person-card')?.focus();
+            data.onExpand?.(p.id);
+          }}
+        >
+          <ChevronsDown size={14} aria-hidden="true" />
+          {data.hiddenCount}
+        </button>
+      )}
       <div
-        className={`person-card ${selected ? 'selected' : ''} ${data.isHome ? 'is-home' : ''}`}
+        className={`person-card ${selected ? 'selected' : ''} ${data.isHome ? 'is-home' : ''} ${data.onKinshipPath ? 'on-kinship-path' : ''}`}
         onClick={() => data.onSelect(p.id)}
         role="button"
         tabIndex={0}

@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { ChevronDown, Trash2, X } from 'lucide-react';
+import {
+  ArrowDownFromLine,
+  ArrowUpFromDot,
+  ChevronDown,
+  FoldVertical,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { DateInput } from './DateInput';
 import { HomePersonToggle } from './HomePersonToggle';
 import { KinshipSummary } from './KinshipSummary';
@@ -16,6 +23,7 @@ import {
   type Relation,
 } from '../lib/model';
 import { displayName, setPersonName } from '../lib/personNames';
+import type { FocusMode } from '../lib/treeView';
 
 export type ConnectMode = 'parent' | 'child' | 'partner' | null;
 
@@ -36,6 +44,9 @@ export function PersonEditor({
   onConnectTo,
   onRemoveRelation,
   onUpdateRelation,
+  view,
+  onFocus,
+  onToggleCollapse,
   onClose,
 }: {
   person: Person;
@@ -54,6 +65,9 @@ export function PersonEditor({
   onConnectTo: (targetId: string, mode: Exclude<ConnectMode, null>) => void;
   onRemoveRelation: (id: string) => void;
   onUpdateRelation: (relation: Relation) => void;
+  view: { focus: FocusMode | null; collapsed: boolean; pathShown: boolean };
+  onFocus: (mode: FocusMode | null) => void;
+  onToggleCollapse: () => void;
   onClose: () => void;
 }) {
   // Owned here so a choice never carries over to another person or tree.
@@ -78,13 +92,21 @@ export function PersonEditor({
             : r.personA),
     );
   const other = (r: Relation) => displayName(otherPerson(r));
+  const name = displayName(person);
+  const hasChildren = relations.some((r) => r.type === 'parent' && r.parentId === person.id);
   return (
     <div className="editor-content">
       <div className="panel-title">
         <div>
           <p className="eyebrow">PERSON DETAILS</p>
           <h2>{displayName(person)}</h2>
-          <KinshipSummary person={person} home={home} people={people} kinship={kinship} />
+          <KinshipSummary
+            person={person}
+            home={home}
+            people={people}
+            kinship={kinship}
+            highlighted={view.pathShown}
+          />
         </div>
         <div className="panel-title-actions">
           <HomePersonToggle person={person} home={home} onSetHome={onSetHome} />
@@ -92,6 +114,45 @@ export function PersonEditor({
             <X size={19} />
           </button>
         </div>
+      </div>
+      <div className="view-actions" role="group" aria-label="Show on canvas">
+        <button
+          type="button"
+          className="button subtle"
+          aria-pressed={view.focus === 'ancestors'}
+          title={`Show only ${name} and their ancestors`}
+          onClick={() => onFocus(view.focus === 'ancestors' ? null : 'ancestors')}
+        >
+          <ArrowUpFromDot size={15} aria-hidden="true" />
+          Ancestors
+        </button>
+        <button
+          type="button"
+          className="button subtle"
+          aria-pressed={view.focus === 'descendants'}
+          title={`Show only ${name}, their descendants and their partners`}
+          onClick={() => onFocus(view.focus === 'descendants' ? null : 'descendants')}
+        >
+          <ArrowDownFromLine size={15} aria-hidden="true" />
+          Descendants
+        </button>
+        <button
+          type="button"
+          className="button subtle"
+          aria-pressed={view.collapsed}
+          disabled={!hasChildren && !view.collapsed}
+          title={
+            view.collapsed
+              ? `Show ${name}'s descendants again`
+              : hasChildren
+                ? `Hide ${name}'s descendants on the canvas`
+                : 'Add a child to collapse this branch'
+          }
+          onClick={onToggleCollapse}
+        >
+          <FoldVertical size={15} aria-hidden="true" />
+          Collapse
+        </button>
       </div>
       <PortraitUpload person={person} onChange={onPortraitChange} />
       <div className="field-grid">
