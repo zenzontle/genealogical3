@@ -9,6 +9,7 @@ export function relationshipEdges(
   selectedRelationId: string | null,
   onSelectChild: (id: string) => void,
   sizes: Map<string, CardSize> = new Map(),
+  highlighted: ReadonlySet<string> = new Set(),
 ): Edge[] {
   const people = tree.people.map((p) => ({
     ...p,
@@ -35,23 +36,34 @@ export function relationshipEdges(
         byId.get(r.type === 'parent' ? r.childId : r.personB)!,
       ),
       type: 'relationship',
+      ...(highlighted.has(r.id) && { className: 'kinship-path' }),
       data: { relationshipType: r.type },
       ariaLabel: relationLabel(r),
       label: relationLabel(r),
       style: {
-        stroke:
-          r.type === 'parent'
+        stroke: highlighted.has(r.id)
+          ? 'var(--gold)'
+          : r.type === 'parent'
             ? 'var(--copper)'
             : r.type === 'partner'
               ? 'var(--partner)'
               : 'var(--text-muted)',
-        strokeWidth: selectedRelationId === r.id ? 3 : 2,
+        strokeWidth: selectedRelationId === r.id || highlighted.has(r.id) ? 3 : 2,
       },
       labelStyle: { fill: 'var(--text-muted)', fontSize: 11, fontWeight: 600 },
       labelBgStyle: { fill: 'var(--bg)', fillOpacity: 0.96 },
       selectable: true,
     }));
+  const pathStyle = { stroke: 'var(--gold)', strokeWidth: 3 };
   const familyEdges: Edge[] = families.flatMap((family) => {
+    // A path through a family runs from a parent, down the shared stem, to one child.
+    const pathChildren = new Set(
+      tree.relations.flatMap((r) =>
+        r.type === 'parent' && highlighted.has(r.id) && family.relationIds.includes(r.id)
+          ? [r.childId]
+          : [],
+      ),
+    );
     const handles = connectionHandles(
       family.partner,
       byId.get(family.partner.personA)!,
@@ -73,7 +85,8 @@ export function relationshipEdges(
       target: branch.childId,
       targetHandle: branch.targetHandle,
       focusable: true,
-      className: 'family-branch',
+      className: pathChildren.has(branch.childId) ? 'family-branch kinship-path' : 'family-branch',
+      ...(pathChildren.has(branch.childId) && { style: { ...base.style, ...pathStyle } }),
       ariaRole: 'button',
       ariaLabel: `Edit parents of ${names.get(branch.childId) || 'unnamed person'}`,
       domAttributes: {
@@ -97,7 +110,8 @@ export function relationshipEdges(
         data: {
           path: [family.stem, family.bar, ...family.additionalPaths].map(connectorPath).join(' '),
         },
-        style: { ...base.style, pointerEvents: 'none' },
+        style: { ...base.style, ...(pathChildren.size && pathStyle), pointerEvents: 'none' },
+        ...(pathChildren.size > 0 && { className: 'kinship-path' }),
         domAttributes: { 'aria-hidden': true },
       },
       ...branches,

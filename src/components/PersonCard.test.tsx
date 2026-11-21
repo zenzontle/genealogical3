@@ -65,3 +65,25 @@ describe('person deletion control', () => {
     expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull();
   });
 });
+
+describe('canvas view markers', () => {
+  it('marks a card on the kinship path', () => {
+    const node = props(1, false, false);
+    node.data.onKinshipPath = true;
+    render(<PersonCard {...node} />);
+    expect(screen.getByRole('button', { name: 'Edit Alex' }).className).toContain(
+      'on-kinship-path',
+    );
+  });
+  it('offers to expand a collapsed branch without selecting the card', () => {
+    const node = props(1, false, false);
+    node.data.hiddenCount = 3;
+    node.data.onExpand = vi.fn();
+    render(<PersonCard {...node} />);
+    const expand = screen.getByRole('button', { name: "Show 3 hidden people in Alex's branch" });
+    expect(expand.textContent).toBe('3');
+    fireEvent.click(expand);
+    expect(node.data.onExpand).toHaveBeenCalledWith(node.data.person.id);
+    expect(node.data.onSelect).not.toHaveBeenCalled();
+  });
+});

@@ -58,7 +58,8 @@ import { FamilyEdge } from '../components/FamilyEdge';
 import { PartnerConnector, type PartnerNode } from '../components/PartnerConnector';
 import { partnerConnectors, partnerNodeId } from '../lib/partnerConnectors';
 import { relationshipEdges } from '../lib/relationshipEdges';
-import { calculateKinships, type KinshipResult } from '../lib/kinship';
+import { calculateKinships, kinshipPathIds, type KinshipResult } from '../lib/kinship';
+import { resolveTreeView, visibleTree, type TreeView } from '../lib/treeView';
 import { movePeopleToPositions, personPositionAtViewCenter } from '../lib/canvasPosition';
 import { arrangeTree } from '../lib/treeLayout';
 import { useConnectorProximity } from '../hooks/useConnectorProximity';
@@ -161,6 +162,15 @@ export default function App() {
   const [dateDrafts, setDateDrafts] = useState<Record<string, LifeDates>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRelationId, setSelectedRelationId] = useState<string | null>(null);
+  const [treeView, setTreeView] = useState<(TreeView & { treeId: string }) | null>(null);
+  const treeId = tree?.id;
+  const canvasView = useMemo(
+    () =>
+      people && relations && treeView && treeView.treeId === treeId
+        ? resolveTreeView({ people, relations }, treeView)
+        : null,
+    [people, relations, treeId, treeView],
+  );
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [notice, setNotice] = useState<ToastState>(IDLE);
   const [treeAction, setTreeAction] = useState<TreeAction | null>(null);
@@ -451,6 +461,7 @@ export default function App() {
       setDateDrafts({});
       setSelectedId(null);
       setSelectedRelationId(null);
+      setTreeView(null);
       setPendingCenter(null);
       setDriveFile(
         link
@@ -623,7 +634,10 @@ export default function App() {
         if (!treeRef.current?.people.length) return;
         e.preventDefault();
         setNodes((current) =>
-          current.map((node) => ({ ...node, selected: node.type === 'person' })),
+          current.map((node) => ({
+            ...node,
+            selected: node.type === 'person' && (!canvasView || canvasView.visible.has(node.id)),
+          })),
         );
       } else if (mod || e.shiftKey) {
         return;
@@ -712,19 +726,49 @@ export default function App() {
   const selectedPersonIds = useMemo(() => {
     const currentPeople = new Set(people?.map((person) => person.id));
     return nodes
-      .filter((node) => node.type === 'person' && node.selected && currentPeople.has(node.id))
+      .filter(
+        (node) =>
+          node.type === 'person' &&
+          node.selected &&
+          currentPeople.has(node.id) &&
+          (!canvasView || canvasView.visible.has(node.id)),
+      )
       .map((node) => node.id);
-  }, [nodes, people]);
+  }, [nodes, people, canvasView]);
+  const kinshipPath = useMemo(() => {
+    if (!homePersonId || !selectedId || selectedId === homePersonId) return null;
+    if (selectedPersonIds.length > 1) return null;
+    const match = kinships.get(selectedId)?.primary;
+    if (!match?.steps.length) return null;
+    const path = kinshipPathIds(homePersonId, match);
+    // A partly hidden path would lead nowhere on the canvas.
+    if (canvasView && [...path.people].some((id) => !canvasView.visible.has(id))) return null;
+    return path;
+  }, [homePersonId, selectedId, selectedPersonIds, kinships, canvasView]);
+  const expandBranch = useCallback(
+    (id: string) =>
+      setTreeView((view) => view && { ...view, collapsed: view.collapsed.filter((c) => c !== id) }),
+    [],
+  );
   const deletionAnchorId =
     selectedId && selectedPersonIds.includes(selectedId) ? selectedId : selectedPersonIds[0];
   const canvas = useMemo(() => {
     if (!tree) return { edges: [] as Edge[], nodes };
-    const positions = new Map(nodes.map((node) => [node.id, node.position]));
-    const sizes = measuredSizes(nodes);
+    const shown = canvasView ? visibleTree(tree, canvasView.visible) : tree;
+    const shownNodes = canvasView ? nodes.filter((node) => canvasView.visible.has(node.id)) : nodes;
+    const positions = new Map(shownNodes.map((node) => [node.id, node.position]));
+    const sizes = measuredSizes(shownNodes);
     return {
-      edges: relationshipEdges(tree, positions, selectedRelationId, selectPerson, sizes),
+      edges: relationshipEdges(
+        shown,
+        positions,
+        selectedRelationId,
+        selectPerson,
+        sizes,
+        kinshipPath?.relations,
+      ),
       nodes: [
-        ...nodes.map((node) =>
+        ...shownNodes.map((node) =>
           node.type === 'person'
             ? {
                 ...node,
@@ -733,16 +777,22 @@ export default function App() {
                   selected: node.id === deletionAnchorId,
                   deleteCount: selectedPersonIds.length,
                   onDelete: () => deletePeople(selectedPersonIds),
+                  onKinshipPath: kinshipPath?.people.has(node.id),
+                  hiddenCount: canvasView?.collapsedCounts.get(node.id),
+                  onExpand: expandBranch,
                 },
               }
             : node,
         ),
-        ...partnerConnectors(tree, positions, selectPartner, sizes),
+        ...partnerConnectors(shown, positions, selectPartner, sizes),
       ],
     };
   }, [
     tree,
     nodes,
+    canvasView,
+    kinshipPath,
+    expandBranch,
     selectedRelationId,
     selectPerson,
     selectPartner,
@@ -750,6 +800,29 @@ export default function App() {
     selectedPersonIds,
     deletePeople,
   ]);
+  /** People already in the tree keep the filter; anyone added while it is on stays visible. */
+  const changeView = (change: (view: TreeView) => TreeView, refit = false) => {
+    const current = treeRef.current;
+    if (!current) return;
+    const previous: TreeView =
+      canvasView && treeView
+        ? treeView
+        : { focus: null, collapsed: [], baseline: new Set(current.people.map((p) => p.id)) };
+    const next = { ...change(previous), baseline: previous.baseline, treeId: current.id };
+    const visible = resolveTreeView(current, next)?.visible;
+    setTreeView(visible ? next : null);
+    if (visible) {
+      setNodes((all) =>
+        all.map((node) =>
+          node.selected && !visible.has(node.id) ? { ...node, selected: false } : node,
+        ),
+      );
+      if (selectedId && !visible.has(selectedId)) setSelectedId(null);
+    }
+    if (refit) requestAnimationFrame(() => requestAnimationFrame(() => void fitTree()));
+  };
+  const clearView = () =>
+    changeView(() => ({ focus: null, collapsed: [], baseline: new Set() }), true);
   const selected = tree?.people.find((p) => p.id === selectedId) || null;
   const selectedRelation = tree?.relations.find((r) => r.id === selectedRelationId) || null;
   // Selection temporarily reveals details without changing the toggle preference.
@@ -785,6 +858,8 @@ export default function App() {
   const jumpToPerson = (id: string) => {
     const current = treeRef.current;
     if (!current?.people.some((person) => person.id === id)) return;
+    // Show everyone again so a hidden person can be found.
+    if (canvasView && !canvasView.visible.has(id)) setTreeView(null);
     selectPerson(id);
     setPendingCenter({ treeId: current.id, personId: id });
   };
@@ -1388,6 +1463,19 @@ export default function App() {
                       <span>Home: {displayName(home)}</span>
                     </span>
                   )}
+                  {canvasView && (
+                    <span className="canvas-view">
+                      <span role="status">
+                        {canvasView.focus
+                          ? `${canvasView.focus.mode === 'ancestors' ? 'Ancestors' : 'Descendants'} of ${displayName(tree?.people.find((p) => p.id === canvasView.focus?.personId))}`
+                          : 'Collapsed branches'}
+                        {` · ${canvasView.hiddenCount} hidden`}
+                      </span>
+                      <button type="button" className="canvas-view-clear" onClick={clearView}>
+                        Show everyone
+                      </button>
+                    </span>
+                  )}
                 </div>
                 <div className="canvas-tools">
                   <button
@@ -1420,8 +1508,13 @@ export default function App() {
                         : 'Set a home person in person details to center on them'
                     }
                     onClick={() => {
-                      const id = treeRef.current?.homePersonId;
-                      if (id) centerPerson(id);
+                      const current = treeRef.current;
+                      const id = current?.homePersonId;
+                      if (!id) return;
+                      if (canvasView && !canvasView.visible.has(id)) {
+                        setTreeView(null);
+                        setPendingCenter({ treeId: current.id, personId: id });
+                      } else centerPerson(id);
                     }}
                   >
                     <Home size={18} aria-hidden="true" />
@@ -1551,6 +1644,25 @@ export default function App() {
                   onConnectTo={connectFromPanel}
                   onRemoveRelation={(id) => apply((t) => removeRelation(t, id))}
                   onUpdateRelation={(relation) => apply((t) => updateRelation(t, relation))}
+                  view={{
+                    focus:
+                      canvasView?.focus?.personId === selected.id ? canvasView.focus.mode : null,
+                    collapsed: !!canvasView && !!treeView?.collapsed.includes(selected.id),
+                  }}
+                  onFocus={(mode) =>
+                    changeView(
+                      (view) => ({ ...view, focus: mode && { personId: selected.id, mode } }),
+                      true,
+                    )
+                  }
+                  onToggleCollapse={() =>
+                    changeView((view) => ({
+                      ...view,
+                      collapsed: view.collapsed.includes(selected.id)
+                        ? view.collapsed.filter((id) => id !== selected.id)
+                        : [...view.collapsed, selected.id],
+                    }))
+                  }
                   onClose={() => {
                     setSelectedId(null);
                   }}

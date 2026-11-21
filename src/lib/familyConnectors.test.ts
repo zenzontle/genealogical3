@@ -304,4 +304,23 @@ describe('canvas relationship edges', () => {
     expect(direct.find((edge) => edge.id === f.links[0].id)?.style?.strokeWidth).toBe(3);
     expect(relationshipEdges(saved, new Map(), null, vi.fn())).toHaveLength(4);
   });
+  it('highlights a kinship path on direct edges, and on the stem and one branch of a family', () => {
+    const f = familyFixture();
+    const pathOf = (ids: string[]) =>
+      relationshipEdges(f.tree, new Map(), null, vi.fn(), new Map(), new Set(ids));
+    const highlighted = (edges: ReturnType<typeof pathOf>) =>
+      edges.filter((edge) => edge.className?.includes('kinship-path')).map((edge) => edge.id);
+    expect(highlighted(pathOf([]))).toEqual([]);
+    const family = pathOf([f.links[0].id]);
+    expect(highlighted(family)).toEqual(['family:couple', `family:couple:${f.children[0].id}`]);
+    expect(family.find((e) => e.id === `family:couple:${f.children[1].id}`)?.style?.stroke).toBe(
+      'var(--copper)',
+    );
+    const partner = pathOf([f.partner.id]);
+    expect(highlighted(partner)).toEqual(['couple']);
+    expect(partner.find((e) => e.id === 'couple')?.style).toMatchObject({
+      stroke: 'var(--gold)',
+      strokeWidth: 3,
+    });
+  });
 });

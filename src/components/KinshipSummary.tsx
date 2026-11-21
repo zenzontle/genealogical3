@@ -45,7 +45,7 @@ export function KinshipSummary({
       <div className="kinship-paths">
         <p className="tiny">
           Closest recorded {kinship.paths.length === 1 ? 'path' : 'paths'}. Parent types and partner
-          status are shown in each path.
+          status are shown in each path. The first is highlighted on the canvas.
         </p>
         <ul>
           {kinship.paths.map((match, index) => (

@@ -254,3 +254,11 @@ export function describeKinshipPath(home: Person, match: KinshipMatch, people: P
     }),
   ].join(' → ');
 }
+
+/** The people and relations along a recorded path, for highlighting it on the canvas. */
+export function kinshipPathIds(homeId: string, match: KinshipMatch) {
+  return {
+    people: new Set([homeId, ...match.steps.map((step) => step.personId)]),
+    relations: new Set(match.steps.map((step) => step.relation.id)),
+  };
+}

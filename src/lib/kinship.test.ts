@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { calculateKinships, describeKinshipPath, partnerKinshipLabel } from './kinship';
+import {
+  calculateKinships,
+  describeKinshipPath,
+  kinshipPathIds,
+  partnerKinshipLabel,
+} from './kinship';
 import {
   makePerson,
   makeTree,
@@ -327,5 +332,18 @@ describe('half-siblings', () => {
     f.parent(father, f.home);
     f.parent(mother, sibling);
     expect(f.label(sibling)).toBe('Sibling');
+  });
+});
+
+describe('kinshipPathIds', () => {
+  it('collects the home person, each person reached and the relations used', () => {
+    const f = family();
+    const parent = f.person('Parent');
+    const grandparent = f.person('Grandparent');
+    f.parent(parent, f.home);
+    f.parent(grandparent, parent);
+    const path = kinshipPathIds(f.home.id, f.results().get(grandparent.id)!.primary);
+    expect([...path.people]).toEqual(['Home', 'Parent', 'Grandparent']);
+    expect([...path.relations]).toEqual(['Parent-Home', 'Grandparent-Parent']);
   });
 });
