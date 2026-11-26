@@ -10,7 +10,7 @@ import {
   Controls,
   type Connection,
   type Edge,
-  type NodeChange,
+  NodeChangeset,
   type ReactFlowInstance,
   useNodesState,
 } from '@xyflow/react';
@@ -1143,7 +1143,7 @@ export default function App() {
   };
   const fitTree = () =>
     flowRef.current?.fitView({
-      padding: 0.25,
+      padding: '10%',
       maxZoom: 1.1,
       duration: 500,
     });
@@ -1156,7 +1156,8 @@ export default function App() {
     requestAnimationFrame(() => requestAnimationFrame(fitTree));
   };
   const onAlignedNodesChange = useCallback(
-    (changes: NodeChange<CanvasNode>[]) => {
+    (changeset: NodeChangeset<CanvasNode>) => {
+      const changes = changeset.toArray();
       const moving = changes.flatMap((change) => {
         if (change.type !== 'position' || !change.dragging || !change.position) return [];
         const node = nodes.find((node) => node.id === change.id);
@@ -1166,7 +1167,7 @@ export default function App() {
         if (changes.some((change) => change.type === 'position' && change.dragging === false)) {
           setAlignmentGuides([]);
         }
-        onNodesChange(changes);
+        onNodesChange(changeset);
         return;
       }
       const { offset, guides } = cardAlignment(
@@ -1177,13 +1178,15 @@ export default function App() {
       );
       setAlignmentGuides(guides);
       onNodesChange(
-        changes.map((change) =>
-          change.type === 'position' && change.dragging && change.position
-            ? {
-                ...change,
-                position: { x: change.position.x + offset.x, y: change.position.y + offset.y },
-              }
-            : change,
+        new NodeChangeset(
+          changes.map((change) =>
+            change.type === 'position' && change.dragging && change.position
+              ? {
+                  ...change,
+                  position: { x: change.position.x + offset.x, y: change.position.y + offset.y },
+                }
+              : change,
+          ),
         ),
       );
     },
@@ -1555,7 +1558,8 @@ export default function App() {
                   edges={canvas.edges}
                   nodeTypes={nodeTypes}
                   edgeTypes={edgeTypes}
-                  colorMode="dark"
+                  forceColorMode="dark"
+                  elevateEdgesOnSelect={false}
                   connectionMode={ConnectionMode.Loose}
                   onNodesChange={onAlignedNodesChange}
                   onSelectionChange={onSelectionChange}
@@ -1590,7 +1594,7 @@ export default function App() {
                   minZoom={0.05}
                   maxZoom={2}
                   fitView={fitViewOnOpen.current}
-                  fitViewOptions={{ padding: 0.25, maxZoom: 1.1 }}
+                  fitViewOptions={{ padding: '10%', maxZoom: 1.1 }}
                   nodesDraggable
                   elementsSelectable
                   multiSelectionKeyCode={['Shift', 'Meta', 'Control']}

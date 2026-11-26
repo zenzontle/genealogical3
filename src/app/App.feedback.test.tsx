@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { Fragment, useEffect, type ReactNode } from 'react';
-import type { NodeChange } from '@xyflow/react';
+import { NodeChangeset, type NodeChange } from '@xyflow/react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
@@ -178,12 +178,19 @@ vi.mock('@xyflow/react', async (original) => ({
     nodes,
     onInit,
     children,
-    ...events
-  }: CanvasEvents & {
+    onNodesChange,
+    ...rest
+  }: Omit<CanvasEvents, 'onNodesChange'> & {
     nodes: PersonNode[];
     onInit: (instance: unknown) => void;
+    onNodesChange: (changes: NodeChangeset<PersonNode>) => void;
     children: ReactNode;
   }) => {
+    // React Flow 13 hands onNodesChange a NodeChangeset; tests describe changes as arrays.
+    const events: CanvasEvents = {
+      ...rest,
+      onNodesChange: (changes) => onNodesChange(new NodeChangeset(changes)),
+    };
     canvasEvents = events;
     canvasNodes = nodes;
     const onMoveEnd = events.onMoveEnd;
