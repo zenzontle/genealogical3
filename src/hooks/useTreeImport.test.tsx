@@ -129,3 +129,87 @@ describe('JSON import feedback and recovery', () => {
     expect(saveTree).toHaveBeenCalledOnce();
   });
 });
+
+describe('GEDCOM import', () => {
+  const gedcomFile = (lines: string[], name = 'Smith family.ged') => {
+    const bytes = new TextEncoder().encode(lines.join('\n'));
+    return Object.assign(new File([bytes], name), {
+      arrayBuffer: vi.fn().mockResolvedValue(bytes.buffer),
+      text: vi.fn(),
+    });
+  };
+  const family = [
+    '0 HEAD',
+    '1 CHAR UTF-8',
+    '0 @I1@ INDI',
+    '1 NAME Ann /Smith/',
+    '1 FAMS @F1@',
+    '0 @I2@ INDI',
+    '1 NAME Bo /Smith/',
+    '1 FAMC @F1@',
+    '0 @F1@ FAM',
+    '1 HUSB @I1@',
+    '1 CHIL @I2@',
+  ];
+
+  it('saves a converted tree named after the file and summarizes it', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(100);
+    const saved = vi.fn();
+    const { result } = renderHook(() => useTreeImport(saved, vi.fn().mockResolvedValue(undefined)));
+    const file = gedcomFile([...family, '0 TRLR']);
+    await act(() => result.current.run(file));
+    const tree = vi.mocked(saveTree).mock.calls[0][0];
+    expect(file.text).not.toHaveBeenCalled();
+    expect(tree).toMatchObject({ name: 'Smith family', updatedAt: 100, dataUpdatedAt: 100 });
+    expect(tree.people.map((p) => p.name)).toEqual(['Ann Smith', 'Bo Smith']);
+    expect(saved).toHaveBeenCalledWith(tree);
+    expect(result.current.importedId).toBe(tree.id);
+    expect(result.current.feedback).toEqual({
+      status: 'success',
+      message: 'Imported Smith family with 2 people and 1 relationship.',
+    });
+  });
+
+  it('keeps a note of what was left out until it is dismissed, including after a retry', async () => {
+    vi.mocked(saveTree).mockRejectedValueOnce(Error('Storage full.')).mockResolvedValue('saved');
+    const { result } = renderHook(() =>
+      useTreeImport(vi.fn(), vi.fn().mockResolvedValue(undefined)),
+    );
+    const file = gedcomFile([...family, '1 SOUR @S1@', '0 TRLR'], 'tree.GEDCOM');
+    await act(() => result.current.run(file));
+    expect(result.current.canRetry).toBe(true);
+    await act(() => result.current.run());
+    expect(file.arrayBuffer).toHaveBeenCalledOnce();
+    expect(vi.mocked(saveTree).mock.calls[1][0].name).toBe('tree');
+    expect(result.current.feedback).toEqual({
+      status: 'info',
+      message:
+        'Imported tree with 2 people and 1 relationship. 1 source citation was not imported.',
+    });
+  });
+
+  it('recognizes GEDCOM and JSON files that lost their extension', async () => {
+    const { result } = renderHook(() =>
+      useTreeImport(vi.fn(), vi.fn().mockResolvedValue(undefined)),
+    );
+    await act(() => result.current.run(gedcomFile([...family, '0 TRLR'], 'download')));
+    expect(vi.mocked(saveTree).mock.calls[0][0].people).toHaveLength(2);
+    const json = new TextEncoder().encode(JSON.stringify(makeTree('Family')));
+    const file = Object.assign(new File([json], 'download'), {
+      arrayBuffer: vi.fn().mockResolvedValue(json.buffer),
+    });
+    await act(() => result.current.run(file));
+    expect(vi.mocked(saveTree).mock.calls[1][0].name).toBe('Family (imported)');
+  });
+
+  it('rejects files that are not GEDCOM without offering a retry', async () => {
+    const { result } = renderHook(() => useTreeImport(vi.fn(), vi.fn()));
+    await act(() => result.current.run(gedcomFile(['{"version": 2}'])));
+    expect(result.current.feedback).toEqual({
+      status: 'error',
+      message: 'This is not a GEDCOM file. It should start with a 0 HEAD line.',
+    });
+    expect(result.current.canRetry).toBe(false);
+    expect(saveTree).not.toHaveBeenCalled();
+  });
+});

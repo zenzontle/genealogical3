@@ -56,6 +56,35 @@ test('a JSON export imports as an identical copy', async ({ page }) => {
   expect(copy.relations).toEqual(original.relations);
 });
 
+test('a GEDCOM export imports back with its people and relationships', async ({ page }) => {
+  await buildTree(page);
+  const exported = await downloadFrom(page, 'Export GEDCOM');
+  await expect(page.getByText('GEDCOM export completed.')).toBeVisible();
+  expect(exported.suggestedFilename()).toBe('Curie-family.ged');
+  const text = (await downloadedBytes(exported)).toString('utf8');
+  expect(text.startsWith('0 HEAD\n')).toBe(true);
+  expect(text).toContain('1 NAME Irène /Joliot-Curie/');
+
+  await backToWorkspace(page);
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await (
+    await chooser
+  ).setFiles({
+    name: exported.suggestedFilename(),
+    mimeType: 'text/plain',
+    buffer: Buffer.from(text, 'utf8'),
+  });
+  await expect(
+    page.getByText('Imported Curie-family with 3 people and 2 relationships.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Open tree' }).click();
+  await expect(page.getByRole('button', { name: 'Curie-family', exact: true })).toBeVisible();
+  await expectCounts(page, 3, 2);
+  await selectPerson(page, 'Marie Curie');
+  await expect(detailsPanel(page).getByLabel('Notes')).toHaveValue('Physicist and chemist.');
+});
+
 test('PNG export downloads a rendered image', async ({ page }) => {
   await buildTree(page);
   const download = await downloadFrom(page, 'Export PNG');
