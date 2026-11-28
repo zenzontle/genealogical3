@@ -121,6 +121,16 @@ describe('decodeGedcom', () => {
     expect(looksLikeGedcom(bytes('{"version": 2}'))).toBe(false);
     expect(looksLikeGedcom(bytes('0 HEADING'))).toBe(false);
   });
+  it('decodes Macintosh and IBM PC character sets', () => {
+    const name = (charset: string, ...letters: number[]) =>
+      decodeGedcom(new Uint8Array([...bytes(`0 HEAD\n1 CHAR ${charset}\n1 NAME `), ...letters]))
+        .split('NAME ')
+        .at(-1);
+    expect(name('MACINTOSH', 0x4a, 0x6f, 0x73, 0x8e, 0x20, 0x4d, 0x9f)).toBe('José Mü');
+    expect(name('IBMPC', 0x4a, 0x6f, 0x73, 0x82, 0x20, 0x4d, 0x81, 0xe1, 0xff)).toBe(
+      'José Müß\u00a0',
+    );
+  });
   it('falls back to Windows-1252 for files that are not valid UTF-8', () => {
     const file = new Uint8Array([...bytes('0 HEAD\n1 CHAR UTF-8\n1 NOTE Ren'), 0xe9]);
     expect(decodeGedcom(file).endsWith('René')).toBe(true);
@@ -373,6 +383,79 @@ describe('gedcomToTree', () => {
     expect(warnings).toEqual([]);
   });
 
+  it('keeps every other detail about people and families in their notes', () => {
+    const { tree, warnings } = gedcomToTree(
+      gedcom(
+        '0 @A@ INDI',
+        '1 NAME Mary /Brown/',
+        '1 NAME Mary /Hale/',
+        '2 TYPE married',
+        '1 NAME Polly',
+        '1 BIRT',
+        '2 DATE 1890',
+        '2 NOTE Born at home',
+        '1 DEAT',
+        '2 DATE 1950',
+        '2 AGE 60y',
+        '2 CAUS Pneumonia',
+        '1 CONF',
+        '2 DATE 1902',
+        '2 PLAC Boston',
+        '1 PROB Y',
+        '1 DSCR Tall',
+        '1 EVEN',
+        '2 TYPE Voyage',
+        '2 DATE 1911',
+        '1 CHAN',
+        '2 DATE 1 JAN 2000',
+        '1 _UID 1234',
+        '0 @B@ INDI',
+        '1 NAME Ned /Hale/',
+        '0 @F1@ FAM',
+        '1 WIFE @A@',
+        '1 MARR',
+        '2 DATE 1925',
+        '2 PLAC Paris',
+        '1 NOTE Eloped',
+        '0 @F2@ FAM',
+        '1 HUSB @B@',
+        '1 WIFE @A@',
+        '1 MARR Y',
+        '1 RESI',
+        '2 PLAC Rome',
+        '1 NOTE Met at sea',
+        '0 @F3@ FAM',
+        '1 NOTE Nobody here',
+      ),
+      'Details',
+    );
+    expect(byName(tree, 'Mary Brown').notes).toBe(
+      [
+        'Birth: Born at home',
+        'Death: age 60y, cause: Pneumonia',
+        'Married name: Mary Hale',
+        'Other name: Polly',
+        'Confirmation: 1902, Boston',
+        'Probate',
+        'Description: Tall',
+        'Voyage: 1911',
+        'Marriage: 1925, Paris',
+        'Family note: Eloped',
+        'Residence with Ned Hale: Rome',
+        'Family note with Ned Hale: Met at sea',
+      ].join('\n'),
+    );
+    expect(byName(tree, 'Ned Hale').notes).toBe(
+      'Residence with Mary Brown: Rome\nFamily note with Mary Brown: Met at sea',
+    );
+    expect(warnings).toEqual(['1 detail of families without parents was not imported.']);
+  });
+
+  it('keeps notes that look like cross-references', () => {
+    const { tree } = gedcomToTree(gedcom('0 @A@ INDI', '1 NAME A', '1 NOTE @@home@@'), 'Notes');
+    expect(tree.people[0].notes).toBe('@home@');
+  });
+
   it('rejects files without people or with more than a tree can hold', () => {
     expect(() => gedcomToTree(gedcom(), 'Empty')).toThrow('This GEDCOM file has no people in it.');
     const many = Array.from({ length: 2001 }, (_, i) => `0 @I${i}@ INDI`);
@@ -420,7 +503,11 @@ describe('treeToGedcom', () => {
     });
     const byron = person('Byron King', { sex: 'male', lifeStatus: 'deceased' });
     const annabella = person('Annabella King', { born: { precision: 'about', year: 1836 } });
-    const ralph = person('Ralph King', { sex: 'other', lifeStatus: 'living' });
+    const ralph = person('Ralph King', {
+      sex: 'other',
+      lifeStatus: 'living',
+      notes: '@JohnSmith@',
+    });
     const solo = person('Solo', { firstName: 'Solo', lastName: '' });
     const rhea = person('Rhea Ńowak', { sex: 'female' });
     const tom = person('Tom Ńowak');

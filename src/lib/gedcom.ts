@@ -27,6 +27,8 @@ export type GedcomNode = {
   xref: string;
   tag: string;
   value: string;
+  /** Whether the value is a cross-reference, decided before @@ escapes are undone. */
+  pointer: boolean;
   children: GedcomNode[];
 };
 
@@ -121,6 +123,11 @@ export function decodeAnsel(bytes: Uint8Array): string {
   return (out + marks).normalize('NFC');
 }
 
+// The upper half of IBM code page 437, which TextDecoder doesn't support.
+const cp437 =
+  'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧' +
+  '╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■\u00a0';
+
 const decode = (encoding: string, bytes: Uint8Array, fatal = false) =>
   new TextDecoder(encoding, { fatal }).decode(bytes);
 
@@ -142,8 +149,10 @@ export function decodeGedcom(bytes: Uint8Array): string {
   const head = decode('windows-1252', bytes.subarray(0, 8192));
   const charset = /^[ \t]*1[ \t]+CHAR[ \t]+([^\s]+)/im.exec(head)?.[1]?.toUpperCase();
   if (charset === 'ANSEL') return decodeAnsel(bytes);
-  if (charset === 'ANSI' || charset === 'ASCII' || charset === 'IBMPC' || charset === 'MACINTOSH')
-    return decode('windows-1252', bytes);
+  if (charset === 'MACINTOSH') return decode('macintosh', bytes);
+  if (charset === 'IBMPC')
+    return Array.from(bytes, (b) => (b < 0x80 ? String.fromCharCode(b) : cp437[b - 0x80])).join('');
+  if (charset === 'ANSI' || charset === 'ASCII') return decode('windows-1252', bytes);
   try {
     return decode('utf-8', bytes, true);
   } catch {
@@ -179,6 +188,7 @@ export function parseGedcom(text: string): { records: GedcomNode[]; skippedLines
       xref: match[2] ?? '',
       tag: match[3].toUpperCase(),
       value: match[4] ?? '',
+      pointer: false,
       children: [],
     };
     stack.length = level;
@@ -189,7 +199,8 @@ export function parseGedcom(text: string): { records: GedcomNode[]; skippedLines
   if (records[0]?.tag !== 'HEAD')
     throw Error('This is not a GEDCOM file. It should start with a 0 HEAD line.');
   const fold = (node: GedcomNode) => {
-    let value = isPointer(node.value) ? node.value : node.value.replace(/@@/g, '@');
+    const pointer = isPointer(node.value);
+    let value = pointer ? node.value : node.value.replace(/@@/g, '@');
     const children: GedcomNode[] = [];
     for (const child of node.children) {
       const text = child.value.replace(/@@/g, '@');
@@ -197,7 +208,7 @@ export function parseGedcom(text: string): { records: GedcomNode[]; skippedLines
       else if (child.tag === 'CONC') value += text;
       else children.push(fold(child));
     }
-    return { ...node, value, children };
+    return { ...node, value, pointer, children };
   };
   return { records: records.map(fold), skippedLines };
 }
@@ -257,9 +268,17 @@ const factLabels: Record<string, string> = {
   BIRT: 'Birth',
   CHR: 'Christening',
   BAPM: 'Baptism',
+  BLES: 'Blessing',
+  BARM: 'Bar mitzvah',
+  BASM: 'Bat mitzvah',
+  CONF: 'Confirmation',
+  FCOM: 'First communion',
+  ORDN: 'Ordination',
   DEAT: 'Death',
   BURI: 'Burial',
   CREM: 'Cremation',
+  PROB: 'Probate',
+  WILL: 'Will',
   ADOP: 'Adoption',
   OCCU: 'Occupation',
   RESI: 'Residence',
@@ -267,33 +286,99 @@ const factLabels: Record<string, string> = {
   RELI: 'Religion',
   TITL: 'Title',
   NATI: 'Nationality',
+  CAST: 'Caste',
+  DSCR: 'Description',
+  PROP: 'Property',
+  IDNO: 'ID number',
+  SSN: 'Social security number',
+  NCHI: 'Number of children',
+  NMR: 'Number of marriages',
   EMIG: 'Emigration',
   IMMI: 'Immigration',
   NATU: 'Naturalization',
   GRAD: 'Graduation',
   RETI: 'Retirement',
   CENS: 'Census',
+  ASSO: 'Associate',
   EVEN: 'Event',
   FACT: 'Fact',
 };
-const familyFactLabels: Record<string, string> = {
+const familyEventLabels: Record<string, string> = {
+  ENGA: 'Engagement',
+  MARB: 'Marriage banns',
+  MARC: 'Marriage contract',
+  MARL: 'Marriage license',
+  MARS: 'Marriage settlement',
+  MARR: 'Marriage',
+  DIVF: 'Divorce filed',
+  DIV: 'Divorce',
+  ANUL: 'Annulment',
+};
+/** Couple events read as "Married Jane Doe: 1875" in each partner's notes. */
+const coupleEventLabels: Record<string, string> = {
   ENGA: 'Engaged to',
   MARR: 'Married',
   DIV: 'Divorced from',
   ANUL: 'Annulment with',
 };
+// Record keeping and links that are carried over elsewhere or mean nothing in a tree.
+const ignoredTags = new Set([
+  'CHAN',
+  'CREA',
+  'RIN',
+  'REFN',
+  'UID',
+  '_UID',
+  'EXID',
+  'AFN',
+  'RFN',
+  'SUBM',
+  'RESN',
+  'ANCI',
+  'DESI',
+  'SOUR',
+  'OBJE',
+]);
+const labelOf = (node: GedcomNode, fallback: string) =>
+  ((node.tag === 'EVEN' || node.tag === 'FACT') && childValue(node, 'TYPE')) || fallback;
 
-/** "Occupation: Farmer, 1880, Ohio" or "" when the fact has no details. */
-function factLine(label: string, node: GedcomNode, { withDate = true } = {}) {
-  const value = node.value === 'Y' ? '' : node.value.trim();
-  const type = childValue(node, 'TYPE');
+/**
+ * "Occupation: Farmer, 1880, Ohio". A fact with no details is "" unless `bare`, when
+ * the label alone records that it happened.
+ */
+function factLine(
+  label: string,
+  node: GedcomNode,
+  noteText: (node: GedcomNode) => string,
+  { bare = false } = {},
+) {
+  const value = node.pointer || node.value === 'Y' ? '' : node.value.trim();
   const details = [
     value,
-    withDate ? childValue(node, 'DATE') : '',
+    childValue(node, 'DATE'),
     childValue(node, 'PLAC'),
+    childValue(node, 'AGE') && `age ${childValue(node, 'AGE')}`,
+    childValue(node, 'CAUS') && `cause: ${childValue(node, 'CAUS')}`,
+    childValue(node, 'RELA'),
+    ...node.children.filter((c) => c.tag === 'NOTE' || c.tag === 'SNOTE').map(noteText),
   ].filter(Boolean);
-  if (!details.length) return '';
-  return `${(node.tag === 'EVEN' || node.tag === 'FACT') && type ? type : label}: ${details.join(', ')}`;
+  if (!details.length) return bare ? label : '';
+  return `${label}: ${details.join(', ')}`;
+}
+
+const nameTypes: Record<string, string> = {
+  BIRTH: 'Birth name',
+  MARRIED: 'Married name',
+  AKA: 'Also known as',
+  IMMIGRANT: 'Immigrant name',
+  MAIDEN: 'Maiden name',
+};
+/** A second or later NAME, as a note line. */
+function otherNameLine(name: GedcomNode) {
+  const text = name.value.replace(/\//g, ' ').replace(/\s+/g, ' ').trim();
+  const type = childValue(name, 'TYPE');
+  const label = nameTypes[type.toUpperCase()] ?? (type ? `${type} name` : 'Other name');
+  return text ? `${label}: ${text}` : '';
 }
 
 function personName(indi: GedcomNode) {
@@ -316,6 +401,21 @@ function personName(indi: GedcomNode) {
   }
   return { name: join(firstName, lastName), firstName, lastName, nickname };
 }
+
+// Tags read into a person's fields, or into links, rather than into their notes.
+const personTags = new Set([
+  'NAME',
+  'NICK',
+  'SEX',
+  'BIRT',
+  'DEAT',
+  'FAMC',
+  'FAMS',
+  'NOTE',
+  'SNOTE',
+  '_G3_LIVING',
+]);
+const familyTags = new Set(['HUSB', 'WIFE', 'CHIL', '_G3_STATUS', '_G3_UNION']);
 
 const sexes: Record<string, Person['sex']> = { M: 'male', F: 'female', X: 'other' };
 const pedigrees: Record<string, ParentKind> = {
@@ -351,10 +451,11 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
   const pedigreeByFamily = new Map<string, ParentKind>();
   const childXrefsByFamily = new Map<string, string[]>();
   let datesInNotes = 0;
+  let familyDetailsDropped = 0;
   let sourceCitations = 0;
   let mediaLinks = 0;
   const noteText = (node: GedcomNode) =>
-    (isPointer(node.value) ? notesById.get(node.value) : node.value)?.trim() ?? '';
+    (node.pointer ? notesById.get(node.value) : node.value)?.trim() ?? '';
 
   for (const indi of individuals) {
     if (personIds.has(indi.xref)) continue;
@@ -363,10 +464,7 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
     const facts: string[] = [];
     const dateOf = (tag: 'BIRT' | 'DEAT') => {
       const [event, ...repeats] = childrenOf(indi, tag);
-      for (const repeat of repeats) {
-        const line = factLine(factLabels[tag], repeat);
-        if (line) facts.push(line);
-      }
+      for (const repeat of repeats) facts.push(factLine(factLabels[tag], repeat, noteText));
       if (!event) return { date: { precision: 'unknown' } as DateValue, recorded: false };
       const raw = childValue(event, 'DATE');
       const { date, exact } = parseGedcomDate(raw);
@@ -376,18 +474,26 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
       }
       const place = childValue(event, 'PLAC');
       if (place) facts.push(`${factLabels[tag]} place: ${place}`);
+      // Anything else about the event, like a cause of death or a note.
+      const rest = event.children.filter((c) => c.tag !== 'DATE' && c.tag !== 'PLAC');
+      facts.push(factLine(factLabels[tag], { ...event, value: '', children: rest }, noteText));
       return { date, recorded: true };
     };
     const born = dateOf('BIRT');
     const died = dateOf('DEAT');
+    childrenOf(indi, 'NAME')
+      .slice(1)
+      .forEach((other) => facts.push(otherNameLine(other)));
     for (const node of indi.children) {
       if (node.tag === 'SOUR') sourceCitations++;
       else if (node.tag === 'OBJE') mediaLinks++;
-      else if (node.tag in factLabels && node.tag !== 'BIRT' && node.tag !== 'DEAT') {
-        const line = factLine(factLabels[node.tag], node);
-        if (line) facts.push(line);
-      }
-      if (node.tag === 'FAMC' && isPointer(node.value)) {
+      else if (!personTags.has(node.tag) && !ignoredTags.has(node.tag))
+        facts.push(
+          factLine(labelOf(node, factLabels[node.tag] ?? node.tag), node, noteText, {
+            bare: node.value === 'Y',
+          }),
+        );
+      if (node.tag === 'FAMC' && node.pointer) {
         childXrefsByFamily.set(node.value, [
           ...(childXrefsByFamily.get(node.value) ?? []),
           indi.xref,
@@ -492,17 +598,38 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
         partners.set(key, relation);
         relations.push(relation);
       }
-      for (const node of fam.children) {
-        const label = familyFactLabels[node.tag];
-        if (!label) continue;
-        for (const [self, other] of [
-          [husband, wife],
-          [wife, husband],
-        ]) {
+    }
+    // Family notes and events go to the notes of each spouse in the family.
+    const spouses = [...new Set([husband, wife].filter((id): id is string => !!id))];
+    const couple = spouses.length === 2;
+    for (const node of fam.children) {
+      if (familyTags.has(node.tag) || ignoredTags.has(node.tag)) continue;
+      if (!spouses.length) {
+        familyDetailsDropped++;
+        continue;
+      }
+      for (const self of spouses) {
+        const other = nameOf.get(spouses.find((id) => id !== self)!);
+        let line: string;
+        if (node.tag === 'NOTE' || node.tag === 'SNOTE') {
+          const text = noteText(node);
+          line = text && `Family note${couple ? ` with ${other}` : ''}: ${text}`;
+        } else if (couple) {
+          const verb = coupleEventLabels[node.tag];
+          const label = labelOf(
+            node,
+            familyEventLabels[node.tag] ?? factLabels[node.tag] ?? node.tag,
+          );
           // A bare MARR or DIV is already the partnership's union or status.
-          const line = factLine(`${label} ${nameOf.get(other)}`, node);
-          if (line) extraNotes.get(self)!.push(line);
-        }
+          line = factLine(verb ? `${verb} ${other}` : `${label} with ${other}`, node, noteText);
+        } else
+          line = factLine(
+            labelOf(node, familyEventLabels[node.tag] ?? factLabels[node.tag] ?? node.tag),
+            node,
+            noteText,
+            { bare: true },
+          );
+        extraNotes.get(self)!.push(line);
       }
     }
     // Some apps record a child only on one side, as CHIL here or FAMC on the person.
@@ -537,7 +664,8 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
 
   for (const person of people) {
     const facts = extraNotes.get(person.id)!;
-    if (facts.length) person.notes = [person.notes, facts.join('\n')].filter(Boolean).join('\n\n');
+    const lines = facts.filter(Boolean);
+    if (lines.length) person.notes = [person.notes, lines.join('\n')].filter(Boolean).join('\n\n');
   }
   const homeXref = childValue(head, '_G3_HOME');
   const tree: Tree = {
@@ -556,6 +684,8 @@ export function gedcomToTree(text: string, name: string): GedcomImport {
     mediaLinks && `${plural(mediaLinks, 'media link')} ${were(mediaLinks)} not imported.`,
     cycles &&
       `${plural(cycles, 'parent link')} that would make someone their own ancestor ${were(cycles)} skipped.`,
+    familyDetailsDropped &&
+      `${plural(familyDetailsDropped, 'detail')} of families without parents ${were(familyDetailsDropped)} not imported.`,
     brokenLinks && `${plural(brokenLinks, 'link')} to missing people ${were(brokenLinks)} skipped.`,
     skippedLines && `${plural(skippedLines, 'unreadable line')} ${were(skippedLines)} skipped.`,
   ].filter((w): w is string => !!w);
