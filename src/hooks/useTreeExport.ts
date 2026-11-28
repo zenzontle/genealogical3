@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Tree } from '../lib/model';
-import { exportJson, exportPdf, exportPng } from '../lib/media';
+import { exportGedcom, exportJson, exportPdf, exportPng } from '../lib/media';
 import { afterPaint, errorMessage, type FeedbackState } from '../lib/feedback';
 
-export type ExportFormat = 'JSON' | 'PNG' | 'PDF';
+export type ExportFormat = 'JSON' | 'GEDCOM' | 'PNG' | 'PDF';
 
 export function useTreeExport(treeId: string | undefined, getTree: () => Tree | null) {
   const [feedback, setFeedback] = useState<FeedbackState>({ status: 'idle' });
@@ -31,6 +31,7 @@ export function useTreeExport(treeId: string | undefined, getTree: () => Tree | 
       if (token !== request.current) return;
       let warning: string | undefined;
       if (format === 'JSON') exportJson(tree);
+      else if (format === 'GEDCOM') warning = exportGedcom(tree);
       else if (format === 'PNG') warning = await exportPng(tree);
       else await exportPdf(tree);
       if (token === request.current)

@@ -2,11 +2,16 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTreeExport } from './useTreeExport';
-import { exportJson, exportPdf, exportPng } from '../lib/media';
+import { exportGedcom, exportJson, exportPdf, exportPng } from '../lib/media';
 import { afterPaint } from '../lib/feedback';
 import { makeTree } from '../lib/model';
 
-vi.mock('../lib/media', () => ({ exportJson: vi.fn(), exportPdf: vi.fn(), exportPng: vi.fn() }));
+vi.mock('../lib/media', () => ({
+  exportGedcom: vi.fn(),
+  exportJson: vi.fn(),
+  exportPdf: vi.fn(),
+  exportPng: vi.fn(),
+}));
 vi.mock('../lib/feedback', async (original) => ({
   ...(await original<typeof import('../lib/feedback')>()),
   afterPaint: vi.fn(),
@@ -150,5 +155,24 @@ describe('export feedback', () => {
     expect(result.current.feedback.status).toBe('error');
     act(() => result.current.dismiss());
     expect(result.current.feedback.status).toBe('idle');
+  });
+});
+
+describe('GEDCOM export feedback', () => {
+  it('reports success, or keeps a note of what GEDCOM left out', async () => {
+    const tree = makeTree();
+    const { result } = renderHook(() => useTreeExport(tree.id, () => tree));
+    await act(() => result.current.run('GEDCOM'));
+    expect(exportGedcom).toHaveBeenCalledWith(tree);
+    expect(result.current.feedback).toEqual({
+      status: 'success',
+      message: 'GEDCOM export completed.',
+    });
+    vi.mocked(exportGedcom).mockReturnValueOnce("1 photo isn't included in GEDCOM files.");
+    await act(() => result.current.run('GEDCOM'));
+    expect(result.current.feedback).toEqual({
+      status: 'info',
+      message: "GEDCOM export completed. 1 photo isn't included in GEDCOM files.",
+    });
   });
 });

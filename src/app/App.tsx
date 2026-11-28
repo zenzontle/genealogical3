@@ -30,6 +30,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  Share2,
   Redo2,
   Undo2,
   X,
@@ -129,6 +130,7 @@ const measuredSizes = (nodes: CanvasNode[]) =>
   );
 const exportButtons: { format: ExportFormat; Icon: typeof Download; title: string }[] = [
   { format: 'JSON', Icon: Download, title: 'Download editable backup' },
+  { format: 'GEDCOM', Icon: Share2, title: 'Download GEDCOM for other genealogy apps' },
   { format: 'PNG', Icon: FileImage, title: 'Download image' },
   { format: 'PDF', Icon: FileText, title: 'Download printable PDF' },
 ];
@@ -1242,7 +1244,8 @@ export default function App() {
   useToast(imports.feedback, {
     onDismiss: imports.dismiss,
     action:
-      imports.feedback.status === 'success' && imports.importedId
+      (imports.feedback.status === 'success' || imports.feedback.status === 'info') &&
+      imports.importedId
         ? {
             label: 'Open tree',
             onClick: () => {
@@ -1275,8 +1278,8 @@ export default function App() {
         ref={fileInput}
         className="sr-only"
         type="file"
-        aria-label="Import JSON file"
-        accept="application/json,.json"
+        aria-label="Import tree file"
+        accept="application/json,.json,.ged,.gedcom"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void imports.run(f);

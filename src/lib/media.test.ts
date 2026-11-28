@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   chooseExportScale,
+  exportGedcom,
   exportPdf,
   exportPng,
   exportJson,
@@ -624,5 +625,30 @@ describe('export filenames', () => {
     expect(safeName('Fami\u006c\u0303ia')).toBe('Fami\u006c\u0303ia'.normalize('NFC'));
     expect(safeName('a/b:c*?"<>|')).toBe('abc');
     expect(safeName('  ///  ')).toBe('family-tree');
+  });
+});
+
+describe('GEDCOM exports', () => {
+  it('downloads a .ged file and notes the photos it leaves out', async () => {
+    let output!: Blob;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+      output = blob as Blob;
+      return 'blob:gedcom';
+    });
+    const link = { click: vi.fn(), download: '' };
+    vi.stubGlobal('document', { createElement: () => link });
+    vi.useFakeTimers();
+    const tree = {
+      ...makeTree('Familia Peña'),
+      people: [{ ...makePerson('Alex Peña'), portrait: 'data:image/jpeg;base64,processed' }],
+    };
+    expect(exportGedcom(tree)).toBe("1 photo isn't included in GEDCOM files.");
+    expect(link.download).toBe('Familia-Peña.ged');
+    expect(link.click).toHaveBeenCalledOnce();
+    const text = await output.text();
+    expect(text.startsWith('0 HEAD\n')).toBe(true);
+    expect(text).toContain('1 NAME Alex /Peña/');
+    expect(exportGedcom(makeTree())).toBeUndefined();
+    vi.clearAllTimers();
   });
 });

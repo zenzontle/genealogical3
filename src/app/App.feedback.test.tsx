@@ -746,7 +746,7 @@ describe('operation toast integration', () => {
           )
           .mockResolvedValue(text),
       });
-      fireEvent.change(screen.getByLabelText('Import JSON file'), { target: { files: [file] } });
+      fireEvent.change(screen.getByLabelText('Import tree file'), { target: { files: [file] } });
       const reading = await screen.findByText('Reading file…');
       expect(reading.closest('.toast-stack')).toBeTruthy();
       expect(reading.closest('.toast')?.querySelector('button')).toBeNull();
@@ -801,7 +801,7 @@ describe('operation toast integration', () => {
     const file = Object.assign(new File(['{}'], 'invalid.json', { type: 'application/json' }), {
       text: async () => '{}',
     });
-    const input = screen.getByLabelText('Import JSON file');
+    const input = screen.getByLabelText('Import tree file');
     fireEvent.change(input, { target: { files: [file] } });
     await screen.findByRole('button', { name: 'Choose another file' });
     const stack = notice.closest('.toast-stack')!;
@@ -1687,7 +1687,7 @@ describe('local feedback integration', () => {
     const file = Object.assign(new File([text], 'tree.json', { type: 'application/json' }), {
       text: async () => text,
     });
-    fireEvent.change(screen.getByLabelText('Import JSON file'), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText('Import tree file'), { target: { files: [file] } });
     await screen.findByText('Imported Imported example (imported).');
     expect(screen.getByRole('heading', { name: 'Your family trees' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Open tree' }));

@@ -8,6 +8,7 @@ import {
   type Tree,
 } from './model';
 import { relationshipIcons } from './relationshipIcons';
+import { treeToGedcom } from './gedcom';
 import { displayName } from './personNames';
 import { calculateKinships } from './kinship';
 import { connectionHandles } from './connectionHandles';
@@ -46,6 +47,15 @@ export function exportJson(tree: Tree) {
     ),
     `${safeName(tree.name)}.json`,
   );
+}
+/** Downloads the tree as GEDCOM 5.5.1 and returns a note of anything left out. */
+export function exportGedcom(tree: Tree): string | undefined {
+  const { text, warnings } = treeToGedcom(tree);
+  downloadBlob(
+    new Blob([text], { type: 'text/plain;charset=utf-8' }),
+    `${safeName(tree.name)}.ged`,
+  );
+  return warnings.join(' ') || undefined;
 }
 export async function portraitData(file: File): Promise<string> {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))

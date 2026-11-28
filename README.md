@@ -6,6 +6,7 @@ A private, browser-first family tree editor built with React, TypeScript, Vite, 
 
 - Trees autosave to IndexedDB in the current browser. Clearing site data removes them, so download JSON backups regularly. JSON backups contain all editable data and portraits; PNG exports are only a picture.
 - The JSON format is versioned. Version 1, 2, and 3 backups all import.
+- GEDCOM (`.ged`) files from other genealogy apps import as a new tree, and any tree exports as GEDCOM 5.5.1. GEDCOM carries people, names, birth and death dates, notes, partners and parents, but not photos or unassigned connections. On import, details the editor has no field for, such as places, occupations and date ranges, are added to the person's notes. Sources and media links are not imported.
 - Drive backups live in a `genealogical3` folder in My Drive, one document plus a `.photos` folder per tree. Don't put personal files in `.photos` folders: deleting a backup permanently deletes its photos folder, including files you added manually.
 
 ## Run locally
